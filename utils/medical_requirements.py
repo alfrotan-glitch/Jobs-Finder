@@ -168,12 +168,43 @@ TERM_REQUIREMENTS: dict[str, dict[str, Any]] = {
         ],
         "criticality": "essential",
     },
+    "license_number": {
+        "label": "License / registration number",
+        "patterns": [
+            r"\b(?:medical\s+|professional\s+)?(?:licen[cs]e|registration)\s*(?:number|no\.?|#)\b",
+            r"\b(?:number|no\.?)\s+(?:of\s+)?(?:the\s+)?(?:medical\s+|professional\s+)?(?:licen[cs]e|registration)\b",
+        ],
+        "criticality": "essential",
+    },
+    "license_document": {
+        "label": "License / registration document",
+        "patterns": [
+            r"\b(?:attach|upload|submit|provide|include|send)\b.{0,80}\b(?:copy|scan|document|certificate)\b.{0,80}\b(?:medical\s+|professional\s+)?(?:licen[cs]e|registration)\b",
+            r"\b(?:attach|upload|submit|provide|include|send)\b.{0,80}\b(?:medical\s+|professional\s+)?(?:licen[cs]e|registration)\b.{0,80}\b(?:copy|scan|document|certificate)\b",
+        ],
+        "criticality": "essential",
+    },
     "medical_exit_exam": {
         "label": "Medical exit examination",
         "patterns": [
             r"\bexit\s+exam(?:ination)?\b",
             r"\bmedical\s+exit\s+exam(?:ination)?\b",
+            r"\bmedical\s+council\s+exam(?:ination)?\b",
             r"ایگزیت\s*امتحان",
+            r"امتحان\s+شورای\s+طبی",
+        ],
+        "criticality": "essential",
+    },
+    "medical_specialist": {
+        "label": "Medical specialist qualification",
+        "patterns": [
+            r"\binternal\s+medicine\s+specialist\b",
+            r"\bgeneral\s+surgeon\b",
+            r"\bsurgeon\s+specialist\b",
+            r"\bspeciali[sz]ation\s+in\s+general\s+surgery\b",
+            r"\bdermatolog(?:y|ist)\b",
+            r"\baesthetic\s+medicine\b",
+            r"\bmedical\s+doctor\s*[–-]\s*dermatology\b",
         ],
         "criticality": "essential",
     },
@@ -648,7 +679,10 @@ def is_valid_application_url(url: str | None) -> bool:
         return False
 
 
-def extract_application_subject(text: str) -> str | None:
+def extract_application_subject(text: str, title: str = "") -> str | None:
+    if title and re.search(r"\b(?:mention|write|include|indicat(?:e|ing))\b[^\n\r]{0,120}\b(?:job\s+title|position(?:\s+title)?|title)\b[^\n\r]{0,120}\bsubject\b", text or "", flags=re.I):
+        if not re.search(r"\b(?:vacancy|reference|ref\.?|announcement)\s*(?:number|no\.?|#)?\b", text or "", flags=re.I):
+            return title
     patterns = [
         r"(?:email\s+)?subject(?:\s+line)?\s*(?:must\s+be|should\s+be|as)?\s*[:\-]\s*[\"']?([^\n\r\"']{3,120})",
         r"write\s+[\"']([^\"']{3,120})[\"']\s+in\s+the\s+subject",
@@ -663,6 +697,19 @@ def extract_application_subject(text: str) -> str | None:
             subject = re.split(r"\s{2,}|\.\s+", subject)[0].strip()
             return subject
     return None
+
+
+def application_subject_required(text: str) -> bool:
+    text = text or ""
+    if re.search(r"\bsubject\b", text, flags=re.I):
+        return True
+    # Common Dari/Persian ACBAR wording: applicants must write the job title
+    # and position code in the email. If no exact code is present, readiness
+    # must remain NEEDS_VERIFICATION instead of inventing a subject/reference.
+    return bool(
+        re.search(r"عنوان.{0,80}(?:کد|كود|کُد|كد).{0,80}بست.{0,120}(?:ایمیل|ايميل).{0,80}الزام", text, flags=re.I)
+        or re.search(r"(?:ایمیل|ايميل).{0,120}عنوان.{0,80}(?:کد|كود|کُد|كد).{0,80}بست", text, flags=re.I)
+    )
 
 
 def extract_locations(text: str, explicit_location: str = "") -> list[str]:
@@ -685,12 +732,19 @@ def extract_locations(text: str, explicit_location: str = "") -> list[str]:
 
 def extract_gender_requirement(text: str) -> str | None:
     lower = text.lower()
+    first_line = (text or "").splitlines()[0].lower() if text else ""
+    if re.search(r"\bmale\s*/\s*female\b|\bfemale\s*/\s*male\b|\bmale\s+and\s+female\b", first_line):
+        return None
+    if re.search(r"\bfemale\b", first_line):
+        return "female"
+    if re.search(r"\bmale\b", first_line):
+        return "male"
     if re.search(r"\bmale\s*/\s*female\b|\bfemale\s*/\s*male\b|\bmale\s+and\s+female\b", lower):
         return None
     if (
         "female candidates are strongly encouraged" in lower
         or "women are strongly encouraged" in lower
-        or re.search(r"\bfemale\s+candidate\s+is\s+point\s+plus\b", lower)
+        or re.search(r"\bfemale\s+candidate\s+(?:is\s+)?point\s+plus\b", lower)
         or re.search(r"\bfemale\s+(?:candidate|candidates)\s+(?:preferred|encouraged)\b", lower)
     ):
         return "female_encouraged"
@@ -890,7 +944,8 @@ def extract_requirements_from_text(
 
     reference_number = extract_reference_number(fact_combined)
     application_email = extract_application_email(fact_combined)
-    subject = extract_application_subject(fact_combined)
+    subject = extract_application_subject(fact_combined, title=title)
+    subject_required = application_subject_required(fact_combined)
     app_url = extract_application_url(fact_combined, fallback=application_url)
 
     facts = {
@@ -899,6 +954,7 @@ def extract_requirements_from_text(
         "application_url": app_url,
         "application_url_valid": is_valid_application_url(app_url),
         "application_subject": subject,
+        "application_subject_required": subject_required,
         "closing_date": closing_date,
         "locations": locations,
         "gender_requirement": gender,

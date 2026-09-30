@@ -94,7 +94,7 @@ REAL_VACANCIES: list[Job] = [
         Submission: submit updated CV and formal cover letter through approved application form by close of business on October 08, 2026.
         Application Form: https://forms.gle/U3dJcBHhJamUZ5yE9
         """,
-        metadata={"validation_case": "unverified_license_requirement", "closing_date": "2026-10-08"},
+        metadata={"validation_case": "owner_confirmed_license_requirement", "closing_date": "2026-10-08"},
     ),
     _job(
         id="real_acbar_145832_fixed_clinic_manager_arcs",

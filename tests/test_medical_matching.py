@@ -100,3 +100,127 @@ def test_required_management_years_gap_makes_low_priority():
     report = match_job_against_profile(job, p, today=date(2026, 9, 30)).to_dict()
     assert statuses(report)["management_experience_years"] == NOT_MET
     assert report["priority"] == "Low priority"
+
+
+def test_strict_readiness_requires_all_mandatory_requirements_met():
+    from utils.medical_matcher import READY_TO_APPLY, NEEDS_VERIFICATION_STATUS, NOT_ELIGIBLE_STATUS, classify_application_readiness
+
+    ready = match_job_against_profile(
+        dict(JOB, description="Medical Doctor required. At least 2 years clinical experience. Apply at https://example.org/apply. Deadline: 2026-10-10."),
+        profile(clinical_experience={"years": 3}),
+        today=date(2026, 9, 30),
+    ).to_dict()
+    assert ready["readiness_status"] == READY_TO_APPLY
+    assert classify_application_readiness(ready) == READY_TO_APPLY
+
+    verify = match_job_against_profile(
+        dict(JOB, description="Medical Doctor and valid medical license required. Apply at https://example.org/apply. Deadline: 2026-10-10."),
+        profile(license_registration={}),
+        today=date(2026, 9, 30),
+    ).to_dict()
+    assert verify["readiness_status"] == NEEDS_VERIFICATION_STATUS
+
+    not_eligible = match_job_against_profile(
+        dict(JOB, description="Female Medical Doctor required. Apply at https://example.org/apply. Deadline: 2026-10-10."),
+        profile(personal={"gender": "male"}),
+        today=date(2026, 9, 30),
+    ).to_dict()
+    assert not_eligible["readiness_status"] == NOT_ELIGIBLE_STATUS
+
+
+def test_missing_required_application_subject_blocks_ready_to_apply():
+    from utils.medical_matcher import NEEDS_VERIFICATION_STATUS
+
+    job = dict(
+        JOB,
+        description="Medical Doctor required. Indicate the job title and vacancy number in the email subject line. Email / Application Form: jobs@example.org. Deadline: 2026-10-10.",
+    )
+    report = match_job_against_profile(job, profile(), today=date(2026, 9, 30)).to_dict()
+    assert report["readiness_status"] == NEEDS_VERIFICATION_STATUS
+    assert statuses(report)["application_subject"] == NEEDS_VERIFICATION
+
+
+def test_owner_confirmed_medical_license_and_exit_exam_are_met_without_number():
+    from utils.medical_matcher import READY_TO_APPLY
+
+    job = dict(
+        JOB,
+        description="Medical Doctor required. Valid medical license required. Successful completion of the required medical exit examination. Apply at https://example.org/apply. Deadline: 2026-10-10.",
+    )
+    p = profile(
+        license_registration={
+            "authority": "Afghan Medical Council / medical professional registration",
+            "number": "",
+            "status": "Verified — holds valid medical professional registration/license",
+            "verified": True,
+            "source": "owner-confirmed on 2026-09-30",
+        },
+        medical_exit_exam={
+            "status": "Verified — completed the required Medical Exit Exam",
+            "verified": True,
+            "source": "owner-confirmed on 2026-09-30",
+        },
+    )
+    report = match_job_against_profile(job, p, today=date(2026, 9, 30)).to_dict()
+    s = statuses(report)
+    assert s["license_registration"] == MET
+    assert s["medical_exit_exam"] == MET
+    assert "license_number" not in s
+    assert report["readiness_status"] == READY_TO_APPLY
+
+
+def test_license_number_specific_requirement_stays_needs_verification_without_number():
+    from utils.medical_matcher import NEEDS_VERIFICATION_STATUS
+
+    job = dict(
+        JOB,
+        description="Medical Doctor required. Valid medical registration required. Enter the medical registration number in the application form. Apply at https://example.org/apply. Deadline: 2026-10-10.",
+    )
+    p = profile(
+        license_registration={
+            "authority": "Afghan Medical Council / medical professional registration",
+            "number": "",
+            "status": "Verified — holds valid medical professional registration/license",
+            "verified": True,
+        }
+    )
+    report = match_job_against_profile(job, p, today=date(2026, 9, 30)).to_dict()
+    s = statuses(report)
+    assert s["license_registration"] == MET
+    assert s["license_number"] == NEEDS_VERIFICATION
+    assert report["readiness_status"] == NEEDS_VERIFICATION_STATUS
+
+
+def test_license_number_specific_requirement_is_met_when_number_is_in_profile():
+    job = dict(
+        JOB,
+        description="Medical Doctor required. Valid medical registration required. Enter the medical registration number in the application form. Apply at https://example.org/apply. Deadline: 2026-10-10.",
+    )
+    p = profile(license_registration={"authority": "MoPH", "number": "AMC-123", "verified": True})
+    report = match_job_against_profile(job, p, today=date(2026, 9, 30)).to_dict()
+    s = statuses(report)
+    assert s["license_registration"] == MET
+    assert s["license_number"] == MET
+
+
+def test_phc_requirement_can_be_met_by_bphs_ephs_profile_evidence():
+    job = dict(
+        JOB,
+        description="Medical Doctor required. Strong knowledge of primary healthcare principles and practices. Apply at https://example.org/apply. Deadline: 2026-10-10.",
+    )
+    p = profile(skills={"public_health": ["BPHS", "EPHS", "HMIS"]})
+    report = match_job_against_profile(job, p, today=date(2026, 9, 30)).to_dict()
+    assert statuses(report)["phc"] == MET
+
+
+def test_dari_required_email_title_and_position_code_blocks_ready_without_exact_code():
+    from utils.medical_matcher import NEEDS_VERIFICATION_STATUS
+
+    job = dict(
+        JOB,
+        apply_url="",
+        description="Medical Doctor required. Email / Application Form: hr@example.org. هنگام ارسال اسناد از طریق ایمیل، درج عنوان و کُد بست مربوطه الزامی است. Deadline: 2026-10-10.",
+    )
+    report = match_job_against_profile(job, profile(), today=date(2026, 9, 30)).to_dict()
+    assert statuses(report)["application_subject"] == NEEDS_VERIFICATION
+    assert report["readiness_status"] == NEEDS_VERIFICATION_STATUS

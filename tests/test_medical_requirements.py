@@ -145,3 +145,95 @@ def test_pharmacy_alternative_years_uses_lower_applicable_track():
     )
     year_reqs = {req.key: req.value for req in result.requirements if req.key.endswith("_experience_years")}
     assert year_reqs["pharmacy_experience_years"] == 3
+
+
+def test_gender_requirement_title_overrides_contradictory_body_copy():
+    result = extract_requirements_from_text(
+        "The Female Medical Doctor is responsible for outpatient care. MD degree and completion of exit exam required.",
+        title="Medical Doctor (Male)",
+        today=date(2026, 9, 30),
+    )
+    assert result.facts["gender_requirement"] == "male"
+
+
+def test_extracts_medical_council_exam_and_generic_specialist_requirements():
+    exit_exam = extract_requirements_from_text(
+        "داشتن دیپلوم طبابت و امتحان شورای طبی را سپری کرده باشد.",
+        title="Medical Doctor/In-charge",
+        today=date(2026, 9, 30),
+    )
+    assert "medical_exit_exam" in {req.key for req in exit_exam.requirements}
+
+    specialist = extract_requirements_from_text(
+        "Medical Doctor – Dermatology & Aesthetic Medicine requires skin health and dermatology expertise.",
+        title="Medical Doctor – Dermatology & Aesthetic Medicine",
+        today=date(2026, 9, 30),
+    )
+    assert "medical_specialist" in {req.key for req in specialist.requirements}
+
+
+def test_female_point_plus_is_preference_not_hard_requirement_without_is():
+    result = extract_requirements_from_text(
+        "The female candidate point plus.",
+        title="Quality of Care Officer",
+        today=date(2026, 9, 30),
+    )
+    assert result.facts["gender_requirement"] == "female_encouraged"
+    req = [req for req in result.requirements if req.key == "gender_requirement"][0]
+    assert req.criticality == "important"
+
+
+def test_subject_title_instruction_becomes_deterministic_subject_but_missing_vacancy_number_blocks():
+    title_only = extract_requirements_from_text(
+        "Please mention the job title in the email subject line. Email / Application Form: jobs@example.org",
+        title="Medical Officer",
+        today=date(2026, 9, 30),
+    )
+    assert title_only.facts["application_subject"] == "Medical Officer"
+    assert title_only.facts["application_subject_required"] is True
+
+    missing_number = extract_requirements_from_text(
+        "Indicating the job title and vacancy number of the position in the email subject line. Email / Application Form: jobs@example.org",
+        title="TFU Nutrition Assistant",
+        today=date(2026, 9, 30),
+    )
+    assert missing_number.facts["application_subject"] is None
+    assert missing_number.facts["application_subject_required"] is True
+
+
+def test_license_number_and_document_requirements_are_distinct_from_generic_license():
+    generic = extract_requirements_from_text(
+        "Job Requirements: MD with valid medical license/registration required.",
+        title="Medical Doctor",
+        today=date(2026, 9, 30),
+    )
+    generic_keys = {req.key for req in generic.requirements}
+    assert "license_registration" in generic_keys
+    assert "license_number" not in generic_keys
+    assert "license_document" not in generic_keys
+
+    numbered = extract_requirements_from_text(
+        "Job Requirements: MD with valid medical registration. Candidates must enter their medical registration number in the application form.",
+        title="Medical Doctor",
+        today=date(2026, 9, 30),
+    )
+    numbered_keys = {req.key for req in numbered.requirements}
+    assert "license_registration" in numbered_keys
+    assert "license_number" in numbered_keys
+
+    documented = extract_requirements_from_text(
+        "Submission: Please attach a copy of your medical license certificate with the application.",
+        title="Medical Doctor",
+        today=date(2026, 9, 30),
+    )
+    assert "license_document" in {req.key for req in documented.requirements}
+
+
+def test_dari_email_title_and_position_code_instruction_requires_subject():
+    result = extract_requirements_from_text(
+        "لطف نموده اسناد را به ایمیل ارسال نمایید. هنگام ارسال اسناد از طریق ایمیل، درج عنوان و کُد بست مربوطه الزامی است.",
+        title="Technical Assistant",
+        today=date(2026, 9, 30),
+    )
+    assert result.facts["application_subject_required"] is True
+    assert result.facts["application_subject"] is None

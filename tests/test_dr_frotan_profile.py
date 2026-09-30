@@ -58,14 +58,20 @@ def test_build_dr_frotan_profile_from_source_cv():
     assert profile["personal"]["first_name"] == "Allah Yar"
     assert profile["personal"]["last_name"] == "Frotan"
     assert len(profile["work_history"]) == 5
-    assert profile["license_registration"]["verified"] is False
-    assert "Needs verification" in profile["license_registration"]["status"]
+    assert profile["license_registration"]["verified"] is True
+    assert "Verified" in profile["license_registration"]["status"]
+    assert profile["license_registration"]["number"] == ""
+    assert profile["medical_exit_exam"]["verified"] is True
+    assert "Verified" in profile["medical_exit_exam"]["status"]
 
 
 def test_dr_frotan_evidence_and_conservative_experience_from_dates():
     profile = build_profile_from_cv_text(SOURCE_CV_EXCERPT, resume_path="cv.txt")
     evidence = build_profile_evidence(profile, resume_text=SOURCE_CV_EXCERPT, today=date(2026, 9, 29))
     assert evidence.has("md_degree")
+    assert evidence.has("license_registration")
+    assert evidence.has("medical_exit_exam")
+    assert not evidence.has("license_number")
     assert evidence.has("bphs")
     assert evidence.has("ephs")
     assert evidence.has("hmis")
@@ -80,7 +86,7 @@ def test_dr_frotan_evidence_and_conservative_experience_from_dates():
     assert clinical_years < 4.0
 
 
-def test_dr_frotan_match_needs_license_verification_not_fabricated():
+def test_dr_frotan_owner_confirmed_license_and_exit_exam_satisfy_generic_md_credentials():
     profile = build_profile_from_cv_text(SOURCE_CV_EXCERPT, resume_path="cv.txt")
     job = {
         "id": "provincial-coordinator",
@@ -91,9 +97,9 @@ def test_dr_frotan_match_needs_license_verification_not_fabricated():
         "apply_url": "https://example.org/apply",
         "platform": "test",
         "description": """
-        Provincial Coordinator role requires MD, valid medical registration, at least 3 years clinical experience,
-        MoPH coordination, BPHS/EPHS, HMIS/DHIS2, IMAM/CMAM, safeguarding/PSEA, reporting, English, Dari and Pashto.
-        Closing date: 30 September 2026.
+        Provincial Coordinator role requires MD, valid medical registration, completion of the required medical exit exam,
+        at least 3 years clinical experience, MoPH coordination, BPHS/EPHS, HMIS/DHIS2, IMAM/CMAM,
+        safeguarding/PSEA, reporting, English, Dari and Pashto. Closing date: 30 September 2026.
         """,
         "metadata": {},
     }
@@ -105,4 +111,56 @@ def test_dr_frotan_match_needs_license_verification_not_fabricated():
     assert statuses["hmis"] == MET
     assert statuses["imam"] == MET
     assert statuses["safeguarding_psea"] == MET
-    assert statuses["license_registration"] == NEEDS_VERIFICATION
+    assert statuses["license_registration"] == MET
+    assert statuses["medical_exit_exam"] == MET
+    assert "license_number" not in statuses
+
+
+def test_dr_frotan_registration_number_remains_needs_verification_until_added():
+    profile = build_profile_from_cv_text(SOURCE_CV_EXCERPT, resume_path="cv.txt")
+    job = {
+        "id": "registration-number-needed",
+        "title": "Medical Doctor",
+        "company": "Health NGO",
+        "location": "Kabul",
+        "url": "https://example.org/job",
+        "apply_url": "https://example.org/apply",
+        "platform": "test",
+        "description": """
+        Medical Doctor role requires MD and valid medical registration. Applicants must enter their medical registration number
+        in the application form. Closing date: 30 September 2026.
+        """,
+        "metadata": {},
+    }
+    report = match_job_against_profile(job, profile, resume_text=SOURCE_CV_EXCERPT, today=date(2026, 9, 29)).to_dict()
+    statuses = {item["key"]: item["status"] for item in report["requirement_matches"]}
+    assert statuses["license_registration"] == MET
+    assert statuses["license_number"] == NEEDS_VERIFICATION
+
+
+def test_existing_dr_frotan_profile_is_normalized_with_owner_confirmed_credentials_for_matching():
+    profile = build_profile_from_cv_text(SOURCE_CV_EXCERPT, resume_path="cv.txt")
+    # Simulate an older saved profile from before the owner confirmed these credentials.
+    profile["license_registration"] = {
+        "authority": "",
+        "number": "",
+        "status": "Needs verification — no license/registration number is stated in the source CV",
+        "verified": False,
+    }
+    profile["medical_exit_exam"] = {"status": "Needs verification — not stated in the source CV", "verified": False}
+    job = {
+        "id": "old-profile-compatible",
+        "title": "Medical Doctor",
+        "company": "Health NGO",
+        "location": "Kabul",
+        "url": "https://example.org/job",
+        "apply_url": "https://example.org/apply",
+        "platform": "test",
+        "description": "Medical Doctor required. Valid medical license and completion of the required medical exit exam. Closing date: 30 September 2026.",
+        "metadata": {},
+    }
+    report = match_job_against_profile(job, profile, resume_text=SOURCE_CV_EXCERPT, today=date(2026, 9, 29)).to_dict()
+    statuses = {item["key"]: item["status"] for item in report["requirement_matches"]}
+    assert statuses["license_registration"] == MET
+    assert statuses["medical_exit_exam"] == MET
+    assert profile["license_registration"]["verified"] is False  # evidence builder does not mutate the caller's object

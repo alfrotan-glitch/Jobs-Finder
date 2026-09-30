@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from utils.medical_requirements import normalize_text
+from utils.profile import apply_owner_confirmed_dr_frotan_credentials
 
 
 MONTH_RANGE_RE = re.compile(
@@ -60,6 +61,10 @@ def build_profile_from_cv_text(cv_text: str, *, resume_path: str = "") -> dict[s
             "authority": "",
             "number": "",
             "status": "Needs verification — no license/registration number is stated in the source CV",
+            "verified": False,
+        },
+        "medical_exit_exam": {
+            "status": "Needs verification — not stated in the source CV",
             "verified": False,
         },
         "clinical_experience": {
@@ -122,6 +127,7 @@ def build_profile_from_cv_text(cv_text: str, *, resume_path: str = "") -> dict[s
         "ai": {"enabled": False, "enable_document_refinement": False, "default_backend": "claude_cli"},
         "source_cv_note": "Structured from the user-supplied CV. Do not add facts unless Dr. Frotan verifies them.",
     }
+    apply_owner_confirmed_dr_frotan_credentials(profile)
     return profile
 
 

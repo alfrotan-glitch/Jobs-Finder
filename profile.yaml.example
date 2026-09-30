@@ -22,7 +22,11 @@ medical_education:
 
 license_registration:
   authority: Ministry of Public Health
-  number: ""
+  number: ""   # Leave blank until the exact license/registration number is verified.
+  status: "Needs verification"
+  verified: false
+
+medical_exit_exam:
   status: "Needs verification"
   verified: false
 

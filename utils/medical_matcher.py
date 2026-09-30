@@ -21,6 +21,10 @@ MET = "Met"
 NOT_MET = "Not met"
 NEEDS_VERIFICATION = "Needs verification"
 
+READY_TO_APPLY = "READY_TO_APPLY"
+NEEDS_VERIFICATION_STATUS = "NEEDS_VERIFICATION"
+NOT_ELIGIBLE_STATUS = "NOT_ELIGIBLE"
+
 
 @dataclass
 class RequirementMatch:
@@ -41,6 +45,7 @@ class RequirementMatch:
 @dataclass
 class MatchReport:
     priority: str
+    readiness_status: str
     recommendation: str
     explanation: str
     requirement_matches: list[RequirementMatch]
@@ -53,6 +58,7 @@ class MatchReport:
     def to_dict(self) -> dict[str, Any]:
         return {
             "priority": self.priority,
+            "readiness_status": self.readiness_status,
             "recommendation": self.recommendation,
             "explanation": self.explanation,
             "requirement_matches": [m.to_dict() for m in self.requirement_matches],
@@ -68,7 +74,10 @@ class MatchReport:
 DIRECT_EVIDENCE_KEYS = {
     "md_degree": ["md_degree", "medical_education"],
     "license_registration": ["license_registration"],
+    "license_number": ["license_number"],
+    "license_document": ["license_document"],
     "medical_exit_exam": ["medical_exit_exam"],
+    "medical_specialist": ["medical_specialist"],
     "specialist_obgyn": ["specialist_obgyn"],
     "pharmacy_degree": ["pharmacy_degree"],
     "nursing_midwifery_certificate": ["nursing_midwifery_certificate"],
@@ -76,7 +85,7 @@ DIRECT_EVIDENCE_KEYS = {
     "afghanistan_experience": ["afghanistan_experience"],
     "bphs": ["bphs"],
     "ephs": ["ephs"],
-    "phc": ["phc"],
+    "phc": ["phc", "bphs", "ephs"],
     "hmis": ["hmis"],
     "imnci": ["imnci"],
     "imam": ["imam"],
@@ -132,6 +141,8 @@ def match_extracted_requirements(
     facts = dict(extracted.facts)
     if facts.get("application_url") or facts.get("application_email"):
         matches.append(_match_application_destination(facts))
+        if facts.get("application_subject_required"):
+            matches.append(_match_application_subject(facts))
     else:
         matches.append(
             RequirementMatch(
@@ -155,10 +166,12 @@ def match_extracted_requirements(
     recommendation = _recommendation(priority, matches, facts)
     explanation = _summary(priority, matches, facts)
 
+    readiness = classify_application_readiness(matches)
     return MatchReport(
         priority=priority,
+        readiness_status=readiness,
         recommendation=recommendation,
-        explanation=explanation,
+        explanation=f"{readiness}: {explanation}",
         requirement_matches=matches,
         extracted_requirements=extracted.to_dict(),
         profile_evidence=profile_evidence.to_dict(),
@@ -371,6 +384,33 @@ def _closing_date_match(requirement: Requirement, *, today: date) -> Requirement
     return _met(requirement, [value], f"The vacancy appears open until {value}.")
 
 
+def _match_application_subject(facts: dict[str, Any]) -> RequirementMatch:
+    subject = facts.get("application_subject")
+    if subject:
+        return RequirementMatch(
+            key="application_subject",
+            label="Required application subject",
+            required="Required",
+            status=MET,
+            explanation="A required email subject/reference was found or can be deterministically formed from the job title instruction.",
+            evidence=[str(subject)],
+            required_evidence=[],
+            value=subject,
+            criticality="essential",
+        )
+    return RequirementMatch(
+        key="application_subject",
+        label="Required application subject",
+        required="Required",
+        status=NEEDS_VERIFICATION,
+        explanation="The vacancy requires a subject/reference, but no exact subject or vacancy number was found. Verify before applying.",
+        evidence=[],
+        required_evidence=[],
+        value=None,
+        criticality="essential",
+    )
+
+
 def _match_application_destination(facts: dict[str, Any]) -> RequirementMatch:
     email = facts.get("application_email")
     url = facts.get("application_url")
@@ -456,6 +496,43 @@ def _needs_verification(requirement: Requirement, explanation: str) -> Requireme
         value=requirement.value,
         criticality=requirement.criticality,
     )
+
+
+# ---------------------------------------------------------------------------
+# Strict application readiness
+# ---------------------------------------------------------------------------
+
+
+def classify_application_readiness(report_or_matches: MatchReport | dict[str, Any] | list[RequirementMatch] | list[dict[str, Any]]) -> str:
+    """Classify strict readiness for applying.
+
+    READY_TO_APPLY is returned only when every mandatory/required requirement is
+    Met.  A missing mandatory fact is NEEDS_VERIFICATION, not ready.  A proven
+    conflict, insufficient years, or passed closing date is NOT_ELIGIBLE.
+    Preferred/informational open items do not block readiness.
+    """
+    if isinstance(report_or_matches, MatchReport):
+        matches = report_or_matches.requirement_matches
+    elif isinstance(report_or_matches, dict):
+        matches = report_or_matches.get("requirement_matches", [])
+    else:
+        matches = report_or_matches
+
+    required_items = []
+    for item in matches:
+        get = item.get if isinstance(item, dict) else lambda key, default=None: getattr(item, key, default)
+        if get("required") == "Required" or get("criticality") == "essential":
+            required_items.append(item)
+
+    for item in required_items:
+        get = item.get if isinstance(item, dict) else lambda key, default=None: getattr(item, key, default)
+        if get("status") == NOT_MET:
+            return NOT_ELIGIBLE_STATUS
+    for item in required_items:
+        get = item.get if isinstance(item, dict) else lambda key, default=None: getattr(item, key, default)
+        if get("status") == NEEDS_VERIFICATION:
+            return NEEDS_VERIFICATION_STATUS
+    return READY_TO_APPLY
 
 
 # ---------------------------------------------------------------------------

@@ -290,7 +290,28 @@ async def test_ready_to_apply_application_package_integration(watcher_db, profil
     assert tracker.get_job_by_id(job_id)["status"] == "prepared"
 
 
-
+@pytest.mark.asyncio
+async def test_not_eligible_watcher_job_does_not_prepare_application_package(watcher_db, profile, tmp_path):
+    ineligible = medical_job(
+        job_id="female-only-md",
+        title="Medical Doctor (Female)",
+        description_extra="Gender: Female. Only female candidates are eligible.",
+    )
+    result = await scan(profile, [ineligible])
+    assert result["not_eligible_count"] == 1
+    row = get_watcher_jobs(active_only=False)[0]
+    assert row["readiness_status"] == "NOT_ELIGIBLE"
+    prepared = prepare_application_for_watcher_job(
+        row["canonical_id"],
+        profile,
+        resume_text="MD doctor with clinical experience, HMIS, BPHS, EPHS, IMAM, IPC, Dari, English, Pashto.",
+        out_dir=str(tmp_path / "applications"),
+    )
+    assert prepared["ok"] is False
+    assert prepared["readiness_status"] == "NOT_ELIGIBLE"
+    assert prepared["generated_paths"] == {}
+    assert not (tmp_path / "applications").exists()
+    assert tracker.get_job_by_id(row["canonical_id"])["status"] == "not_eligible"
 
 
 @pytest.mark.asyncio

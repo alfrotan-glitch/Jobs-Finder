@@ -816,7 +816,7 @@ async def tailor_job(job_id: str) -> dict:
         try:
             import yaml
             from utils.documents import prepare_application_bundle
-            from utils.medical_matcher import match_job_against_profile
+            from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
             from utils.resume_parser import extract_resume_text
             from utils.tracker import log_medical_match
 
@@ -827,6 +827,12 @@ async def tailor_job(job_id: str) -> dict:
             resume_text = extract_resume_text(profile.get("resume_path", ""))
             match_report = match_job_against_profile(job, profile, resume_text=resume_text).to_dict()
             log_medical_match(job_id, match_report)
+            if match_report.get("readiness_status") == NOT_ELIGIBLE_STATUS:
+                await broadcast_event({
+                    "type": "tailor_error",
+                    "data": {"id": job_id, "error": "Not preparing documents: deterministic matching classified this vacancy as NOT_ELIGIBLE."}
+                })
+                return
             result = prepare_application_bundle(job, profile, match_report, resume_text=resume_text)
 
             update_tailored_resume(job_id, result)

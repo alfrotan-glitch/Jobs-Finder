@@ -9,6 +9,7 @@ same content.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -80,6 +81,18 @@ def _clean_bullet(line: str) -> str:
     return str(line or "").strip().lstrip("-•* ").strip()
 
 
+def _coerce_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
 def _split_languages(value: str) -> list[tuple[str, str]]:
     result: list[tuple[str, str]] = []
     text = value.strip().lstrip("- ")
@@ -132,7 +145,8 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
     target_role = target_role or str(job.get("title") or package.get("job_title") or "Target Role")
     target_org = target_org or str(job.get("company") or package.get("company") or "Target Organization")
     target_location = target_location or str(job.get("location") or "")
-    reference = str((job.get("metadata") or {}).get("reference_number") or package.get("vacancy_reference") or "").strip()
+    job_metadata = _coerce_dict(job.get("metadata"))
+    reference = str(job_metadata.get("reference_number") or package.get("vacancy_reference") or "").strip()
     sections = _section_map(lines)
     profile = " ".join(sections.get("PROFESSIONAL SUMMARY", []) or sections.get("PROFESSIONAL PROFILE", []))
     strengths = [_clean_bullet(x) for x in sections.get("CORE COMPETENCIES", [])]
@@ -206,7 +220,8 @@ def parse_cover_letter_text(text: str, metadata: dict[str, Any] | None = None) -
     target_role = str(job.get("title") or package.get("job_title") or "Target Role")
     target_org = str(job.get("company") or package.get("company") or "Target Organization")
     target_location = str(job.get("location") or "")
-    reference = str((job.get("metadata") or {}).get("reference_number") or package.get("vacancy_reference") or "").strip()
+    job_metadata = _coerce_dict(job.get("metadata"))
+    reference = str(job_metadata.get("reference_number") or package.get("vacancy_reference") or "").strip()
     return {
         "design_system": DESIGN_SYSTEM_VERSION,
         "name": name,

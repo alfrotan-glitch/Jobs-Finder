@@ -652,7 +652,7 @@ def update_tailored_resume(job_id: str, tailored_data: dict) -> bool:
     payload = json.dumps(tailored_data, ensure_ascii=False)
     conn = get_db()
     conn.execute(
-        "UPDATE applications SET tailored_resume = ?, documents_json = ?, status = CASE WHEN status IN ('recommended','needs_verification','not_eligible','analyzed','matched','discovered') THEN 'prepared' ELSE status END WHERE id = ?",
+        "UPDATE applications SET tailored_resume = ?, documents_json = ?, status = CASE WHEN status IN ('recommended','needs_verification','analyzed','matched','discovered') THEN 'prepared' ELSE status END WHERE id = ?",
         (payload, payload, job_id)
     )
     conn.commit()

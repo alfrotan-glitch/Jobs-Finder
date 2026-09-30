@@ -1404,6 +1404,17 @@ def prepare_application_for_watcher_job(
     if not match_report:
         match_report = match_job_against_profile(app_job, profile, resume_text=resume_text).to_dict()
         log_medical_match(canonical_id, match_report)
+    readiness = readiness_from_match(match_report)
+    if readiness == NOT_ELIGIBLE:
+        return {
+            "ok": False,
+            "job_id": canonical_id,
+            "readiness_status": readiness,
+            "error": "Application package not prepared because deterministic matching classified this vacancy as NOT_ELIGIBLE.",
+            "generated_paths": {},
+            "application_package": {},
+            "no_submission_performed": True,
+        }
     from utils.documents import prepare_application_bundle
 
     docs = prepare_application_bundle(app_job, profile, match_report, resume_text=resume_text, out_dir=out_dir)
@@ -1411,7 +1422,7 @@ def prepare_application_for_watcher_job(
     return {
         "ok": True,
         "job_id": canonical_id,
-        "readiness_status": readiness_from_match(match_report),
+        "readiness_status": readiness,
         "generated_paths": docs.get("generated_paths", {}),
         "application_package": docs.get("application_package", {}),
         "no_submission_performed": True,

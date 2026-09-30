@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
-from utils.medical_matcher import MET, NEEDS_VERIFICATION, NOT_MET
+from utils.medical_matcher import MET, NEEDS_VERIFICATION, NOT_ELIGIBLE_STATUS, NOT_MET
 from utils.profile import build_profile_evidence
 
 
@@ -149,17 +149,26 @@ def _experience_header(entry: dict[str, Any]) -> str:
 
 
 def _rank_work_entries(entries: list[dict[str, Any]], job: dict[str, Any], matched_labels: list[str]) -> list[dict[str, Any]]:
-    terms = " ".join([job.get("title", ""), job.get("description", ""), " ".join(matched_labels)]).lower()
-    keywords = [
-        "medical", "doctor", "clinical", "nutrition", "tfu", "sam", "imam", "cmam", "hmis", "dhis2",
-        "bphs", "ephs", "moph", "coordination", "supervision", "safeguarding", "psea", "reporting",
-        "supply", "logistics", "emergency", "covid", "ngo", "humanitarian",
-    ]
-    active_terms = [kw for kw in keywords if kw in terms] or keywords
+    focus_text = "\n".join([str(job.get("title", "")), str(job.get("description", "")), "\n".join(matched_labels)])
+    terms = _tokenize_focus(focus_text)
 
-    def score(entry: dict[str, Any]) -> int:
-        text = _stringify_item(entry).lower() + " " + " ".join(entry.get("bullets") or []).lower()
-        return sum(1 for kw in active_terms if kw in text)
+    def score(entry: dict[str, Any]) -> tuple[int, int, int, str]:
+        title = str(entry.get("title") or entry.get("role") or "")
+        text = (_stringify_item(entry) + " " + " ".join(str(b) for b in (entry.get("bullets") or []))).strip()
+        hits = len(_focus_term_hits(text, terms))
+        title_lower = title.lower()
+        health_role_bonus = 0
+        if any(token in title_lower for token in ["medical doctor", "medical officer", "tfu medical", "physician"]):
+            health_role_bonus += 4
+        if any(token in title_lower for token in ["health and nutrition", "nutrition supervisor", "technical supervisor"]):
+            health_role_bonus += 4
+        if any(token in title_lower for token in ["supervisor", "team leader", "in-charge"]):
+            health_role_bonus += 2
+        # Administrative / communications roles stay available for coordination-heavy
+        # vacancies, but should not outrank direct clinical/health supervision evidence.
+        support_role_penalty = 2 if any(token in title_lower for token in ["administrative", "finance", "public relations", "communications advisor"]) else 0
+        recency = str(entry.get("end") or entry.get("end_date") or entry.get("start") or "")
+        return (hits + health_role_bonus - support_role_penalty, hits, health_role_bonus, recency)
 
     return sorted(entries, key=score, reverse=True)
 
@@ -210,7 +219,7 @@ def _package_verification_blockers(match_report: dict[str, Any]) -> list[dict[st
 # ---------------------------------------------------------------------------
 
 TAILORING_KEYWORDS = [
-    "medical", "doctor", "clinical", "diagnosis", "treatment", "patient", "curative",
+    "medical", "doctor", "clinical", "diagnosis", "treatment", "patient", "curative", "opd", "mobile health",
     "primary health", "phc", "bphs", "ephs", "hmis", "dhis2", "data", "report",
     "nutrition", "tfu", "tsfp", "sam", "imam", "cmam", "iycf", "imnci",
     "supervision", "supervise", "mentor", "capacity", "training", "management", "coordination",
@@ -218,6 +227,9 @@ TAILORING_KEYWORDS = [
     "quality", "ipc", "patient safety", "safecare", "emergency", "outbreak", "covid", "safeguarding", "psea",
     "english", "dari", "pashto", "software", "computer", "ms office",
 ]
+
+
+FOCUS_STOP_TERMS = {"office", "ms", "program", "project"}
 
 
 def _tokenize_focus(text: str) -> set[str]:
@@ -229,14 +241,46 @@ def _tokenize_focus(text: str) -> set[str]:
             if keyword.endswith("ies"):
                 terms.add(keyword[:-3] + "y")
             for part in re.split(r"[^a-z0-9]+", keyword):
-                if len(part) >= 3:
+                if len(part) >= 3 and part not in FOCUS_STOP_TERMS:
                     terms.add(part)
                     if part.endswith("ies"):
                         terms.add(part[:-3] + "y")
     for word in re.findall(r"[a-z0-9]{4,}", lower):
-        if word in {"medical", "health", "doctor", "project", "clinic", "clinical", "supervision", "management", "quality", "training", "reporting", "referral"}:
+        if word in {"medical", "health", "doctor", "clinic", "clinical", "supervision", "management", "quality", "training", "reporting", "referral"}:
             terms.add(word)
     return terms
+
+
+def _focus_term_hits(text: str, terms: set[str]) -> list[str]:
+    lower = text.lower()
+    hits: list[str] = []
+    variants = {
+        "supervision": ["supervision", "supervise", "supervised", "supervisor", "supervisory"],
+        "supervise": ["supervise", "supervised", "supervisor", "supervision"],
+        "management": ["management", "managed", "manager", "manage"],
+        "coordination": ["coordination", "coordinate", "coordinated", "coordinating"],
+        "reporting": ["reporting", "reports", "report"],
+        "referral": ["referral", "referrals"],
+        "supply": ["supply", "supplies", "stock", "logistics"],
+        "supplies": ["supply", "supplies", "stock", "logistics"],
+        "clinical": ["clinical", "clinic"],
+        "health": ["health", "healthcare"],
+    }
+    for term in terms:
+        if not term or term in FOCUS_STOP_TERMS:
+            continue
+        candidates = variants.get(term, [term])
+        matched = False
+        for candidate in candidates:
+            if " " in candidate or "/" in candidate or "&" in candidate:
+                matched = candidate in lower
+            else:
+                matched = re.search(rf"(?<![a-z0-9]){re.escape(candidate)}(?![a-z0-9])", lower) is not None
+            if matched:
+                break
+        if matched:
+            hits.append(term)
+    return hits
 
 
 def _requirement_matches(match_report: dict[str, Any]) -> list[dict[str, Any]]:
@@ -300,12 +344,23 @@ def _rank_strings_for_job(items: list[str], job: dict[str, Any], match_report: d
         return _safe_bullets(items, limit=limit)
 
     def score(item: str) -> tuple[int, int, int]:
+        hits = len(_focus_term_hits(item, terms))
+        if hits <= 0:
+            return (0, 0, -abs(len(item) - 160))
         lower = item.lower()
-        hits = sum(1 for term in terms if term and term in lower)
         work_evidence_bonus = 2 if ("(" in item and "|" in item) else 0
-        # Prefer dated work-history evidence over bare skills/certificates, then
-        # concise content-rich bullets over long boilerplate.
-        return (hits + work_evidence_bonus, hits, -abs(len(item) - 160))
+        health_evidence_bonus = 0
+        if any(token in lower for token in ["medical doctor", "tfu medical", "health and nutrition supervisor", "clinical assessment", "hmis", "bphs", "ephs", "imam"]):
+            health_evidence_bonus = 2
+        support_role_penalty = 0
+        if "administrative and finance officer" in lower:
+            support_role_penalty = 4
+        elif "public relations" in lower or "communications advisor" in lower:
+            support_role_penalty = 2
+        # Prefer dated health/clinical/supervisory evidence.  General admin or
+        # communications experience remains available for review, but it must not
+        # outrank direct medical and health-program evidence on health vacancies.
+        return (hits + work_evidence_bonus + health_evidence_bonus - support_role_penalty, hits, -abs(len(item) - 160))
 
     ranked = sorted([str(item) for item in items if str(item).strip()], key=score, reverse=True)
     ranked = [item for item in ranked if score(item)[0] > 0] or ranked
@@ -338,6 +393,7 @@ def _job_focus_phrases(job: dict[str, Any], match_report: dict[str, Any] | None 
     add("nutrition service implementation", "nutrition", "malnutrition")
     add("BPHS/EPHS compliance", "bphs", "ephs")
     add("clinical assessment, diagnosis and treatment", "diagnosis", "treatment", "clinical", "curative")
+    add("OPD and mobile health service delivery", "opd", "mobile health", "mobile team")
     add("infection prevention and control", "infection", "ipc")
     add("MoPH and stakeholder coordination", "moph", "ministry of public health", "stakeholder", "government authorities")
     add("district and health-center selection", "district", "health center", "health centre")
@@ -952,7 +1008,6 @@ def _write_text_docx_pdf(
     canonical content.
     """
     from utils.document_design import render_professional_document_artifacts
-    from utils.master_cv import write_docx, write_pdf
 
     base = Path(base_path)
     try:
@@ -965,17 +1020,10 @@ def _write_text_docx_pdf(
     except Exception as exc:  # pragma: no cover - environment/export dependency safety
         base.parent.mkdir(parents=True, exist_ok=True)
         txt = base.with_suffix(".txt")
-        docx = base.with_suffix(".docx")
-        pdf = base.with_suffix(".pdf")
         txt.write_text(text or "", encoding="utf-8")
-        docx.with_suffix(".docx.txt").write_text(f"Designed DOCX export failed: {exc}\n\n{text or ''}", encoding="utf-8")
-        pdf.with_suffix(".pdf.txt").write_text(f"Designed PDF export failed: {exc}\n\n{text or ''}", encoding="utf-8")
-        try:
-            write_docx(text or "", docx)
-            write_pdf(text or "", pdf)
-        except Exception:
-            pass
-        return {"txt": str(txt), "docx": str(docx), "pdf": str(pdf)}
+        base.with_suffix(".docx.txt").write_text(f"Designed DOCX export failed: {exc}\n\n{text or ''}", encoding="utf-8")
+        base.with_suffix(".pdf.txt").write_text(f"Designed PDF export failed: {exc}\n\n{text or ''}", encoding="utf-8")
+        raise RuntimeError(f"Global document design export failed for {base}: {exc}") from exc
 
 
 def _application_document_base_paths(job: dict[str, Any], out_dir: str | Path) -> dict[str, Path]:
@@ -1067,7 +1115,16 @@ def prepare_application_bundle(
     resume_text: str = "",
     out_dir: str | Path = "documents/applications",
 ) -> dict[str, Any]:
-    """Generate documents, application package, and file exports for one job."""
+    """Generate documents, application package, and file exports for one job.
+
+    Application documents are only generated for eligible or reviewable
+    vacancies.  A deterministic NOT_ELIGIBLE match means the pipeline must not
+    create positive CV/cover-letter artifacts for that role.
+    """
+    if str(match_report.get("readiness_status") or "") == NOT_ELIGIBLE_STATUS:
+        raise ValueError(
+            f"Refusing to prepare application documents for NOT_ELIGIBLE vacancy {job.get('id') or job.get('title') or ''}".strip()
+        )
     docs = generate_tailored_documents(job, profile, match_report, resume_text=resume_text)
     expected_paths = _expected_document_paths(job, out_dir)
     package = generate_application_package(

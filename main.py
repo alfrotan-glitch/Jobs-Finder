@@ -27,7 +27,7 @@ from adapters.stagehand_adapter import apply_smart
 from utils.discovery import discover_all_jobs
 from utils.documents import prepare_application_bundle
 from utils.job_watcher import run_job_watch_scan_sync
-from utils.medical_matcher import match_job_against_profile
+from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.resume_parser import extract_resume_text
 from utils.profile_builder import build_profile_from_cv_file
 from utils.profile import save_profile
@@ -162,6 +162,10 @@ def cmd_prepare(profile: dict, job_id: str):
     resume_text = extract_resume_text(profile.get("resume_path", ""))
     report = match_job_against_profile(job, profile, resume_text=resume_text).to_dict()
     log_medical_match(job_id, report)
+    if report.get("readiness_status") == NOT_ELIGIBLE_STATUS:
+        print("Not preparing documents: deterministic matching classified this vacancy as NOT_ELIGIBLE.")
+        print(report.get("explanation", ""))
+        return
     docs = prepare_application_bundle(job, profile, report, resume_text=resume_text)
     update_tailored_resume(job_id, docs)
     package = docs.get("application_package", {})

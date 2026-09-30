@@ -1,6 +1,8 @@
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from utils.discovery import Job, deduplicate_jobs
 from utils.documents import generate_application_package, generate_tailored_documents, prepare_application_bundle
 from utils.medical_matcher import match_job_against_profile
@@ -66,7 +68,7 @@ def test_application_state_transitions_require_confirmation(tmp_path, monkeypatc
     assert tracker.get_job_by_id("job-state")["status"] == "submitted"
 
 
-def test_low_priority_job_can_still_be_prepared_and_opened_for_review(tmp_path, monkeypatch):
+def test_not_eligible_job_is_not_promoted_to_prepared_by_document_storage(tmp_path, monkeypatch):
     import utils.tracker as tracker
     from utils.discovery import Job
 
@@ -85,12 +87,10 @@ def test_low_priority_job_can_still_be_prepared_and_opened_for_review(tmp_path, 
     tracker.log_medical_match(job.id, {"priority": "Low priority", "explanation": "Not enough years", "facts": {}})
     assert tracker.get_job_by_id(job.id)["status"] == "not_eligible"
     tracker.update_tailored_resume(job.id, {"tailored_cv_text": "draft", "cover_letter": "letter"})
-    assert tracker.get_job_by_id(job.id)["status"] == "prepared"
-    ok, message = tracker.transition_application_state(job.id, "opened")
-    assert ok, message
+    assert tracker.get_job_by_id(job.id)["status"] == "not_eligible"
     ok, message = tracker.transition_application_state(job.id, "submitted", explicit_confirmation=False)
     assert not ok
-    assert "Explicit user confirmation" in message
+    assert "not_eligible -> submitted is not allowed" in message
 
 
 def test_tailored_cv_is_application_ready_and_keeps_warnings_separate():
@@ -516,3 +516,137 @@ def test_global_document_design_system_renders_cv_and_cover_letter_for_every_bun
     assert "TARGET ORGANIZATION: French Medical Institute for Mothers and Children" in fmic_cv
     assert "TARGET ORGANIZATION: Bakhter Development Network - BDN" in bdn_cv
     assert fmic_cv != bdn_cv
+
+
+def test_representative_live_vacancies_are_tailored_consistent_and_evidence_safe(tmp_path):
+    import fitz
+    from docx import Document
+    from scripts.run_live_market_verified_pages import build_profile, live_verified_jobs
+    from utils.medical_matcher import NOT_ELIGIBLE_STATUS
+
+    canonical_ids = {
+        "fmic-medical-officer-2026-571": "watch_aeb9c295fd34296adf",
+        "acbar-bdn-technical-supervisor-145872": "watch_144f634197369fea66",
+        "acbar-bdn-physician-medical-doctor-145806": "watch_79b6870a0efe76cc12",
+        "acbar-hntpo-medical-doctor-md-145902": "watch_4134ecab24ab7a942c",
+        "acbar-hntpo-tsfp-project-supervisor-145882": "watch_061e136ccf4e01b51b",
+        "acbar-cha-medical-doctor-nawbahar-shahjoy-145911": "watch_6b218689d6aa9b0b6f",
+        "acbar-pu-ami-medical-doctor-roster-145658": "watch_17dc387797aff0f077",
+        "acbar-opha-medical-doctor-in-charge-145622": "watch_56af614346d654be8a",
+    }
+    expected_focus = {
+        "watch_aeb9c295fd34296adf": ["clinical", "infection", "patient safety"],
+        "watch_144f634197369fea66": ["supervision", "medical-supply", "HMIS"],
+        "watch_79b6870a0efe76cc12": ["diagnosis", "BPHS", "clinical"],
+        "watch_4134ecab24ab7a942c": ["HMIS", "MoPH", "clinical"],
+        "watch_061e136ccf4e01b51b": ["TSFP", "nutrition", "stock"],
+        "watch_6b218689d6aa9b0b6f": ["BPHS", "clinic", "supervision"],
+        "watch_17dc387797aff0f077": ["OPD", "BPHS", "HMIS"],
+        "watch_56af614346d654be8a": ["IMNCI", "HMIS", "clinic"],
+    }
+    profile, resume_text = build_profile()
+    jobs = {job.id: job.to_dict() for job in live_verified_jobs()}
+
+    for source_id, canonical_id in canonical_ids.items():
+        job = jobs[source_id]
+        job["id"] = canonical_id
+        report = match_job_against_profile(job, profile, resume_text=resume_text, today=date(2026, 9, 30)).to_dict()
+        assert report["readiness_status"] != NOT_ELIGIBLE_STATUS
+        docs = prepare_application_bundle(job, profile, report, resume_text=resume_text, out_dir=tmp_path)
+        package = docs["application_package"]
+        paths = docs["generated_paths"]
+        cv_text = Path(paths["tailored_cv"]["txt"]).read_text(encoding="utf-8")
+        cover_text = Path(paths["cover_letter"]["txt"]).read_text(encoding="utf-8")
+        combined = cv_text + "\n" + cover_text
+
+        assert package["job_id"] == canonical_id
+        assert package["job_title"] == job["title"]
+        assert package["company"] == job["company"]
+        assert package["source_url"] == job["metadata"]["source_url"]
+        assert package["deadline"] == job["metadata"]["closing_date"]
+        assert package["deadline"] in Path(paths["application_package_txt"]).read_text(encoding="utf-8")
+        assert package["application_route"]
+        assert package["no_submission_performed"] is True
+
+        assert f"TARGET ROLE: {job['title']}" in cv_text
+        assert f"TARGET ORGANIZATION: {job['company']}" in cv_text
+        assert f"VACANCY LOCATION: {job['location']}" in cv_text
+        if job["metadata"].get("reference_number"):
+            assert job["metadata"]["reference_number"] in cover_text
+            assert package["vacancy_reference"] == job["metadata"]["reference_number"]
+
+        assert "Doctor of Medicine (MD), Curative Medicine" in cv_text
+        assert "medical professional registration/license" in cv_text
+        assert "Medical Exit Exam" in cv_text
+        assert "Dari/Persian — Native" in cv_text
+        assert "English — Fluent" in cv_text
+        assert "Pashto — Intermediate" in cv_text
+        assert "license number" not in combined.lower()
+        assert "registration number" not in combined.lower()
+        assert "certificate number" not in combined.lower()
+        assert "patient volume" not in combined.lower()
+        assert "pediatric specialist" not in combined.lower()
+        assert "cardiology" not in combined.lower()
+        assert "NEEDS VERIFICATION" not in combined
+        assert "My relevant experience includes:" in cover_text
+        assert "I understand that the vacancy emphasizes" in cover_text
+        for term in expected_focus[canonical_id]:
+            assert term.lower() in combined.lower()
+
+        for group in ["tailored_cv", "cover_letter"]:
+            for ext in ["txt", "docx", "pdf"]:
+                assert Path(paths[group][ext]).exists(), paths[group][ext]
+        cv_pdf = fitz.open(paths["tailored_cv"]["pdf"])
+        cover_pdf = fitz.open(paths["cover_letter"]["pdf"])
+        assert cv_pdf.page_count >= 2
+        assert cover_pdf.page_count == 1
+        cv_pdf_text = "\n".join(page.get_text() for page in cv_pdf)
+        cover_pdf_text = "\n".join(page.get_text() for page in cover_pdf)
+        assert job["title"] in cv_pdf_text
+        assert job["title"] in cover_pdf_text
+        assert "APPLICATION LETTER" in cover_pdf_text
+        assert "PROFESSIONAL EXPERIENCE" in cv_pdf_text
+        cv_doc = Document(paths["tailored_cv"]["docx"])
+        cover_doc = Document(paths["cover_letter"]["docx"])
+        cv_doc_text = "\n".join(
+            [paragraph.text for paragraph in cv_doc.paragraphs]
+            + [paragraph.text for table in cv_doc.tables for row in table.rows for cell in row.cells for paragraph in cell.paragraphs]
+        )
+        cover_doc_text = "\n".join(paragraph.text for paragraph in cover_doc.paragraphs)
+        assert "PROFESSIONAL EXPERIENCE" in cv_doc_text
+        assert "APPLICATION LETTER" in cover_doc_text
+
+
+def test_tailoring_does_not_promote_unrelated_office_roles_for_fmic():
+    from scripts.run_live_market_verified_pages import build_profile, live_verified_jobs
+
+    profile, resume_text = build_profile()
+    job = next(item.to_dict() for item in live_verified_jobs() if item.id == "fmic-medical-officer-2026-571")
+    job["id"] = "watch_aeb9c295fd34296adf"
+    report = match_job_against_profile(job, profile, resume_text=resume_text, today=date(2026, 9, 30)).to_dict()
+    docs = generate_tailored_documents(job, profile, report, resume_text=resume_text)
+    cover = docs["cover_letter"]
+    highlights = "\n".join(docs["selected_vacancy_fit_evidence"])
+    assert "Administrative and Finance Officer" not in cover
+    assert "Administrative and Finance Officer" not in highlights
+    assert "Public Relations & Communications Advisor" not in cover
+
+
+def test_not_eligible_match_refuses_application_document_generation(tmp_path):
+    profile = _technical_supervisor_profile()
+    profile["personal"]["gender"] = "Male"
+    job = {
+        "id": "female-only-md",
+        "title": "Medical Doctor (Female)",
+        "company": "Health NGO",
+        "location": "Kabul",
+        "url": "https://example.org/job",
+        "apply_url": "https://example.org/apply",
+        "description": "Gender: Female. MD required. Valid medical license required. Closing date: 2026-10-10.",
+        "metadata": {},
+    }
+    report = match_job_against_profile(job, profile, today=date(2026, 9, 30)).to_dict()
+    assert report["readiness_status"] == "NOT_ELIGIBLE"
+    with pytest.raises(ValueError):
+        prepare_application_bundle(job, profile, report, out_dir=tmp_path)
+    assert list(tmp_path.iterdir()) == []

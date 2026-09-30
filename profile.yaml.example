@@ -1,121 +1,144 @@
+# Afghan MD Job Assistant profile
+# This file is the single source of truth for your facts. The app may parse your
+# CV for evidence, but it will not silently add or change factual claims here.
+
 personal:
   first_name: Your
   last_name: Name
   email: you@example.com
-  phone: +1-555-000-0000
-  location: San Francisco, CA
-  linkedin: https://linkedin.com/in/yourprofile
-  github: https://github.com/yourusername
-  portfolio: https://yoursite.com
-resume_path: ./resume.pdf
+  phone: "+93-700-000-000"
+  location: Kabul, Afghanistan
+  nationality: Afghan
+  gender: ""   # Optional; only used to evaluate explicit gender-restricted vacancies.
+  linkedin: ""
+
+resume_path: ./cv.pdf
+
+medical_education:
+  - degree: MD
+    institution: Example Medical University
+    graduation_year: 2020
+    verified: true
+
+license_registration:
+  authority: Ministry of Public Health
+  number: ""
+  status: "Needs verification"
+  verified: false
+
+clinical_experience:
+  years: 0
+  settings: []        # e.g. hospital, clinic, PHC, emergency, maternity
+
+work_history:
+  # - title: Medical Officer
+  #   organization: Example NGO
+  #   location: Kabul
+  #   start: 2021-01
+  #   end: Present
+  #   description: Clinical consultations, reporting, HMIS, supervision.
+
+skills:
+  medical:
+    - Clinical care
+    - Primary health care
+  public_health: []   # e.g. BPHS, EPHS, HMIS, IMNCI, IMAM, nutrition, SRHR, IPC
+  management: []      # e.g. supervision, reporting, team management
+
+languages:
+  - name: Dari
+    level: Native
+  - name: Pashto
+    level: ""
+  - name: English
+    level: ""
+
+certificates: []      # e.g. IMNCI, IMAM, IPC, nutrition, HMIS
+ngo_humanitarian_experience:
+  years: 0
+  organizations: []
+
 preferences:
   roles:
-  - Software Engineer
-  - Backend Engineer
-  - Full Stack Engineer
-  - Platform Engineer
-  keywords:
-  - Python
-  - Rust
-  - distributed systems
-  - AI
-  min_match_score: 65
+    - Medical Officer
+    - Medical Doctor
+    - Physician
+    - Health Officer
+    - Nutrition Officer
+  locations:
+    - Kabul
+    - Afghanistan
+  preferred_locations:
+    - Kabul
+  willing_to_relocate: false
+  field_deployment: false
   remote_only: false
-  locations:
-  - San Francisco
-  - Remote
-  exclude_companies:
-  - ExampleBadCorp
-common_answers:
-  authorized_to_work: 'Yes'
-  require_sponsorship: 'No'
-  years_experience: '5'
-  willing_to_relocate: Open to discussion
-  salary_expectation: Open to discuss based on total compensation
-  earliest_start_date: 2 weeks notice
-  how_did_you_hear: Online job board
-  gender: Prefer not to say
-  race_ethnicity: Prefer not to say
-  veteran_status: I am not a veteran
-  disability_status: Prefer not to say
-target_boards:
-  greenhouse:
-  - anthropic
-  - stripe
-  - figma
-  - vercel
-  - datadog
-  lever:
-  - anyscale
+
+# Afghanistan-first sources. Each source can fail without breaking the app.
+job_sources:
+  acbar:
+    enabled: true
+    urls:
+      - https://www.acbar.org/jobs
+  reliefweb:
+    enabled: true
+    limit: 25
+  official_career_pages:
+    # Add official organization career pages here when useful.
+    # - organization: WHO
+    #   url: https://careers.who.int/careersection/ex/jobsearch.ftl
+    # - organization: UNICEF
+    #   url: https://jobs.unicef.org/
+  ats:
+    greenhouse: []
+    lever: []
+
+# Generic job boards are opt-in to avoid noisy non-medical results.
 search:
-  enabled: true
+  generic_job_boards_enabled: false
   queries:
-  - Software Engineer
-  - Backend Engineer
+    - Medical Officer Afghanistan
+    - Medical Doctor Afghanistan
+    - Public Health Afghanistan
   locations:
-  - San Francisco, CA
-  - Remote
-  distance_miles: 50
+    - Afghanistan
+    - Kabul
   results_per_query: 25
-  salary_min: 0
-skills:
-  primary:
-  - Python
-  - Rust
-  - Go
-  - distributed systems
-  secondary:
-  - Kubernetes
-  - Docker
-  - AWS
-  - PostgreSQL
-  - React
-ideal_job_description: 'A senior backend or platform engineering role at a technology
-  company building distributed systems, developer tools, or AI infrastructure. Strong
-  engineering culture, remote-friendly, competitive compensation.'
-favorite_companies:
-- anthropic
-- stripe
-- figma
-- vercel
-custom_career_pages: []
+
+common_answers:
+  willing_to_relocate: Needs review
+  earliest_start_date: Needs review
+  salary_expectation: Needs review
+  how_did_you_hear: Online job board
+  authorized_to_work: Needs review
+  require_sponsorship: Needs review
+
 rate_limits:
-  max_applications_per_day: 25
+  max_applications_per_day: 10
   min_delay_seconds: 60
   max_delay_seconds: 180
+
 schedule:
-  discover_interval_hours: 6
-  score_interval_minutes: 30
+  discover_interval_hours: 12
+  score_interval_minutes: 60
   enabled: true
+
 email:
   enabled: false
   imap_server: imap.gmail.com
-  email: ''
-  app_password: ''
+  email: ""
+  app_password: ""
   check_interval_hours: 12
 
-# AI Backend Configuration (optional — defaults to claude_cli for everything)
-# Each component can independently use a different LLM backend.
+# AI is optional and never required for discovery, matching, or document drafts.
 ai:
+  enabled: false
+  enable_document_refinement: false
   default_backend: claude_cli
   backends:
     claude_cli:
       timeout: 120
-    gemini:
-      api_key: ${GEMINI_API_KEY}
-      model: gemini-2.5-flash
-      timeout: 60
-    # openai:
-    #   api_key: ${OPENAI_API_KEY}
-    #   model: gpt-4o
-    #   timeout: 60
-    # ollama:
-    #   base_url: http://localhost:11434
-    #   model: llama3
-    #   timeout: 120
   components:
-    scoring: claude_cli
-    cover_letter: claude_cli
     resume_tailoring: claude_cli
     form_analysis: claude_cli
     email_classification: claude_cli

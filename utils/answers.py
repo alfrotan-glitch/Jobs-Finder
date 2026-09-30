@@ -74,6 +74,7 @@ def get_personal_field(field_name: str, personal: dict) -> Optional[str]:
         r"(linkedin|linked\s*in)": "linkedin",
         r"(github|git\s*hub)": "github",
         r"(portfolio|website|personal\s*site|url)": "portfolio",
+        r"(license|licence|registration).*(number|no|id)": lambda p: p.get("license_number") or p.get("registration_number"),
     }
 
     for pattern, key_or_fn in mappings.items():

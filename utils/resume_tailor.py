@@ -1,100 +1,95 @@
 """
-AI Resume Tailoring — Generates tailored resume content per job posting.
+Tailored application documents.
 
-For high-match jobs, produces optimized summaries, bullet points, and keyword
-emphasis that align the candidate's actual experience with specific job requirements.
+AI can optionally improve phrasing, but deterministic review-first generation is
+the default and fallback.  Nothing in this module should invent facts that are
+not present in the user's profile/CV evidence.
 """
 
-import json
+from __future__ import annotations
+
+from typing import Any
+
+from utils.documents import generate_tailored_documents
+from utils.medical_matcher import match_job_against_profile
 
 
-def tailor_resume(job_description: str, base_resume_text: str, profile: dict, brain=None) -> dict:
+def tailor_resume(job_description: str, base_resume_text: str, profile: dict, brain=None, job: dict | None = None) -> dict:
     """
-    Generate tailored resume content for a specific job posting.
+    Generate tailored CV and cover-letter content for a job posting.
 
-    Args:
-        job_description: The full job posting text
-        base_resume_text: The candidate's base resume text
-        profile: The user's profile.yaml data
-        brain: Optional ClaudeBrain instance (creates one if not provided)
-
-    Returns:
-        dict with keys: tailored_summary, tailored_bullets, emphasis_areas,
-                       keywords_to_include, deemphasize, tailored_cover_letter
+    Returns legacy keys (`tailored_summary`, `tailored_bullets`,
+    `tailored_cover_letter`) plus the newer review-first document keys.
     """
-    if not base_resume_text:
-        return {
-            "tailored_summary": "",
-            "tailored_bullets": [],
-            "emphasis_areas": [],
-            "keywords_to_include": [],
-            "deemphasize": [],
-            "tailored_cover_letter": "",
-            "error": "No resume text available",
-        }
+    job_data: dict[str, Any] = job or {
+        "id": "ad-hoc",
+        "title": "Medical role",
+        "company": "organization",
+        "location": "",
+        "description": job_description,
+        "url": "",
+        "apply_url": "",
+        "metadata": {},
+    }
+    if not job_data.get("description"):
+        job_data["description"] = job_description
 
-    if brain is None:
-        from utils.brain import ClaudeBrain
-        brain = ClaudeBrain(verbose=False)
+    report = match_job_against_profile(job_data, profile, resume_text=base_resume_text).to_dict()
+    docs = generate_tailored_documents(job_data, profile, report, resume_text=base_resume_text)
 
-    skills = profile.get("skills", {})
-    roles = profile.get("preferences", {}).get("roles", [])
+    # Compatibility with the old dashboard/API.
+    docs["tailored_summary"] = _summary_from_documents(docs)
+    docs["tailored_bullets"] = docs.get("matched_requirements_used", [])[:6]
+    docs["emphasis_areas"] = docs.get("matched_requirements_used", [])
+    docs["keywords_to_include"] = docs.get("matched_requirements_used", [])
+    docs["deemphasize"] = []
+    docs["tailored_cover_letter"] = docs.get("cover_letter", "")
+    docs["match_report"] = report
 
-    prompt = f"""You are an expert resume consultant. Analyze this candidate's resume against a specific job posting and produce tailored content.
+    # Optional AI refinement is intentionally conservative and non-blocking.
+    if brain is not None and profile.get("ai", {}).get("enable_document_refinement", False):
+        try:
+            prompt = _ai_refinement_prompt(docs, profile, job_description)
+            refined = brain.ask_json(prompt, timeout=120, component="resume_tailoring")
+            if _refinement_is_safe(refined, docs):
+                docs.update({k: v for k, v in refined.items() if k in {"tailored_summary", "tailored_bullets", "tailored_cover_letter", "cover_letter"}})
+                if refined.get("cover_letter"):
+                    docs["tailored_cover_letter"] = refined["cover_letter"]
+        except Exception as exc:
+            docs["ai_refinement_error"] = str(exc)
 
-CANDIDATE'S BASE RESUME:
-{base_resume_text[:5000]}
+    return docs
 
-CANDIDATE'S TARGET ROLES: {', '.join(roles)}
-CANDIDATE'S KEY SKILLS: {', '.join(skills.get('primary', []))}
 
-JOB POSTING:
-{job_description[:6000]}
+def _summary_from_documents(docs: dict[str, Any]) -> str:
+    cv = docs.get("tailored_cv_text", "")
+    for line in cv.splitlines():
+        if line and not line.startswith("-") and "tailored CV draft" in line:
+            return line
+    return "Tailored draft generated from verified profile/CV evidence."
 
-Produce a JSON object with these fields:
-{{
-  "tailored_summary": "<A 2-3 sentence professional summary optimized for THIS specific job, highlighting the most relevant experience and skills from the resume>",
-  "tailored_bullets": [
-    "<Achievement bullet rewritten to emphasize relevance to this job>",
-    "<Another tailored bullet point>",
-    "<Up to 6 total>"
-  ],
-  "emphasis_areas": ["<Skills/experience from resume to emphasize for this role>"],
-  "keywords_to_include": ["<Important keywords from the job posting that match the candidate's experience>"],
-  "deemphasize": ["<Areas of the resume less relevant to this specific role>"],
-  "tailored_cover_letter": "<3 paragraph cover letter specifically for this job, referencing both the job requirements and the candidate's matching experience>"
-}}
 
-Rules:
-- Only reference experience that ACTUALLY EXISTS in the resume
-- Quantify achievements where the resume provides numbers
-- Mirror the job posting's language and terminology
-- Be specific, not generic — every bullet should connect resume experience to job requirements
-- The cover letter should feel personal and specific, not templated
+def _ai_refinement_prompt(docs: dict[str, Any], profile: dict, job_description: str) -> str:
+    return f"""Improve only the wording of these application drafts. Do not add any new facts, numbers, skills, locations, licenses, languages, achievements, or experience. If a fact is not already in the draft, do not include it.
+
+CURRENT DRAFTS:
+{docs}
+
+JOB POSTING EXCERPT:
+{job_description[:3000]}
+
+Return JSON with optional keys: tailored_summary, tailored_bullets, cover_letter.
 """
 
-    try:
-        result = brain.ask_json(prompt, timeout=180)
-        # Ensure all expected keys exist
-        defaults = {
-            "tailored_summary": "",
-            "tailored_bullets": [],
-            "emphasis_areas": [],
-            "keywords_to_include": [],
-            "deemphasize": [],
-            "tailored_cover_letter": "",
-        }
-        for key, default in defaults.items():
-            if key not in result:
-                result[key] = default
-        return result
-    except Exception as e:
-        return {
-            "tailored_summary": "",
-            "tailored_bullets": [],
-            "emphasis_areas": [],
-            "keywords_to_include": [],
-            "deemphasize": [],
-            "tailored_cover_letter": "",
-            "error": str(e),
-        }
+
+def _refinement_is_safe(refined: Any, original_docs: dict[str, Any]) -> bool:
+    if not isinstance(refined, dict):
+        return False
+    # Extremely conservative: AI output must not remove review warnings.
+    warnings = original_docs.get("review_warnings", [])
+    cover = str(refined.get("cover_letter") or refined.get("tailored_cover_letter") or "")
+    for warning in warnings:
+        label = warning.split("—", 1)[0].replace("Verify:", "").replace("Potential gap:", "").strip()
+        if label and label.lower() in cover.lower():
+            return False
+    return True

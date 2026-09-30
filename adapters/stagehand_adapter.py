@@ -1743,8 +1743,10 @@ async def apply_smart(
         except Exception as e:
             print(f"  [!] Greenhouse adapter error: {e}, trying CLI adapter...")
 
+    ai_form_enabled = bool(getattr(brain, "available", False) and profile.get("ai", {}).get("enabled", True))
+
     # CLI-powered adapter: AI self-healing via Playwright + Claude CLI
-    if is_stagehand_available():
+    if is_stagehand_available() and ai_form_enabled:
         print("  [*] Adapter: CLI-powered (Playwright + Claude CLI)")
         try:
             result = await apply_stagehand(
@@ -1757,6 +1759,14 @@ async def apply_smart(
             print("  [!] CLI adapter failed, trying generic adapter...")
         except Exception as e:
             print(f"  [!] CLI adapter error: {e}, trying generic adapter...")
+
+    if not ai_form_enabled:
+        print("  [!] AI form analysis is disabled/unavailable. Opened the application page for manual review.")
+        try:
+            await page.goto(job_url, wait_until="domcontentloaded", timeout=30000)
+        except Exception:
+            pass
+        return False
 
     # Generic: CSS-selector based AI form filler (last resort)
     print("  [*] Adapter: Generic (CSS + AI fallback)")

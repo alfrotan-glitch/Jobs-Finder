@@ -18,8 +18,17 @@ Usage from Claude Code session:
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Optional
+
+from utils.medical_requirements import (
+    extract_application_email,
+    extract_application_subject,
+    extract_application_url,
+    extract_requirements_from_text,
+    parse_closing_date,
+)
 
 
 def parse_web_search_results(search_results: list[dict], platform_hint: str = "web") -> list:
@@ -40,15 +49,19 @@ def parse_web_search_results(search_results: list[dict], platform_hint: str = "w
         if not title or not url:
             continue
 
-        # Try to extract company from URL or title
+        description = result.get("description", "") or result.get("snippet", "") or result.get("content", "") or ""
+
+        # Try to extract company from URL, title, then ACBAR-style snippets.
         company = _extract_company_from_url(url)
         if not company:
             company = _extract_company_from_title(title)
+        if not company:
+            company = _extract_acbar_field(description, "Organization")
 
-        # Clean up title (remove "Job Application for ... at Company" patterns)
-        clean_title = title
-        if " at " in title:
-            parts = title.split(" at ")
+        # Clean up title (remove "ACBAR:" and "Job Application for ..." patterns).
+        clean_title = title.replace("ACBAR:", "").strip()
+        if " at " in clean_title:
+            parts = clean_title.split(" at ")
             clean_title = parts[0].replace("Job Application for ", "").strip()
             if not company:
                 company = parts[-1].strip()
@@ -57,18 +70,40 @@ def parse_web_search_results(search_results: list[dict], platform_hint: str = "w
             parts = clean_title.split(" - ")
             clean_title = parts[0].strip()
 
+        location = _extract_acbar_field(description, "Location") or _extract_acbar_field(description, "Job Location") or "See posting"
+        closing_date = parse_closing_date(description)
+        application_url = extract_application_url(description, fallback=url) or url
+        application_email = extract_application_email(description)
+        application_subject = extract_application_subject(description)
+        requirements = extract_requirements_from_text(
+            description,
+            title=clean_title,
+            location=location,
+            source_url=url,
+            application_url=application_url,
+        ).to_dict()
+
         job_id = hashlib.md5(url.encode()).hexdigest()[:16]
 
         jobs.append({
             "id": f"mcp_{job_id}",
             "title": clean_title,
             "company": company or "Unknown",
-            "location": "See posting",
+            "location": location,
             "url": url,
-            "apply_url": url,
+            "apply_url": application_url,
             "platform": f"mcp_{platform_hint}",
-            "description": "",
+            "description": description,
             "source": f"mcp_{platform_hint}",
+            "metadata": {
+                "source": f"mcp_{platform_hint}",
+                "source_url": url,
+                "closing_date": closing_date or requirements.get("facts", {}).get("closing_date", ""),
+                "application_email": application_email or requirements.get("facts", {}).get("application_email", ""),
+                "application_subject": application_subject or requirements.get("facts", {}).get("application_subject", ""),
+                "reference_number": requirements.get("facts", {}).get("reference_number", ""),
+                "requirements": requirements,
+            },
         })
 
     return jobs
@@ -125,8 +160,10 @@ def ingest_jobs(job_dicts: list) -> dict:
         try:
             conn.execute("""
                 INSERT OR IGNORE INTO applications
-                (id, title, company, platform, url, apply_url, location, description, source, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, title, company, platform, url, apply_url, location, description, source, metadata,
+                 requirements_json, source_url, application_email, application_subject, reference_number,
+                 closing_date, provenance_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 job_id,
                 job.get("title", ""),
@@ -137,7 +174,14 @@ def ingest_jobs(job_dicts: list) -> dict:
                 job.get("location", ""),
                 job.get("description", ""),
                 job.get("source", "mcp"),
-                _json.dumps({"source": "mcp_discovery"}),
+                _json.dumps(_metadata_for_job(job), ensure_ascii=False),
+                _json.dumps(_requirements_for_job(job), ensure_ascii=False),
+                _metadata_for_job(job).get("source_url", job.get("url", "")),
+                _metadata_for_job(job).get("application_email", ""),
+                _metadata_for_job(job).get("application_subject", ""),
+                _metadata_for_job(job).get("reference_number", ""),
+                _metadata_for_job(job).get("closing_date", ""),
+                _json.dumps(_requirements_for_job(job).get("provenance", []), ensure_ascii=False),
             ))
             ingested += 1
         except Exception:
@@ -215,6 +259,65 @@ def get_all_search_queries(profile: dict) -> list[dict]:
         })
 
     return queries
+
+
+def _extract_acbar_field(text: str, field: str) -> Optional[str]:
+    stop_labels = (
+        "Organization",
+        "Job Location",
+        "Location",
+        "Category",
+        "Deadline",
+        "About the Company",
+        "Job Summary",
+        "Job Requirements",
+        "Submission Guideline",
+        "Email / Application Form",
+        "Application Form",
+    )
+    other_labels = [label for label in stop_labels if label.lower() != field.lower()]
+    stop = "|".join(re.escape(label) for label in other_labels)
+    patterns = [
+        rf"-\s*{re.escape(field)}\s*:\s*(.*?)(?=\s+(?:{stop})\s*:|\n|\r|$)",
+        rf"\b{re.escape(field)}\s*:\s*(.*?)(?=\s+(?:{stop})\s*:|\n|\r|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text or "", flags=re.I | re.S)
+        if match:
+            value = re.split(r"\s+-\s+|\s+###|\n", match.group(1).strip())[0].strip(" -.;:")
+            if value:
+                return value[:120]
+    return None
+
+
+def _metadata_for_job(job: dict) -> dict:
+    metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
+    if metadata:
+        return {"source": "mcp_discovery", **metadata}
+    requirements = _requirements_for_job(job)
+    facts = requirements.get("facts", {}) if isinstance(requirements, dict) else {}
+    return {
+        "source": "mcp_discovery",
+        "source_url": job.get("url", ""),
+        "application_email": facts.get("application_email", ""),
+        "application_subject": facts.get("application_subject", ""),
+        "reference_number": facts.get("reference_number", ""),
+        "closing_date": facts.get("closing_date", ""),
+        "requirements": requirements,
+    }
+
+
+def _requirements_for_job(job: dict) -> dict:
+    metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
+    if isinstance(metadata.get("requirements"), dict):
+        return metadata["requirements"]
+    return extract_requirements_from_text(
+        job.get("description", ""),
+        title=job.get("title", ""),
+        location=job.get("location", ""),
+        source_url=job.get("url", ""),
+        application_url=job.get("apply_url", "") or job.get("url", ""),
+    ).to_dict()
 
 
 def _extract_company_from_url(url: str) -> Optional[str]:

@@ -51,10 +51,11 @@ async def scheduled_discover():
 
 
 async def scheduled_score():
-    """Score all unscored jobs."""
+    """Analyze all unscored jobs with deterministic medical matching."""
     try:
-        from utils.tracker import get_unscored_jobs, log_matched, log_skipped
-        from utils.brain import ClaudeBrain
+        from utils.tracker import get_unscored_jobs, log_medical_match
+        from utils.medical_matcher import match_job_against_profile
+        from utils.resume_parser import extract_resume_text
 
         profile = get_profile()
         if profile is None:
@@ -63,20 +64,12 @@ async def scheduled_score():
         if not unscored:
             return
 
-        brain = ClaudeBrain(verbose=False, profile=profile)
-        from utils.resume_parser import extract_resume_text
         resume_text = extract_resume_text(profile.get("resume_path", ""))
-        min_score = profile["preferences"].get("min_match_score", 65)
         scored = 0
-
         for job_row in unscored:
             try:
-                desc = job_row.get("description", "") or f"Job: {job_row['title']} at {job_row['company']}"
-                result = brain.match_job(desc, profile, resume_text=resume_text)
-                score = result.get("score", 0)
-                log_matched(job_row["id"], score, result.get("reasoning", ""), result.get("cover_letter", ""))
-                if score < min_score:
-                    log_skipped(job_row["id"], f"Score {score} < {min_score}")
+                report = match_job_against_profile(job_row, profile, resume_text=resume_text).to_dict()
+                log_medical_match(job_row["id"], report)
                 scored += 1
             except Exception:
                 pass
@@ -85,9 +78,9 @@ async def scheduled_score():
             "scored": scored,
             "timestamp": __import__("datetime").datetime.now().isoformat()
         }
-        print(f"[Scheduler] Scored {scored} jobs")
+        print(f"[Scheduler] Analyzed {scored} jobs")
     except Exception as e:
-        print(f"[Scheduler] Scoring failed: {e}")
+        print(f"[Scheduler] Analysis failed: {e}")
         _last_results["score"] = {"error": str(e)}
 
 

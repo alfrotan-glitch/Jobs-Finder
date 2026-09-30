@@ -28,6 +28,7 @@ class ClaudeBrain:
     def __init__(self, verbose: bool = True, profile: dict = None):
         self.verbose = verbose
         self.profile = profile
+        self.available = False
         self._verify_cli()
 
     def _verify_cli(self):
@@ -39,6 +40,7 @@ class ClaudeBrain:
             components = ai_config.get("components", {})
             all_backends = set(components.values()) | {default}
             if "claude_cli" not in all_backends:
+                self.available = True
                 if self.verbose:
                     print(f"  🧠 Using non-CLI backends: {', '.join(all_backends)}")
                 return
@@ -49,19 +51,19 @@ class ClaudeBrain:
                 capture_output=True, text=True, timeout=10
             )
             if result.returncode != 0:
-                raise RuntimeError(
-                    "Claude CLI not responding. Install with: "
-                    "npm install -g @anthropic-ai/claude-code"
-                )
+                if self.verbose:
+                    print("  🧠 AI optional: Claude CLI is not responding; deterministic matching will still work.")
+                self.available = False
+                return
+            self.available = True
             if self.verbose:
                 version = result.stdout.strip()
                 print(f"  🧠 Claude CLI ready: {version}")
         except FileNotFoundError:
-            raise RuntimeError(
-                "Claude CLI not found. Install with:\n"
-                "  npm install -g @anthropic-ai/claude-code\n"
-                "Then run: claude auth"
-            )
+            self.available = False
+            if self.verbose:
+                print("  🧠 AI optional: Claude CLI not found; deterministic matching will still work.")
+            return
 
     def ask(self, prompt: str, timeout: int = 120, component: str = "general") -> str:
         """
@@ -149,7 +151,34 @@ class ClaudeBrain:
         return result
 
     def match_job(self, job_description: str, profile: dict, resume_text: str = "") -> dict:
-        """Score a job posting against the user's profile with enhanced context."""
+        """Match a job posting against the user's profile.
+
+        If AI is unavailable (or disabled), return the deterministic medical
+        match report. This keeps basic operation independent from AI.
+        """
+        ai_enabled = profile.get("ai", {}).get("enabled", True) if profile else True
+        if not ai_enabled or not self.available:
+            from utils.medical_matcher import match_job_against_profile
+            job = {
+                "id": "ad-hoc",
+                "title": "Medical vacancy",
+                "company": "",
+                "location": "",
+                "description": job_description,
+                "url": "",
+                "apply_url": "",
+                "metadata": {},
+            }
+            report = match_job_against_profile(job, profile, resume_text=resume_text).to_dict()
+            return {
+                "score": None,
+                "apply": report.get("priority") in {"Review first", "Review soon"},
+                "reasoning": report.get("explanation", ""),
+                "cover_letter": "",
+                "medical_match": report,
+                "priority": report.get("priority"),
+            }
+
         # Build enhanced profile context
         skills = profile.get("skills", {})
         primary_skills = ", ".join(skills.get("primary", profile["preferences"].get("keywords", [])))
@@ -233,7 +262,9 @@ Return a JSON assessment:
         return self.ask_json(prompt, timeout=180, component="profile_analysis")
 
     def answer_question(self, question: str, profile: dict, context: str = "") -> str:
-        """Answer a custom application question using AI."""
+        """Answer a custom application question using AI, or stop safely."""
+        if not self.available or not profile.get("ai", {}).get("enabled", True):
+            return "Needs review by applicant."
         return self.ask(f"""You are filling out a job application for someone.
 Answer this question concisely and professionally (1-3 sentences max).
 
@@ -250,6 +281,8 @@ Answer (be concise, direct, professional):""", component="form_analysis")
 
     def analyze_form(self, form_html: str, profile: dict) -> list:
         """Analyze a form's HTML and return fill instructions."""
+        if not self.available or not profile.get("ai", {}).get("enabled", True):
+            return []
         return self.ask_json(f"""You are a form-filling automation assistant.
 
 APPLICANT PROFILE:

@@ -95,13 +95,13 @@ Open <http://localhost:8080>.
 
 ### Windows one-click launcher
 
-On Windows, after the existing `.venv` has been created and dependencies have been installed, double-click:
+On Windows, double-click:
 
 ```text
 run_jobs_finder.bat
 ```
 
-The launcher detects the project folder, uses `.venv\Scripts\python.exe`, starts the canonical dashboard command (`main.py server --port 8080`), opens <http://localhost:8080> in the default browser, and keeps the console window open so startup errors remain visible. It does not create another environment, run discovery/watch scans directly, or submit applications.
+The launcher detects the project folder, uses `.venv\Scripts\python.exe` when it exists, and on first run creates that exact project `.venv` using the existing `requirements.txt` and Playwright Chromium setup. It then starts the canonical dashboard command (`main.py server --port 8080`), opens <http://localhost:8080> in the default browser, and keeps the console window open so startup errors remain visible. It does not create another project, create a second environment elsewhere, run discovery/watch scans directly, or submit applications.
 
 ## CLI usage
 

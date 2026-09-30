@@ -16,20 +16,30 @@ def test_windows_launcher_uses_existing_project_and_venv():
 
     assert "%~dp0" in text
     assert 'pushd "%PROJECT_DIR%"' in text
-    assert ".venv\\Scripts\\python.exe" in text
+    assert r".venv\Scripts\python.exe" in text
     assert "main.py" in text
     assert " server " in lowered
     assert "--port" in text
     assert "requirements.txt" in text
 
 
+def test_windows_launcher_has_safe_first_run_setup_using_existing_conventions():
+    lowered = _launcher_text().lower()
+
+    assert "first-run setup" in lowered
+    assert "the project virtual environment was not found" in lowered
+    assert "requirements.txt" in lowered
+    assert "pip install -r" in lowered
+    assert "playwright install chromium" in lowered
+    assert "project's normal .venv folder only" in lowered
+
+
 def test_windows_launcher_does_not_create_parallel_runtime_or_run_watcher():
     lowered = _launcher_text().lower()
 
     forbidden_fragments = [
-        "python -m venv",
-        "py -m venv",
-        "pip install -r requirements.txt &&",
+        "git clone",
+        "mkdir jobs-finder",
         "main.py watch",
         "main.py discover",
         "run_job_watch_scan",
@@ -38,7 +48,7 @@ def test_windows_launcher_does_not_create_parallel_runtime_or_run_watcher():
     for fragment in forbidden_fragments:
         assert fragment not in lowered
 
-    assert "will not create a second environment" in lowered
+    assert "create a second environment elsewhere" in lowered
     assert "not launched by this launcher" in lowered
 
 
@@ -58,6 +68,7 @@ def test_windows_launcher_has_clear_failure_paths():
 
     assert "startup status: failed" in lowered
     assert "virtual environment was not found" in lowered
+    assert "python 3.11+ was not found" in lowered
     assert "required dashboard dependencies are missing" in lowered
     assert "port %port% is already in use" in lowered
     assert "will not start a duplicate dashboard server" in lowered

@@ -32,6 +32,19 @@ class SourceResult:
 DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; Jobs-Finder Afghanistan Medical Assistant/2.0; +https://acbar.org)"
 
 
+def _record_source_failure(profile: dict[str, Any], source: str, error: Exception | str) -> None:
+    """Expose adapter-internal source failures to the watcher scan audit."""
+    if not isinstance(profile, dict):
+        return
+    audit = profile.setdefault("_watcher_source_audit", {"attempted": [], "successful": [], "failed": []})
+    if not isinstance(audit, dict):
+        return
+    audit.setdefault("failed", [])
+    item = {"source": source, "error": str(error)}
+    if item not in audit["failed"]:
+        audit["failed"].append(item)
+
+
 def _stable_id(prefix: str, *parts: str) -> str:
     raw = "|".join(part or "" for part in parts)
     return f"{prefix}_{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
@@ -81,6 +94,7 @@ async def discover_acbar_jobs(profile: dict[str, Any]) -> list[Any]:
                 resp.raise_for_status()
                 page_text = resp.text
             except Exception as exc:
+                _record_source_failure(profile, "ACBAR", exc)
                 print(f"  ⚠ ACBAR source failed for {url}: {exc}")
                 # Some hosting environments drop TLS handshakes to ACBAR. The
                 # caller continues with other sources; in Agent Mode, web-search
@@ -118,6 +132,7 @@ async def discover_reliefweb_jobs(profile: dict[str, Any]) -> list[Any]:
             resp.raise_for_status()
             html = resp.text
     except Exception as exc:
+        _record_source_failure(profile, "ReliefWeb", exc)
         print(f"  ⚠ ReliefWeb source failed: {exc}")
         return []
 
@@ -205,6 +220,7 @@ async def discover_unjobs_jobs(profile: dict[str, Any]) -> list[Any]:
                 resp.raise_for_status()
                 raw_items.extend(_unjobs_raw_from_html(resp.text, url, limit=limit))
             except Exception as exc:
+                _record_source_failure(profile, "UNJobs", exc)
                 print(f"  ⚠ UNJobs source failed for {url}: {exc}")
     return raw_vacancies_to_jobs(raw_items[:limit])
 
@@ -223,6 +239,7 @@ async def discover_unicef_jobs(profile: dict[str, Any]) -> list[Any]:
             resp.raise_for_status()
             html = resp.text
     except Exception as exc:
+        _record_source_failure(profile, "UNICEF Careers", exc)
         print(f"  ⚠ UNICEF careers source failed: {exc}")
         return []
     raw_items = _unicef_raw_from_html(html, url, limit=limit)
@@ -574,15 +591,19 @@ async def discover_official_career_pages(profile: dict[str, Any]) -> list[Any]:
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
         for page in pages:
             url = page["url"]
+            source_id = page.get("organization") or url
+            _audit_profile_source(profile, "attempted", source_id)
             try:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 html = resp.text
             except Exception as exc:
+                _audit_profile_source(profile, "failed", {"source": source_id, "error": str(exc)})
                 print(f"  ⚠ Career page source failed for {url}: {exc}")
                 continue
             extracted = _jobs_from_html(html, base_url=url, source="official_career_page", default_company=page["organization"])
             jobs.extend(extracted)
+            _audit_profile_source(profile, "successful", source_id)
     return jobs
 
 

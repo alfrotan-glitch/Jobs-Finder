@@ -33,6 +33,8 @@ from adapters.stagehand_adapter import (
     _save_domain_cache,
     _domain_cache_path,
     _is_confirmation,
+    _detect_page_state,
+    detect_security_barrier_text,
     _format_a11y_tree,
     _format_form_summary,
     _fill_via_label,
@@ -467,6 +469,19 @@ def test_not_confirmation_empty():
 
 def test_not_confirmation_none():
     assert _is_confirmation(None) is False
+
+
+def test_security_barrier_text_detects_login_and_captcha():
+    assert detect_security_barrier_text("Please sign in to continue") == "sign in to continue"
+    assert detect_security_barrier_text("Complete the reCAPTCHA challenge") == "captcha"
+
+
+@pytest.mark.asyncio
+async def test_detect_page_state_security_required():
+    mock_page = AsyncMock()
+    mock_page.inner_text = AsyncMock(return_value="Please sign in to continue and complete CAPTCHA verification")
+    state = await _detect_page_state(mock_page)
+    assert state == "security_required"
 
 
 # ──────────────────────────────────────────────────────────────

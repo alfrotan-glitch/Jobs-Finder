@@ -166,3 +166,19 @@ def test_api_does_not_mark_submitted_without_confirmation(db):
     res = client.patch("/api/jobs/api-status", json={"status": "submitted"})
     assert res.status_code == 400
     assert tracker.get_job_by_id("api-status")["status"] == "discovered"
+
+
+def test_api_blocks_submitted_back_to_prepared(db):
+    from fastapi.testclient import TestClient
+    from dashboard.server import app
+
+    j = job("api-submitted", "Medical Officer", "FMIC", "2026-10-05", "MD required. Clinical experience required.")
+    tracker.log_discovered(j)
+    tracker.log_medical_match(j.id, {"priority": "Review first", "readiness_status": "READY_TO_APPLY", "explanation": "Ready", "facts": {}})
+    assert tracker.transition_application_state(j.id, "prepared")[0]
+    assert tracker.transition_application_state(j.id, "opened")[0]
+    assert tracker.transition_application_state(j.id, "submitted", explicit_confirmation=True)[0]
+    client = TestClient(app)
+    res = client.patch(f"/api/jobs/{j.id}", json={"status": "prepared"})
+    assert res.status_code == 400
+    assert tracker.get_job_by_id(j.id)["status"] == "submitted"

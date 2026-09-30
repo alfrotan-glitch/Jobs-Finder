@@ -122,9 +122,11 @@
                 <h2 x-text="selectedJob?.title"></h2>
                 <p><strong x-text="selectedJob?.company"></strong> · <span x-text="selectedJob?.location"></span></p>
                 <p class="muted">Application: <span x-text="selectedJob ? routeLabel(selectedJob) : ''"></span> · Deadline: <span x-text="selectedJob?.closing_date || 'not listed'"></span></p>
+                <p class="muted">Source: <span x-text="selectedJob ? sourceLabel(selectedJob) : ''"></span></p>
               </div>
             </div>
             <p class="explanation" x-text="selectedAnalysis?.explanation || selectedJob?.reasoning || 'Review the matched requirements below.'"></p>
+            <div class="next-action"><strong>Next action:</strong> <span x-text="nextAction(selectedJob)"></span></div>
             <div class="actions wrap">
               <button class="secondary" @click="loadAnalysis(selectedJob)">Recheck eligibility</button>
               <button class="secondary" @click="prepare(selectedJob)">Prepare CV & letter</button>
@@ -183,13 +185,13 @@
               <strong x-text="job.title"></strong>
               <p x-text="job.company + ' · ' + (job.location || '')"></p>
               <p class="muted">Deadline: <span x-text="job.closing_date || 'not listed'"></span> · <span x-text="routeLabel(job)"></span></p>
-              <p class="doc-state"><span x-text="job.tailored_cv_ready ? 'CV prepared' : 'CV not prepared'"></span> · <span x-text="job.cover_letter_ready ? 'Cover letter prepared' : 'Cover letter not prepared'"></span> · <strong x-text="['submitted','applied'].includes(job.status) ? 'Submitted' : 'Not submitted'"></strong></p>
+              <p class="doc-state"><span x-text="job.tailored_cv_ready ? 'CV prepared' : 'CV not prepared'"></span> · <span x-text="job.cover_letter_ready ? 'Cover letter prepared' : 'Cover letter not prepared'"></span> · <strong x-text="applicationStateLabel(job)"></strong></p>
             </div>
             <select x-model="job.status" @change="updateStatus(job, job.status)">
-              <option value="prepared">Prepared</option><option value="review">Ready to Review</option><option value="opened">Opened</option><option value="interviewing">Interview</option><option value="offer">Offer</option><option value="rejected">Rejected</option><option value="withdrawn">Withdrawn</option><option value="archived">Closed / Archived</option>
+              <option value="prepared">Prepared</option><option value="review">Ready to Review</option><option value="opened">Opened</option><option value="interviewing">Interview</option><option value="offer">Offer</option><option value="rejected">Rejected</option><option value="withdrawn">Withdrawn</option><option value="closed">Closed</option><option value="expired">Expired</option><option value="archived">Closed / Archived</option>
             </select>
             <button class="secondary" @click="openApplication(job)">Open route</button>
-            <button class="primary" @click="confirmSubmitted(job)" x-show="!['submitted','applied'].includes(job.status)">Record submitted</button>
+            <button class="primary" @click="confirmSubmitted(job)" x-show="!['submitted','applied','closed','expired','archived'].includes(job.status)">Record submitted</button>
           </div>
         </template>
       </section>
@@ -289,6 +291,13 @@
         <h2>Source registry</h2>
         <p>Active/Limited sources enabled: <strong x-text="sourceRegistryStatus.active?.length || 0"></strong></p>
         <p class="muted">ACTIVE <span x-text="sourceRegistryStatus.counts?.ACTIVE || 0"></span> · LIMITED <span x-text="sourceRegistryStatus.counts?.LIMITED || 0"></span> · INACCESSIBLE <span x-text="sourceRegistryStatus.counts?.INACCESSIBLE || 0"></span></p>
+        <template x-if="sourceRegistryStatus.last_scan_source_state">
+          <div class="source-state">
+            <strong>Last discovery source state</strong>
+            <p class="muted">Attempted <span x-text="sourceRegistryStatus.last_scan_source_state.sources_attempted?.length || 0"></span> · successful <span x-text="sourceRegistryStatus.last_scan_source_state.sources_successful?.length || 0"></span> · failed <span x-text="sourceRegistryStatus.last_scan_source_state.sources_failed?.length || 0"></span> · jobs found <span x-text="sourceRegistryStatus.last_scan_source_state.jobs_found || 0"></span></p>
+            <template x-if="sourceRegistryStatus.last_scan_source_state.sources_failed && sourceRegistryStatus.last_scan_source_state.sources_failed.length"><div class="warning"><strong>Source failures are visible</strong><ul><template x-for="err in sourceRegistryStatus.last_scan_source_state.sources_failed"><li x-text="(err.source || err.id || 'source') + ': ' + (err.error || err.message || 'failed')"></li></template></ul></div></template>
+          </div>
+        </template>
         <template x-if="sourceRegistryStatus.errors && sourceRegistryStatus.errors.length"><div class="warning"><strong>Registry validation warnings</strong><ul><template x-for="err in sourceRegistryStatus.errors"><li x-text="err"></li></template></ul></div></template>
         <h2>Notifications</h2>
         <template x-for="event in watcherNotifications" :key="event.id">

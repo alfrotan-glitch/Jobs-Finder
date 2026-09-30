@@ -43,6 +43,8 @@ from utils.tracker import (
     log_medical_match,
     print_stats,
     transition_application_state,
+    can_submit_application,
+    application_readiness,
     update_tailored_resume,
 )
 
@@ -195,7 +197,10 @@ def cmd_open(job_id: str):
     if not url:
         print("This job has no application URL. Open the source URL manually and verify application instructions.")
         return
-    transition_application_state(job_id, "opened")
+    ok, message = transition_application_state(job_id, "opened")
+    if not ok:
+        print(f"Could not mark/open this application route safely: {message}")
+        return
     print(f"Opening application page: {url}")
     webbrowser.open(url)
 
@@ -226,6 +231,23 @@ async def cmd_fill(profile: dict, job_id: str, live: bool = False):
     docs = get_tailored_resume(job_id)
     cover_letter = docs.get("cover_letter") or docs.get("tailored_cover_letter") or job.get("cover_letter", "")
 
+    if not dry_run:
+        readiness = application_readiness(job)
+        if readiness == "NOT_ELIGIBLE":
+            print("Cannot submit: deterministic matching classified this vacancy as NOT_ELIGIBLE.")
+            return False
+        if readiness == "NEEDS_VERIFICATION":
+            print("Cannot submit: this vacancy still has NEEDS_VERIFICATION requirements.")
+            return False
+        opened_ok, opened_message = transition_application_state(job_id, "opened")
+        if not opened_ok:
+            print(f"Cannot start live submission safely: {opened_message}")
+            return False
+        submit_ok, submit_message = can_submit_application(job_id)
+        if not submit_ok:
+            print(f"Cannot start live submission safely: {submit_message}")
+            return False
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=False, slow_mo=100)
         context = await browser.new_context(viewport={"width": 1600, "height": 1000})
@@ -243,12 +265,19 @@ async def cmd_fill(profile: dict, job_id: str, live: bool = False):
             description=job.get("description", ""),
         )
         if dry_run:
-            transition_application_state(job_id, "opened")
-            print("\nReview-only mode complete. Browser will stay open for 5 minutes.")
+            opened_ok, opened_message = transition_application_state(job_id, "opened")
+            if not opened_ok:
+                print(f"\nReview-only mode complete, but route-open tracking was blocked: {opened_message}")
+            else:
+                print("\nReview-only mode complete. Browser will stay open for 5 minutes.")
             await asyncio.sleep(300)
         else:
-            ok, message = transition_application_state(job_id, "submitted", explicit_confirmation=True, note="Submitted via assisted browser flow")
-            print("Submission tracked." if ok else f"Tracking warning: {message}")
+            target_status = "submitted" if success else "failed"
+            ok, message = transition_application_state(job_id, target_status, explicit_confirmation=True, note="Submitted via assisted browser flow" if success else "Assisted browser flow did not complete submission")
+            if success:
+                print("Submission tracked." if ok else f"Tracking warning: {message}")
+            else:
+                print("Submission was not confirmed; marked failed for review." if ok else f"Could not update tracking: {message}")
         await browser.close()
         return success
 

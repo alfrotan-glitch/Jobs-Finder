@@ -489,10 +489,20 @@ async def discover_all_jobs(profile: dict) -> list[Job]:
     """
     Discover jobs from configured Afghanistan-first sources and selected ATSs.
     Failed sources are logged and skipped.
+
+    When called by the watcher, source outcomes are written into the caller's
+    ``_watcher_source_audit`` dict so failures/no-job successes are visible in
+    scan audits instead of being hidden behind stale vacancies.
     """
     from utils.source_registry import registry_enhanced_profile, registry_enabled
 
+    caller_profile = profile
+    shared_audit = None
+    if isinstance(caller_profile, dict):
+        shared_audit = caller_profile.setdefault("_watcher_source_audit", {"attempted": [], "successful": [], "failed": []})
     profile = registry_enhanced_profile(profile)
+    if shared_audit is not None:
+        profile["_watcher_source_audit"] = shared_audit
     all_jobs: list[Job] = []
     prefs = profile.get("preferences", {})
     role_keywords = prefs.get("roles", []) or MEDICAL_DISCOVERY_KEYWORDS
@@ -515,12 +525,16 @@ async def discover_all_jobs(profile: dict) -> list[Job]:
 
     async def _run_source(label: str, coro):
         _audit_source(profile, "attempted", label)
+        audit = profile.get("_watcher_source_audit", {}) if isinstance(profile, dict) else {}
+        failed_before = len(audit.get("failed", [])) if isinstance(audit, dict) else 0
         try:
             jobs = await coro
             for job in jobs:
                 _enrich_job(job)
             all_jobs.extend(jobs)
-            _audit_source(profile, "successful", label)
+            failed_after = len(audit.get("failed", [])) if isinstance(audit, dict) else failed_before
+            if jobs or failed_after == failed_before:
+                _audit_source(profile, "successful", label)
             if jobs:
                 print(f"   ✅ {label}: {len(jobs)} jobs")
         except Exception as exc:
@@ -574,36 +588,50 @@ async def discover_all_jobs(profile: dict) -> list[Job]:
     gh_companies = boards.get("greenhouse", [])
     if gh_companies:
         print(f"\n🌿 Scanning {len(gh_companies)} Greenhouse boards...")
+        for slug in gh_companies:
+            _audit_source(profile, "attempted", f"Greenhouse:{slug}")
         results = await asyncio.gather(*(discover_greenhouse_jobs(slug, role_keywords) for slug in gh_companies), return_exceptions=True)
         for slug, result in zip(gh_companies, results):
+            label = f"Greenhouse:{slug}"
             if isinstance(result, Exception):
+                _audit_source(profile, "failed", {"source": label, "error": str(result)})
                 print(f"  ⚠ Greenhouse [{slug}] failed: {result}")
             else:
                 all_jobs.extend(result)
+                _audit_source(profile, "successful", label)
                 if result:
                     print(f"   ✅ {slug}: {len(result)} jobs")
 
     lever_companies = boards.get("lever", [])
     if lever_companies:
         print(f"\n🔧 Scanning {len(lever_companies)} Lever boards...")
+        for slug in lever_companies:
+            _audit_source(profile, "attempted", f"Lever:{slug}")
         results = await asyncio.gather(*(discover_lever_jobs(slug, role_keywords) for slug in lever_companies), return_exceptions=True)
         for slug, result in zip(lever_companies, results):
+            label = f"Lever:{slug}"
             if isinstance(result, Exception):
+                _audit_source(profile, "failed", {"source": label, "error": str(result)})
                 print(f"  ⚠ Lever [{slug}] failed: {result}")
             else:
                 all_jobs.extend(result)
+                _audit_source(profile, "successful", label)
                 if result:
                     print(f"   ✅ {slug}: {len(result)} jobs")
 
     # Generic aggregators are opt-in to avoid turning the product generic/noisy.
     search_config = profile.get("search", {}) if isinstance(profile.get("search"), dict) else {}
     if search_config.get("generic_job_boards_enabled", False):
+        _audit_source(profile, "attempted", "Generic job boards")
         try:
             from utils.jobspy_source import discover_jobspy_jobs
 
             print("\n🔍 Searching generic job boards (opt-in)...")
-            all_jobs.extend([job for job in discover_jobspy_jobs(profile) if looks_medical(f"{job.title}\n{job.description}")])
+            generic_jobs = [job for job in discover_jobspy_jobs(profile) if looks_medical(f"{job.title}\n{job.description}")]
+            all_jobs.extend(generic_jobs)
+            _audit_source(profile, "successful", "Generic job boards")
         except Exception as e:
+            _audit_source(profile, "failed", {"source": "Generic job boards", "error": str(e)})
             print(f"  ⚠ Generic job board search failed: {e}")
 
     before_freshness = len(all_jobs)

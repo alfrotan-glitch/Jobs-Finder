@@ -58,6 +58,10 @@ def test_application_state_transitions_require_confirmation(tmp_path, monkeypatc
     monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "apps.db")
     job = Job("job-state", "Medical Officer", "NGO", "Kabul", "https://x/job", "https://x/apply", "test")
     tracker.log_discovered(job)
+    tracker.log_medical_match(job.id, {"priority": "Review first", "readiness_status": "READY_TO_APPLY", "explanation": "Ready", "facts": {}})
+    assert tracker.get_job_by_id(job.id)["status"] == "recommended"
+    ok, msg = tracker.transition_application_state("job-state", "prepared")
+    assert ok, msg
     ok, msg = tracker.transition_application_state("job-state", "opened")
     assert ok, msg
     ok, msg = tracker.transition_application_state("job-state", "submitted", explicit_confirmation=False)
@@ -66,6 +70,9 @@ def test_application_state_transitions_require_confirmation(tmp_path, monkeypatc
     ok, msg = tracker.transition_application_state("job-state", "submitted", explicit_confirmation=True)
     assert ok, msg
     assert tracker.get_job_by_id("job-state")["status"] == "submitted"
+    ok, msg = tracker.transition_application_state("job-state", "prepared")
+    assert not ok
+    assert "submitted -> prepared" in msg
 
 
 def test_not_eligible_job_is_not_promoted_to_prepared_by_document_storage(tmp_path, monkeypatch):
@@ -88,9 +95,37 @@ def test_not_eligible_job_is_not_promoted_to_prepared_by_document_storage(tmp_pa
     assert tracker.get_job_by_id(job.id)["status"] == "not_eligible"
     tracker.update_tailored_resume(job.id, {"tailored_cv_text": "draft", "cover_letter": "letter"})
     assert tracker.get_job_by_id(job.id)["status"] == "not_eligible"
+    ok, message = tracker.transition_application_state(job.id, "prepared")
+    assert not ok
+    assert "NOT_ELIGIBLE" in message
     ok, message = tracker.transition_application_state(job.id, "submitted", explicit_confirmation=False)
     assert not ok
-    assert "not_eligible -> submitted is not allowed" in message
+    assert "NOT_ELIGIBLE" in message
+
+
+def test_needs_verification_cannot_be_submitted_even_after_open(tmp_path, monkeypatch):
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "apps.db")
+    job = Job("needs-verify", "Surgeon", "AKHS-A", "Kabul", "https://x/job", "https://x/apply", "test")
+    tracker.log_discovered(job)
+    tracker.log_medical_match(job.id, {"priority": "Needs verification", "readiness_status": "NEEDS_VERIFICATION", "explanation": "Specialist credential must be verified", "facts": {}})
+    ok, msg = tracker.transition_application_state(job.id, "opened")
+    assert ok, msg
+    ok, msg = tracker.transition_application_state(job.id, "submitted", explicit_confirmation=True)
+    assert not ok
+    assert "NEEDS_VERIFICATION" in msg
+    assert tracker.get_job_by_id(job.id)["status"] == "opened"
+
+
+def test_prepared_cannot_skip_opened_before_submission(tmp_path, monkeypatch):
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "apps.db")
+    job = Job("prepared-no-open", "Medical Officer", "FMIC", "Kabul", "https://x/job", "https://x/apply", "test")
+    tracker.log_discovered(job)
+    tracker.log_medical_match(job.id, {"priority": "Review first", "readiness_status": "READY_TO_APPLY", "explanation": "Ready", "facts": {}})
+    ok, msg = tracker.transition_application_state(job.id, "prepared")
+    assert ok, msg
+    ok, msg = tracker.transition_application_state(job.id, "submitted", explicit_confirmation=True)
+    assert not ok
+    assert "prepared -> submitted" in msg
 
 
 def test_tailored_cv_is_application_ready_and_keeps_warnings_separate():

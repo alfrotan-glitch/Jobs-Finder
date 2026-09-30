@@ -627,10 +627,32 @@ def canonicalize_job(job: Job | dict[str, Any], canonical_id: str) -> Job:
     return cloned
 
 
-def _mark_application_closed(job_id: str) -> None:
+def _mark_application_closed(job_id: str, *, lifecycle_status: str = EXPIRED_STATUS) -> None:
+    """Reflect source closure without erasing user application progress.
+
+    Unstarted vacancies become not_eligible so they disappear from Recommended.
+    Prepared/opened applications become closed/expired so the Applications view
+    can show why they are no longer actionable. Submitted/applied/follow-up
+    rows are never reset by a watcher scan.
+    """
+    app = get_job_by_id(job_id)
+    if not app:
+        return
+    current = app.get("status") or "discovered"
+    terminal_or_user_decided = {"submitted", "applied", "interviewing", "offer", "rejected", "withdrawn", "archived"}
+    if current in terminal_or_user_decided:
+        new_status = current
+    elif current in {"prepared", "review", "opened"}:
+        new_status = "closed" if lifecycle_status == CLOSED_STATUS else "expired"
+    else:
+        new_status = "not_eligible"
+    now_iso = utc_now_iso()
     conn = get_db()
     try:
-        conn.execute("UPDATE applications SET status = 'not_eligible', priority = 'Closed' WHERE id = ?", (job_id,))
+        conn.execute(
+            "UPDATE applications SET status = ?, priority = 'Closed', last_activity = COALESCE(last_activity, ?) WHERE id = ?",
+            (new_status, now_iso, job_id),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -791,7 +813,7 @@ def persist_job(
 
     _upsert_application_snapshot(job, match_report, new_record=not existing)
     if status in {CLOSED_STATUS, EXPIRED_STATUS}:
-        _mark_application_closed(canonical_id)
+        _mark_application_closed(canonical_id, lifecycle_status=status)
 
     title = f"{job.title} — {job.company}"
     if notify.get("new_jobs", True) and change_type == "NEW" and status == ACTIVE_STATUS and readiness == READY_TO_APPLY:
@@ -881,7 +903,7 @@ def expire_closed_jobs(*, now_iso: str, today: date, notify: bool = True) -> int
     finally:
         conn.close()
     for row in notifications:
-        _mark_application_closed(row["canonical_id"])
+        _mark_application_closed(row["canonical_id"], lifecycle_status=EXPIRED_STATUS)
         if not notify:
             continue
         create_notification(

@@ -10,6 +10,7 @@ import random
 from playwright.async_api import Page
 from utils.brain import ClaudeBrain
 from utils.answers import find_cached_answer, get_personal_field
+from adapters.stagehand_adapter import detect_security_barrier
 
 
 async def apply_greenhouse(
@@ -37,6 +38,11 @@ async def apply_greenhouse(
     print(f"  📝 Navigating to application...")
     await page.goto(job_url, wait_until="networkidle")
     await page.wait_for_timeout(2000)
+
+    barrier = await detect_security_barrier(page)
+    if barrier:
+        print(f"  ⚠ Security/login control detected ({barrier}). Stop and complete required employer action manually; not bypassing.")
+        return False
 
     # Scroll to application form
     app_form = await page.query_selector("#application, #app, form")

@@ -16,29 +16,38 @@ VALID_STATUSES = [
     # Discovery and analysis
     "discovered", "analyzed", "recommended", "needs_verification", "not_eligible", "matched", "skipped",
     # Review-first application workflow
-    "prepared", "review", "opened", "submitted", "applied", "failed",
+    "prepared", "review", "opened", "submitted", "applied", "failed", "closed", "expired",
     # Follow-up pipeline
     "interviewing", "offer", "rejected", "withdrawn", "archived", "ignored",
 ]
 
 # Explicit workflow guardrails. update_job_status remains permissive for manual
-# corrections, but transition_application_state enforces review-first flow.
+# database corrections, but all user-facing review/submission paths should use
+# transition_application_state so eligibility/readiness and confirmation rules
+# are enforced consistently.
 ALLOWED_TRANSITIONS = {
-    "discovered": {"analyzed", "recommended", "needs_verification", "not_eligible", "opened", "skipped", "ignored", "archived"},
-    "analyzed": {"recommended", "needs_verification", "not_eligible", "prepared", "review", "skipped", "ignored", "archived"},
-    "recommended": {"prepared", "review", "opened", "skipped", "ignored", "archived"},
-    "needs_verification": {"prepared", "review", "opened", "skipped", "ignored", "archived"},
-    "not_eligible": {"prepared", "review", "opened", "skipped", "ignored", "archived"},
-    "prepared": {"review", "opened", "submitted", "applied", "archived"},
-    "review": {"opened", "submitted", "applied", "archived"},
-    "opened": {"submitted", "applied", "failed", "interviewing", "rejected", "withdrawn", "archived"},
-    "submitted": {"applied", "interviewing", "offer", "rejected", "withdrawn", "archived"},
-    "applied": {"interviewing", "offer", "rejected", "withdrawn", "archived"},
-    "interviewing": {"offer", "rejected", "withdrawn", "archived"},
-    "offer": {"withdrawn", "archived"},
-    "rejected": {"archived"},
-    "failed": {"opened", "prepared", "review", "archived"},
+    "discovered": {"analyzed", "recommended", "needs_verification", "not_eligible", "skipped", "ignored", "archived", "closed", "expired"},
+    "analyzed": {"recommended", "needs_verification", "not_eligible", "prepared", "review", "skipped", "ignored", "archived", "closed", "expired"},
+    "matched": {"recommended", "needs_verification", "not_eligible", "prepared", "review", "skipped", "ignored", "archived", "closed", "expired"},
+    "recommended": {"prepared", "review", "opened", "skipped", "ignored", "archived", "closed", "expired"},
+    "needs_verification": {"prepared", "review", "opened", "skipped", "ignored", "archived", "closed", "expired"},
+    "not_eligible": {"skipped", "ignored", "archived", "closed", "expired"},
+    "prepared": {"review", "opened", "withdrawn", "archived", "closed", "expired"},
+    "review": {"opened", "withdrawn", "archived", "closed", "expired"},
+    "opened": {"submitted", "applied", "failed", "interviewing", "rejected", "withdrawn", "archived", "closed", "expired"},
+    "submitted": {"applied", "interviewing", "offer", "rejected", "withdrawn", "archived", "closed"},
+    "applied": {"interviewing", "offer", "rejected", "withdrawn", "archived", "closed"},
+    "interviewing": {"offer", "rejected", "withdrawn", "archived", "closed"},
+    "offer": {"withdrawn", "archived", "closed"},
+    "rejected": {"archived", "closed"},
+    "failed": {"opened", "prepared", "review", "withdrawn", "archived", "closed", "expired"},
+    "closed": {"archived"},
+    "expired": {"archived"},
 }
+
+READINESS_READY = "READY_TO_APPLY"
+READINESS_NEEDS_VERIFICATION = "NEEDS_VERIFICATION"
+READINESS_NOT_ELIGIBLE = "NOT_ELIGIBLE"
 
 
 def get_db() -> sqlite3.Connection:
@@ -141,6 +150,65 @@ def _emit(event_type: str, data=None):
         pass
 
 
+def _json_object(value) -> dict:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def application_readiness(job: dict | None) -> str:
+    """Return the deterministic readiness stored for an application row.
+
+    Workflow status (prepared/opened/submitted) is intentionally separate from
+    eligibility/readiness.  This helper preserves the underlying medical match
+    classification so a NEEDS_VERIFICATION job cannot be submitted merely
+    because a draft package was prepared or the route was opened.
+    """
+    if not job:
+        return ""
+    metadata = _json_object(job.get("metadata"))
+    for value in [
+        metadata.get("readiness_status"),
+        _json_object(job.get("match_json")).get("readiness_status"),
+    ]:
+        value = str(value or "").upper()
+        if value in {READINESS_READY, READINESS_NEEDS_VERIFICATION, READINESS_NOT_ELIGIBLE}:
+            return value
+    priority = str(job.get("priority") or "").lower()
+    status = str(job.get("status") or "").lower()
+    if status == "not_eligible" or "low" in priority or "closed" in priority:
+        return READINESS_NOT_ELIGIBLE
+    if status == "needs_verification" or "verification" in priority:
+        return READINESS_NEEDS_VERIFICATION
+    if priority == "review first":
+        return READINESS_READY
+    return ""
+
+
+def can_submit_application(job_id: str) -> tuple[bool, str]:
+    """Preflight a final submission without changing tracker state."""
+    job = get_job_by_id(job_id)
+    if not job:
+        return False, "Job not found"
+    readiness = application_readiness(job)
+    if readiness == READINESS_NOT_ELIGIBLE:
+        return False, "Cannot submit: deterministic matching classified this vacancy as NOT_ELIGIBLE"
+    if readiness == READINESS_NEEDS_VERIFICATION:
+        return False, "Cannot submit: this vacancy still has NEEDS_VERIFICATION requirements"
+    if readiness != READINESS_READY:
+        return False, "Cannot submit: this vacancy has not been verified as READY_TO_APPLY"
+    current = job.get("status") or "discovered"
+    if current not in {"opened", "submitted", "applied"}:
+        return False, "Open the application route before recording or performing final submission"
+    return True, "ok"
+
+
 def log_discovered(job) -> None:
     """Log a newly discovered job. Skips if on the ignore list."""
     # Check ignore list first (fast hash lookup)
@@ -199,7 +267,7 @@ def log_matched(job_id: str, score: int | None, reasoning: str, cover_letter: st
     conn.execute("""
         UPDATE applications
         SET match_score = ?, reasoning = ?, cover_letter = ?,
-            status = CASE WHEN status IN ('prepared','review','opened','submitted','applied','interviewing','offer','rejected','withdrawn','archived') THEN status ELSE ? END,
+            status = CASE WHEN status IN ('prepared','review','opened','submitted','applied','failed','closed','expired','interviewing','offer','rejected','withdrawn','archived') THEN status ELSE ? END,
             match_json = ?, priority = ?, requirements_json = COALESCE(NULLIF(?, ''), requirements_json),
             provenance_json = COALESCE(NULLIF(?, ''), provenance_json),
             application_email = COALESCE(NULLIF(?, ''), application_email),
@@ -238,27 +306,19 @@ def log_medical_match(job_id: str, match_report: dict) -> None:
     log_matched(job_id, None, reasoning, "", match_report=match_report, priority=priority)
 
 
-def log_applied(job_id: str, success: bool) -> None:
-    """Mark a job as applied and set follow-up if successful."""
-    status = "applied" if success else "failed"
-    now = datetime.now().isoformat()
-    conn = get_db()
+def log_applied(job_id: str, success: bool, *, explicit_confirmation: bool = False) -> None:
+    """Record an application result without bypassing submission guardrails."""
     if success:
-        from datetime import timedelta
-        follow_up = (datetime.now() + timedelta(days=7)).isoformat()
-        conn.execute("""
-            UPDATE applications
-            SET status = ?, applied_at = ?, last_activity = ?, follow_up_date = ?
-            WHERE id = ?
-        """, (status, now, now, follow_up, job_id))
+        ok, message = transition_application_state(job_id, "applied", explicit_confirmation=explicit_confirmation, note="Application result recorded")
+        if not ok:
+            raise ValueError(message)
     else:
-        conn.execute("""
-            UPDATE applications
-            SET status = ?, applied_at = ?
-            WHERE id = ?
-        """, (status, now, job_id))
-    conn.commit()
-    conn.close()
+        ok, _ = transition_application_state(job_id, "failed")
+        if not ok:
+            # Failure logging should not turn a discovery/recommendation row into
+            # an applied row.  If the workflow state cannot move to failed, keep
+            # the original state and only emit the result event.
+            pass
     _emit("job_applied", {"id": job_id, "success": success})
 
 
@@ -450,7 +510,7 @@ def _watcher_recommended_jobs(limit: int = 25) -> list[dict]:
               AND w.readiness_status IN ('READY_TO_APPLY', 'NEEDS_VERIFICATION')
               AND w.operational_priority NOT IN ('LOW', 'CLOSED')
               AND (w.closing_date IS NULL OR w.closing_date = '' OR date(w.closing_date) >= date('now'))
-              AND a.status NOT IN ('ignored', 'archived', 'rejected', 'withdrawn', 'submitted', 'applied')
+              AND a.status NOT IN ('ignored', 'archived', 'rejected', 'withdrawn', 'submitted', 'applied', 'closed', 'expired')
             ORDER BY
               CASE
                 WHEN w.last_change_type = 'NEW' AND w.readiness_status = 'READY_TO_APPLY' THEN 0
@@ -495,7 +555,7 @@ def get_recommended_jobs(limit: int = 25) -> list:
             return True
     eligible = [
         j for j in jobs
-        if j.get("status") not in {"ignored", "archived", "rejected", "withdrawn", "not_eligible", "submitted", "applied"}
+        if j.get("status") not in {"ignored", "archived", "rejected", "withdrawn", "not_eligible", "submitted", "applied", "closed", "expired"}
         and open_or_undated(j)
     ]
     eligible.sort(key=lambda j: (rank.get(j.get("priority", ""), 8), j.get("closing_date") or "9999-99-99", j.get("discovered_at") or ""))
@@ -519,8 +579,11 @@ def update_job_status(job_id: str, status: str) -> bool:
 def transition_application_state(job_id: str, new_status: str, *, explicit_confirmation: bool = False, note: str = "") -> tuple[bool, str]:
     """Enforce safe application state transitions.
 
-    Submitting/marking applied requires explicit_confirmation=True. This keeps
-    automation review-first and prevents accidental final submission.
+    Final submission can only be recorded from the opened state, with explicit
+    user confirmation, and only when the stored deterministic readiness is
+    READY_TO_APPLY.  Preparing/opening is blocked for deterministic
+    NOT_ELIGIBLE vacancies; NEEDS_VERIFICATION may be drafted/opened for user
+    review but cannot be submitted until the missing evidence is resolved.
     """
     if new_status not in VALID_STATUSES:
         return False, f"Invalid status: {new_status}"
@@ -528,11 +591,20 @@ def transition_application_state(job_id: str, new_status: str, *, explicit_confi
     if not job:
         return False, "Job not found"
     current = job.get("status") or "discovered"
+    readiness = application_readiness(job)
+
+    if readiness == READINESS_NOT_ELIGIBLE and new_status in {"prepared", "review", "opened", "submitted", "applied"}:
+        return False, f"Transition {current} -> {new_status} is not allowed for NOT_ELIGIBLE vacancies"
+
     allowed = ALLOWED_TRANSITIONS.get(current, set())
     if new_status not in allowed and new_status != current:
         return False, f"Transition {current} -> {new_status} is not allowed"
-    if new_status in {"submitted", "applied"} and not explicit_confirmation:
-        return False, "Explicit user confirmation is required before final submission"
+    if new_status in {"submitted", "applied"}:
+        if not explicit_confirmation:
+            return False, "Explicit user confirmation is required before final submission"
+        ok, message = can_submit_application(job_id)
+        if not ok:
+            return False, message
 
     now = datetime.now().isoformat()
     conn = get_db()

@@ -334,6 +334,25 @@ async def test_rescan_preserves_prepared_not_submitted_application_state(watcher
 
 
 @pytest.mark.asyncio
+async def test_expired_rescan_shows_prepared_application_as_expired_not_reset(watcher_db, profile, tmp_path):
+    job = medical_job(closing="2026-10-01")
+    await scan(profile, [job])
+    job_id = get_actionable_opportunities()[0]["canonical_id"]
+    prepared = prepare_application_for_watcher_job(
+        job_id,
+        profile,
+        resume_text="MD doctor with clinical experience, HMIS, BPHS, EPHS, IMAM, IPC, Dari, English, Pashto.",
+        out_dir=str(tmp_path / "applications"),
+    )
+    assert prepared["ok"] is True
+    await scan(profile, [medical_job(closing="2026-09-29")], now=datetime(2026, 10, 2, 8, 0, tzinfo=timezone.utc), today=date(2026, 10, 2))
+    row = tracker.get_job_by_id(job_id)
+    assert row["status"] == "expired"
+    assert row["submitted_at"] in (None, "")
+    assert row["documents_json"]
+
+
+@pytest.mark.asyncio
 async def test_interrupted_scan_is_marked_on_next_scan_without_deleting_jobs(watcher_db, profile):
     await scan(profile, [medical_job()])
     begin_scan("scan_interrupted", "2026-09-30T17:00:00+00:00", ["fmic"])

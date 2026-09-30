@@ -124,7 +124,7 @@ function mrjobs() {
 
     async loadApplications() {
       try {
-        const statuses = ["prepared", "review", "opened", "submitted", "applied", "interviewing", "offer", "rejected", "withdrawn"];
+        const statuses = ["prepared", "review", "opened", "submitted", "applied", "closed", "expired", "interviewing", "offer", "rejected", "withdrawn", "archived"];
         const res = await fetch("/api/jobs?limit=300&sort_by=discovered_at&sort_order=desc");
         const data = await res.json();
         this.applications = (data.jobs || []).map(normalizeJob).filter((j) => statuses.includes(j.status));
@@ -314,10 +314,12 @@ function mrjobs() {
     },
 
     matchReasons(job) {
-      return this.tableFor(job)
+      const met = this.tableFor(job)
         .filter((item) => item.status === "Met" && !["closing_date", "application_destination", "application_subject"].includes(item.key))
         .slice(0, 4)
         .map((item) => `${item.label} met`);
+      if (met.length) return met;
+      return (job.priority_reasons || []).slice(0, 4);
     },
 
     routeLabel(job) {
@@ -328,6 +330,37 @@ function mrjobs() {
       if (route.includes("oraclecloud.com")) return "Employer careers portal";
       if (route.includes("odoo.com")) return "Employer profile/application page";
       return "Online application";
+    },
+
+    sourceLabel(job) {
+      const source = job.source || job.platform || job.metadata?.source || "";
+      const url = (job.source_urls && job.source_urls[0]) || job.source_url || job.url || "";
+      if (source && url) return `${source} · ${url}`;
+      return source || url || "Source not listed";
+    },
+
+    nextAction(job) {
+      if (!job) return "Select a vacancy to review requirements and documents.";
+      if (isClosedOrExpired(job)) return "Closed/expired — do not submit unless the source deadline is corrected.";
+      const readiness = job.readiness_status || "";
+      if (readiness === "NOT_ELIGIBLE" || job.status === "not_eligible") return "Not eligible — do not prepare or submit an application.";
+      if (readiness === "NEEDS_VERIFICATION") return "Verify the highlighted requirements before final submission.";
+      if (!job.tailored_cv_ready || !job.cover_letter_ready) return "Prepare CV and cover letter for review.";
+      if (job.status === "opened") return "Review employer form; submit only after explicit confirmation.";
+      if (["submitted", "applied"].includes(job.status)) return "Submitted — track follow-up, do not treat as merely prepared.";
+      return "Open the real application route after reviewing documents.";
+    },
+
+    applicationStateLabel(job) {
+      if (!job) return "Needs Review";
+      if (job.status === "expired") return "Closed / Expired";
+      if (job.status === "closed" || job.status === "archived") return "Closed / Archived";
+      if (["submitted", "applied"].includes(job.status)) return "Submitted";
+      if (job.status === "opened") return "Opened";
+      const packageStatus = job.documents?.application_package?.package_status || job.documents?.package_status || "";
+      if (packageStatus === "NEEDS_USER_INPUT" || job.readiness_status === "NEEDS_VERIFICATION") return "Needs User Input";
+      if (job.status === "prepared" || job.status === "review") return "Prepared";
+      return statusLabel(job.status || job.readiness_status);
     },
 
     readinessLabel(job) {
@@ -416,6 +449,8 @@ function statusLabel(value) {
     opened: "Opened",
     submitted: "Submitted",
     applied: "Submitted",
+    closed: "Closed / Archived",
+    expired: "Closed / Expired",
     interviewing: "Interview",
     rejected: "Rejected",
     withdrawn: "Withdrawn",

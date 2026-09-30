@@ -44,6 +44,8 @@ from utils.tracker import (
     get_recommended_jobs,
     log_medical_match,
     transition_application_state,
+    can_submit_application,
+    application_readiness,
     get_match_report,
     VALID_STATUSES,
     ignore_jobs,
@@ -264,7 +266,9 @@ async def open_job_application(job_id: str) -> dict:
     url = job.get("apply_url") or job.get("url")
     if not url:
         raise HTTPException(status_code=400, detail="No application URL available")
-    transition_application_state(job_id, "opened")
+    ok, message = transition_application_state(job_id, "opened")
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
     return {"url": url, "job_id": job_id}
 
 
@@ -296,10 +300,11 @@ async def update_job(job_id: str, body: dict) -> dict:
     if "status" in body:
         if body["status"] in {"submitted", "applied"}:
             raise HTTPException(status_code=400, detail="Use the explicit submission confirmation endpoint to record a submitted application")
-        if not update_job_status(job_id, body["status"]):
+        ok, message = transition_application_state(job_id, body["status"])
+        if not ok:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid status. Valid values: {VALID_STATUSES}",
+                detail=message or f"Invalid status. Valid values: {VALID_STATUSES}",
             )
 
     if "notes" in body:
@@ -937,6 +942,19 @@ async def apply_single_job(job_id: str, body: dict = {}) -> dict:
         phrase = f"SUBMIT {job_id}"
         if body.get("confirmation") != phrase:
             raise HTTPException(status_code=400, detail=f"Explicit confirmation required. Type exactly: {phrase}")
+        readiness = application_readiness(job)
+        if readiness == "NOT_ELIGIBLE":
+            raise HTTPException(status_code=400, detail="Cannot submit: deterministic matching classified this vacancy as NOT_ELIGIBLE")
+        if readiness == "NEEDS_VERIFICATION":
+            raise HTTPException(status_code=400, detail="Cannot submit: this vacancy still has NEEDS_VERIFICATION requirements")
+
+    opened_ok, opened_message = transition_application_state(job_id, "opened")
+    if not opened_ok:
+        raise HTTPException(status_code=400, detail=opened_message)
+    if not dry_run:
+        submit_ok, submit_message = can_submit_application(job_id)
+        if not submit_ok:
+            raise HTTPException(status_code=400, detail=submit_message)
 
     async def _do_apply():
         _apply_state["running"] = True
@@ -983,7 +1001,6 @@ async def apply_single_job(job_id: str, body: dict = {}) -> dict:
 
                 platform = job.get("platform", "")
                 apply_url = job["apply_url"]
-                transition_application_state(job_id, "opened")
 
                 success = await apply_smart(
                     page, apply_url, profile, brain,
@@ -1687,14 +1704,25 @@ async def watch_notification_seen(notification_id: str) -> dict:
 
 @app.get("/api/system/source-registry")
 async def system_source_registry() -> dict:
-    """Return source registry status for Advanced/System."""
+    """Return source registry status and latest live-discovery diagnostics."""
     from utils.source_registry import load_source_registry, registry_status_counts, validate_source_registry
+    from utils.job_watcher import get_scan_audits
 
     records = load_source_registry()
+    scans = get_scan_audits(limit=1)
+    last_scan = scans[0] if scans else None
     return {
         "counts": registry_status_counts(records),
         "active": [r["id"] for r in records if r.get("enabled_in_autonomous_discovery") and r.get("reliability_status") in {"ACTIVE", "LIMITED"}],
         "errors": validate_source_registry(records),
+        "last_scan": last_scan,
+        "last_scan_source_state": {
+            "sources_attempted": (last_scan or {}).get("sources_attempted", []),
+            "sources_successful": (last_scan or {}).get("sources_successful", []),
+            "sources_failed": (last_scan or {}).get("sources_failed", []),
+            "jobs_found": (last_scan or {}).get("discovered_count", 0),
+            "jobs_processed": (last_scan or {}).get("deduplicated_count", 0),
+        } if last_scan else None,
     }
 
 

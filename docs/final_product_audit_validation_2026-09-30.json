@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-09-30T07:15:01.176558+00:00",
+  "generated_at": "2026-09-30T12:47:29.309952+00:00",
   "audit_date": "2026-09-30",
-  "temporary_database_used": "/tmp/jobs_finder_final_audit_o0i3ln5p/final_audit.db",
+  "temporary_database_used": "/tmp/jobs_finder_final_audit_18uat14z/final_audit.db",
   "profile_used": "embedded audit profile with owner-confirmed MD, Medical Exit Exam, and verified medical registration; no license number provided",
   "source_registry": {
     "source_count": 36,
@@ -69,9 +69,9 @@
       "updated_count": 0,
       "unchanged_count": 0,
       "closed_count": 1,
-      "ready_to_apply_count": 1,
+      "ready_to_apply_count": 2,
       "needs_verification_count": 2,
-      "not_eligible_count": 2,
+      "not_eligible_count": 1,
       "notifications_created": 7,
       "errors": [],
       "changes": [
@@ -116,7 +116,7 @@
         {
           "canonical_id": "watch_20aea89b90339d7dbd",
           "change_type": "NEW",
-          "readiness_status": "NOT_ELIGIBLE",
+          "readiness_status": "READY_TO_APPLY",
           "operational_priority": "CLOSED",
           "changed_fields": [],
           "notification_ids": [
@@ -153,9 +153,9 @@
       "updated_count": 0,
       "unchanged_count": 5,
       "closed_count": 1,
-      "ready_to_apply_count": 1,
+      "ready_to_apply_count": 2,
       "needs_verification_count": 2,
-      "not_eligible_count": 2,
+      "not_eligible_count": 1,
       "notifications_created": 0,
       "errors": [],
       "changes": [
@@ -194,7 +194,7 @@
         {
           "canonical_id": "watch_20aea89b90339d7dbd",
           "change_type": "UNCHANGED",
-          "readiness_status": "NOT_ELIGIBLE",
+          "readiness_status": "READY_TO_APPLY",
           "operational_priority": "CLOSED",
           "changed_fields": [],
           "notification_ids": []
@@ -229,9 +229,9 @@
       "updated_count": 1,
       "unchanged_count": 4,
       "closed_count": 1,
-      "ready_to_apply_count": 1,
+      "ready_to_apply_count": 2,
       "needs_verification_count": 2,
-      "not_eligible_count": 2,
+      "not_eligible_count": 1,
       "notifications_created": 1,
       "errors": [],
       "changes": [
@@ -274,7 +274,7 @@
         {
           "canonical_id": "watch_20aea89b90339d7dbd",
           "change_type": "UNCHANGED",
-          "readiness_status": "NOT_ELIGIBLE",
+          "readiness_status": "READY_TO_APPLY",
           "operational_priority": "CLOSED",
           "changed_fields": [],
           "notification_ids": []
@@ -409,7 +409,7 @@
     },
     "safety_negative_cases": {
       "transition_to_submitted_without_confirmation_ok": false,
-      "transition_to_submitted_without_confirmation_message": "Explicit user confirmation is required before final submission",
+      "transition_to_submitted_without_confirmation_message": "Transition prepared -> submitted is not allowed",
       "api_patch_submitted_status_code": 400,
       "api_apply_wrong_confirmation_status_code": 400,
       "api_apply_wrong_confirmation_body": {
@@ -451,8 +451,8 @@
           "cover_txt": "documents/final_product_audit_2026-09-30/fmic/watch_aeb9c295fd34296adf_medical_officer_cover_letter.txt",
           "package_txt": "documents/final_product_audit_2026-09-30/fmic/watch_aeb9c295fd34296adf_medical_officer_complete_application_package.txt"
         },
-        "cv_chars": 2432,
-        "cover_chars": 1438
+        "cv_chars": 2543,
+        "cover_chars": 1497
       },
       "akhs": {
         "expected_title_present": true,
@@ -469,10 +469,10 @@
           "cover_txt": "documents/final_product_audit_2026-09-30/akhs/watch_bbb576b3635f23e04d_surgeon_cover_letter.txt",
           "package_txt": "documents/final_product_audit_2026-09-30/akhs/watch_bbb576b3635f23e04d_surgeon_complete_application_package.txt"
         },
-        "cv_chars": 2168,
-        "cover_chars": 1244
+        "cv_chars": 2267,
+        "cover_chars": 1303
       },
-      "tailoring_similarity_ratio_fmic_vs_akhs_cv": 0.7326086956521739,
+      "tailoring_similarity_ratio_fmic_vs_akhs_cv": 0.7417879417879418,
       "genuinely_tailored": true
     },
     "data_integrity": {

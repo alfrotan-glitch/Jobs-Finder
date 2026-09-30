@@ -51,6 +51,62 @@ CONFIRMATION_INDICATORS = [
     "successfully applied",
 ]
 
+SECURITY_CONTROL_INDICATORS = [
+    "captcha",
+    "recaptcha",
+    "hcaptcha",
+    "i am not a robot",
+    "verify you are human",
+    "human verification",
+    "sign in to continue",
+    "login to continue",
+    "log in to continue",
+    "authentication required",
+    "please sign in",
+    "please log in",
+    "multi-factor",
+    "two-factor",
+    "verification code",
+    "one-time password",
+    "mfa",
+    "access denied",
+    "not authorized",
+]
+
+
+def detect_security_barrier_text(text: str) -> str:
+    """Return the matched security/login barrier phrase, if any.
+
+    The adapters may fill ordinary public forms, but they must never bypass or
+    work around CAPTCHA, MFA, login walls, or employer access controls.
+    """
+    lowered = (text or "").lower()
+    for indicator in SECURITY_CONTROL_INDICATORS:
+        if indicator in lowered:
+            return indicator
+    return ""
+
+
+async def detect_security_barrier(page) -> str:
+    """Best-effort page-level security barrier detection."""
+    try:
+        parts = []
+        try:
+            parts.append(await page.title())
+        except Exception:
+            pass
+        try:
+            parts.append(getattr(page, "url", "") or "")
+        except Exception:
+            pass
+        try:
+            parts.append(await page.inner_text("body"))
+        except Exception:
+            pass
+        return detect_security_barrier_text("\n".join(str(part or "") for part in parts))
+    except Exception:
+        return ""
+
 
 # ──────────────────────────────────────────────────────────────
 # Cache helpers
@@ -1069,10 +1125,13 @@ def _is_confirmation(text) -> bool:
 
 
 async def _detect_page_state(page) -> str:
-    """Detect the current page state: 'form', 'confirmation', 'error', 'other'."""
+    """Detect current page state, including security barriers."""
     try:
         body_text = await page.inner_text("body")
         body_lower = body_text.lower()
+
+        if detect_security_barrier_text(body_text):
+            return "security_required"
 
         if _is_confirmation(body_text):
             return "confirmation"
@@ -1511,6 +1570,11 @@ async def apply_stagehand(
 
     await asyncio.sleep(3)  # Let SPA frameworks render forms
 
+    barrier = await detect_security_barrier(page)
+    if barrier:
+        print(f"  [!] Security/login control detected ({barrier}). Stop and complete required employer action manually; not bypassing.")
+        return False
+
     # Phase 0: Check for forms inside iframes (Workday, iCIMS, Taleo)
     active_frame = page
     is_iframe = False
@@ -1529,6 +1593,10 @@ async def apply_stagehand(
 
         # Check if we're on a confirmation page
         state = await _detect_page_state(active_frame)
+        if state == "security_required":
+            print("  [!] CAPTCHA/login/MFA/security control detected. Stop and complete required employer action manually; not bypassing.")
+            return False
+
         if state == "confirmation":
             print("  [+] Application submitted successfully!")
             return True

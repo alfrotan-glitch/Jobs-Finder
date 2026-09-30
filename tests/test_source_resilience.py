@@ -18,6 +18,10 @@ async def test_source_failure_does_not_break_discovery(monkeypatch):
     }
     jobs = await discover_all_jobs(profile)
     assert jobs == []
+    audit = profile.get("_watcher_source_audit", {})
+    assert "ACBAR" in audit.get("attempted", [])
+    assert any(err.get("source") == "ACBAR" and "source down" in err.get("error", "") for err in audit.get("failed", []))
+    assert not audit.get("successful")
 
 
 def test_web_search_ingest_parser_preserves_acbar_description_and_facts():

@@ -936,30 +936,63 @@ def _safe_slug(value: str, *, max_len: int = 90) -> str:
     return (slug[:max_len].strip("_") or "application")
 
 
-def _write_text_docx_pdf(text: str, base_path: Any) -> dict[str, str]:
-    """Write text plus DOCX/PDF exports and return all paths.
+def _write_text_docx_pdf(
+    text: str,
+    base_path: Any,
+    *,
+    document_type: str = "cv",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Write TXT plus globally designed DOCX/PDF exports.
 
-    The TXT file is the canonical plain-text source; DOCX/PDF are convenience
-    exports for employer upload.  Export failures are surfaced in sidecar text
-    files instead of silently losing the canonical content.
+    The TXT file remains the canonical ATS/plain-text source.  DOCX/PDF are
+    rendered through the shared Jobs-Finder document design system so every
+    application package receives the same professional visual language.  Export
+    failures are surfaced in sidecar text files instead of silently losing the
+    canonical content.
     """
+    from utils.document_design import render_professional_document_artifacts
     from utils.master_cv import write_docx, write_pdf
 
     base = Path(base_path)
-    base.parent.mkdir(parents=True, exist_ok=True)
-    txt = base.with_suffix(".txt")
-    docx = base.with_suffix(".docx")
-    pdf = base.with_suffix(".pdf")
-    txt.write_text(text or "", encoding="utf-8")
     try:
-        write_docx(text or "", docx)
+        return render_professional_document_artifacts(
+            text or "",
+            base,
+            document_type=document_type,
+            metadata=metadata or {},
+        )
     except Exception as exc:  # pragma: no cover - environment/export dependency safety
-        docx.with_suffix(".docx.txt").write_text(f"DOCX export failed: {exc}\n\n{text or ''}", encoding="utf-8")
-    try:
-        write_pdf(text or "", pdf)
-    except Exception as exc:  # pragma: no cover - environment/export dependency safety
-        pdf.with_suffix(".pdf.txt").write_text(f"PDF export failed: {exc}\n\n{text or ''}", encoding="utf-8")
-    return {"txt": str(txt), "docx": str(docx), "pdf": str(pdf)}
+        base.parent.mkdir(parents=True, exist_ok=True)
+        txt = base.with_suffix(".txt")
+        docx = base.with_suffix(".docx")
+        pdf = base.with_suffix(".pdf")
+        txt.write_text(text or "", encoding="utf-8")
+        docx.with_suffix(".docx.txt").write_text(f"Designed DOCX export failed: {exc}\n\n{text or ''}", encoding="utf-8")
+        pdf.with_suffix(".pdf.txt").write_text(f"Designed PDF export failed: {exc}\n\n{text or ''}", encoding="utf-8")
+        try:
+            write_docx(text or "", docx)
+            write_pdf(text or "", pdf)
+        except Exception:
+            pass
+        return {"txt": str(txt), "docx": str(docx), "pdf": str(pdf)}
+
+
+def _application_document_base_paths(job: dict[str, Any], out_dir: str | Path) -> dict[str, Path]:
+    out = Path(out_dir)
+    prefix = application_bundle_prefix(job)
+    return {
+        "tailored_cv": out / f"{prefix}_tailored_cv",
+        "cover_letter": out / f"{prefix}_cover_letter",
+    }
+
+
+def _expected_document_paths(job: dict[str, Any], out_dir: str | Path) -> dict[str, dict[str, str]]:
+    bases = _application_document_base_paths(job, out_dir)
+    return {
+        key: {"txt": str(base.with_suffix(".txt")), "docx": str(base.with_suffix(".docx")), "pdf": str(base.with_suffix(".pdf"))}
+        for key, base in bases.items()
+    }
 
 
 def application_bundle_prefix(job: dict[str, Any]) -> str:
@@ -984,8 +1017,20 @@ def write_application_bundle_files(
 
     out = Path(out_dir)
     prefix = application_bundle_prefix(job)
-    cv_paths = _write_text_docx_pdf(tailored_documents.get("tailored_cv_text", ""), out / f"{prefix}_tailored_cv")
-    cover_paths = _write_text_docx_pdf(tailored_documents.get("cover_letter", ""), out / f"{prefix}_cover_letter")
+    bases = _application_document_base_paths(job, out)
+    design_metadata = {"job": job, "package": package, "tailored_documents": tailored_documents}
+    cv_paths = _write_text_docx_pdf(
+        tailored_documents.get("tailored_cv_text", ""),
+        bases["tailored_cv"],
+        document_type="cv",
+        metadata=design_metadata,
+    )
+    cover_paths = _write_text_docx_pdf(
+        tailored_documents.get("cover_letter", ""),
+        bases["cover_letter"],
+        document_type="cover_letter",
+        metadata=design_metadata,
+    )
     package_txt = out / f"{prefix}_complete_application_package.txt"
     package_json = out / f"{prefix}_complete_application_package.json"
     fields_txt = out / f"{prefix}_form_fields_prefill_checklist.txt"
@@ -1024,18 +1069,15 @@ def prepare_application_bundle(
 ) -> dict[str, Any]:
     """Generate documents, application package, and file exports for one job."""
     docs = generate_tailored_documents(job, profile, match_report, resume_text=resume_text)
-    prefix = application_bundle_prefix(job)
-    out = Path(out_dir)
-    preliminary_cv = _write_text_docx_pdf(docs.get("tailored_cv_text", ""), out / f"{prefix}_tailored_cv")
-    preliminary_cover = _write_text_docx_pdf(docs.get("cover_letter", ""), out / f"{prefix}_cover_letter")
+    expected_paths = _expected_document_paths(job, out_dir)
     package = generate_application_package(
         job,
         profile,
         match_report,
         docs,
         generated_paths={
-            "tailored_cv": preliminary_cv.get("pdf") or preliminary_cv.get("txt", ""),
-            "cover_letter": preliminary_cover.get("pdf") or preliminary_cover.get("txt", ""),
+            "tailored_cv": expected_paths["tailored_cv"].get("pdf") or expected_paths["tailored_cv"].get("txt", ""),
+            "cover_letter": expected_paths["cover_letter"].get("pdf") or expected_paths["cover_letter"].get("txt", ""),
         },
     )
     paths = write_application_bundle_files(job, docs, package, out_dir=out_dir)

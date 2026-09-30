@@ -431,7 +431,11 @@ def test_prepare_application_bundle_writes_complete_review_files(tmp_path):
     docs = prepare_application_bundle(job, profile, report, out_dir=tmp_path)
     paths = docs["generated_paths"]
     assert Path(paths["tailored_cv"]["txt"]).exists()
+    assert Path(paths["tailored_cv"]["docx"]).exists()
+    assert Path(paths["tailored_cv"]["pdf"]).exists()
     assert Path(paths["cover_letter"]["txt"]).exists()
+    assert Path(paths["cover_letter"]["docx"]).exists()
+    assert Path(paths["cover_letter"]["pdf"]).exists()
     assert Path(paths["application_package_txt"]).exists()
     package_text = Path(paths["application_package_txt"]).read_text(encoding="utf-8")
     assert "Package status: READY_TO_SUBMIT" in package_text
@@ -440,3 +444,75 @@ def test_prepare_application_bundle_writes_complete_review_files(tmp_path):
     assert "Formal cover letter" in package_text
     assert "Submit only after explicit user confirmation" in package_text
     assert docs["no_submission_performed"] is True
+
+
+def test_global_document_design_system_renders_cv_and_cover_letter_for_every_bundle(tmp_path):
+    import fitz
+    from docx import Document
+    from utils.document_design import DESIGN_SYSTEM_VERSION
+
+    profile = _technical_supervisor_profile()
+    jobs = [
+        {
+            "id": "watch_aeb9c295fd34296adf",
+            "title": "Medical Officer",
+            "company": "French Medical Institute for Mothers and Children (FMIC)",
+            "location": "Kabul",
+            "url": "https://www.acbar.org/en/jobs/details/145774/medical-officer",
+            "apply_url": "https://docs.google.com/forms/d/example/viewform",
+            "description": "Medical Officer, MD, valid medical registration, clinical care, inpatient/outpatient service, quality and patient safety. Vacancy reference FMIC/HR/571. Closing date: 05 October 2026.",
+            "metadata": {"reference_number": "FMIC/HR/571", "required_documents": ["Updated CV", "Cover letter"]},
+        },
+        {
+            "id": "145872",
+            "title": "Technical Supervisor",
+            "company": "Bakhter Development Network - BDN",
+            "location": "Takhar",
+            "url": "https://www.acbar.org/en/jobs/details/145872/technical-supervisor",
+            "apply_url": "https://forms.gle/U3dJcBHhJamUZ5yE9",
+            "description": "Medical degree MD, valid medical license, 3 years healthcare project management, PHC, supportive supervision, reports, English. Closing date: 08 October 2026.",
+            "metadata": {"required_documents": ["Updated CV", "Formal cover letter"]},
+        },
+    ]
+    generated = []
+    for job in jobs:
+        report = match_job_against_profile(job, profile, today=date(2026, 9, 30)).to_dict()
+        docs = prepare_application_bundle(job, profile, report, out_dir=tmp_path)
+        paths = docs["generated_paths"]
+        generated.append((job, docs, paths))
+
+        txt = Path(paths["tailored_cv"]["txt"]).read_text(encoding="utf-8")
+        assert "TARGET ROLE:" in txt
+        assert DESIGN_SYSTEM_VERSION not in txt  # ATS/plain-text output is not polluted by layout markers.
+
+        cv_pdf = fitz.open(paths["tailored_cv"]["pdf"])
+        cover_pdf = fitz.open(paths["cover_letter"]["pdf"])
+        assert cv_pdf.page_count >= 2
+        assert cover_pdf.page_count == 1
+        cv_text = "\n".join(page.get_text() for page in cv_pdf)
+        cover_text = "\n".join(page.get_text() for page in cover_pdf)
+        assert "APPLICATION FOCUS" in cv_text
+        assert "PROFESSIONAL EXPERIENCE" in cv_text
+        assert job["title"] in cv_text
+        assert job["company"].split(" (")[0] in cv_text
+        assert "APPLICATION LETTER" in cover_text
+        assert job["title"] in cover_text
+        assert job["company"].split(" - ")[0].split(" (")[0] in cover_text
+
+        cv_docx = Document(paths["tailored_cv"]["docx"])
+        cover_docx = Document(paths["cover_letter"]["docx"])
+        cv_style_names = {style.name for style in cv_docx.styles}
+        assert {"JF Name", "JF Section", "JF Body"}.issubset(cv_style_names)
+        cv_docx_text = "\n".join(
+            [paragraph.text for paragraph in cv_docx.paragraphs]
+            + [paragraph.text for table in cv_docx.tables for row in table.rows for cell in row.cells for paragraph in cell.paragraphs]
+        )
+        cover_docx_text = "\n".join(paragraph.text for paragraph in cover_docx.paragraphs)
+        assert "PROFESSIONAL EXPERIENCE" in cv_docx_text
+        assert "APPLICATION LETTER" in cover_docx_text
+
+    fmic_cv = Path(generated[0][2]["tailored_cv"]["txt"]).read_text(encoding="utf-8")
+    bdn_cv = Path(generated[1][2]["tailored_cv"]["txt"]).read_text(encoding="utf-8")
+    assert "TARGET ORGANIZATION: French Medical Institute for Mothers and Children" in fmic_cv
+    assert "TARGET ORGANIZATION: Bakhter Development Network - BDN" in bdn_cv
+    assert fmic_cv != bdn_cv

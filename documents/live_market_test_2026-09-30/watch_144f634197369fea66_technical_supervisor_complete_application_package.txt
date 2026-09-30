@@ -1,18 +1,18 @@
-Application package: Medical Officer — French Medical Institute for Mothers and Children (FMIC)
+Application package: Technical Supervisor — Bakhter Development Network - BDN
 Package status: READY_TO_SUBMIT
 Route type: online_form
-Source URL: https://www.fmic.org.af/WorkWithUs/vacancies/Pages/Medical-Officer-2026.aspx
-Deadline: 2026-10-05
-Vacancy/reference number: FMIC/HR/571
+Source URL: https://www.acbar.org/en/jobs/details/145872/technical-supervisor
+Deadline: 2026-10-08
+Vacancy/reference number: N/A
 
 ONLINE APPLICATION
-Application URL/form: https://docs.google.com/forms/d/1doS8XyeEEV_aQ7FUW5tnrBSPTJtgHgk1UHm4mjReYQM/viewform
+Application URL/form: https://forms.gle/U3dJcBHhJamUZ5yE9
 Required form fields/data checklist:
 - Full name: Allah Yar Frotan
 - Email: alfrotan@gmail.com
 - Phone: +93766462006
 - Current location: Kabul, Afghanistan
-- Position applied for: Medical Officer
+- Position applied for: Technical Supervisor
 - Education: MD, Kabul Medical Science University, 2013–2020
 - License/registration: verified as valid; enter number only if Dr. Frotan provides the exact number
 - Medical Exit Exam: verified as completed; enter certificate/document details only if Dr. Frotan provides them
@@ -23,10 +23,10 @@ Required form fields/data checklist:
 
 Required document/attachment checklist:
 - Tailored CV / resume
+- Organization application form, completed if required
 
 Special application instructions:
-- After user review, press Submit only once and only with explicit user confirmation
-- Source supplied a Google Forms /edit URL; use the respondent /viewform URL for manual applicant review/submission. If Google requires owner access or login, stop and verify the correct employer link.
+- None beyond normal review and submission instructions.
 
 Still required from user before sending/submitting:
 - Review the tailored CV and cover letter for accuracy before use

@@ -1,0 +1,66 @@
+{
+  "date": "2026-09-30",
+  "validation_environment": "Arena.ai sandbox; direct Python httpx/curl outbound HTTPS returned TLS EOF for tested external sources, while Arena fetch_page could retrieve public pages. Runtime source adapters are therefore unit/fixture-tested here and public pages are content-validated with fetch_page.",
+  "tested_sources": [
+    {
+      "source": "ACBAR",
+      "source_type": "afghan_job_board",
+      "url": "https://www.acbar.org/en/jobs",
+      "result": "public_page_accessible_via_fetch_page; direct_httpx_blocked_tls_eof",
+      "evidence": "ACBAR jobs page showed 270 jobs and current Afghanistan vacancies including 145902 Medical Doctor (MD).",
+      "limitations": "Python httpx and curl in this sandbox failed with TLS EOF; adapter remains failure-isolated."
+    },
+    {
+      "source": "UNJobs Afghanistan",
+      "source_type": "public_un_international_job_board",
+      "url": "https://unjobs.org/duty_stations/afghanistan",
+      "result": "public_page_accessible_via_fetch_page; parser_unit_tested; direct_httpx_blocked_tls_eof",
+      "evidence": "UNJobs page showed 43 Afghanistan vacancies, including Nurse (UNAMA Kabul), Medical Doctor (UNAMA Mazar-i-Sharif), Medical Doctor (UNAMA Gardez), Laboratory Technologist, and UNICEF Polio/Health-related postings.",
+      "example_vacancies": [
+        "Medical Doctor, Mazar-i-Sharif — UNAMA — https://unjobs.org/vacancies/1790258574072 (public listing says no specified closing date; verify current status on official route)",
+        "Nurse, Kabul — UNAMA — https://unjobs.org/vacancies/1790589742575 (public listing says no specified closing date; verify current status on official route)",
+        "Medical Doctor (MD) / Team leader, Herat — CTG — https://unjobs.org/vacancies/1790434848677 (observed but already closed on 2026-09-29)"
+      ],
+      "limitations": "UNJobs is not an official UN document; use as discovery and verify official employer route before applying."
+    },
+    {
+      "source": "UNICEF Careers",
+      "source_type": "official_employer_career_page",
+      "url": "https://jobs.unicef.org/en-us/search/?search-keyword=Afghanistan",
+      "result": "official_public_page_accessible_via_fetch_page; parser_unit_tested; direct_httpx_blocked_tls_eof",
+      "evidence": "UNICEF official page showed current Afghanistan vacancies, including INTERNATIONALS ONLY - Information Management Consultant, Polio Section, Afghanistan, deadline 04 Oct 2026, with official PageUp apply URL.",
+      "example_vacancies": [
+        "Information Management Consultant, Polio Section, Afghanistan — UNICEF — https://jobs.unicef.org/en-us/job/595890/internationals-only-information-management-consultant-polio-section-afghanistan-6-months-remote-with-trip"
+      ],
+      "limitations": "Subscription widget contains reCAPTCHA; vacancy content and Apply Now link are public. Do not bypass CAPTCHA."
+    },
+    {
+      "source": "ReliefWeb",
+      "source_type": "humanitarian_job_board",
+      "url": "https://api.reliefweb.int/v1/jobs and https://api.reliefweb.int/v2/jobs",
+      "result": "api_v1_decommissioned; api_v2_requires_approved_appname; public_html_search_accessible_but_limited_in_fetch_page_markdown",
+      "evidence": "v1 API returned 410 decommissioned; v2 API returned 403 approved appname required. Public search page at reliefweb.int/jobs?search=Afghanistan%20health showed 12 results but fetch_page markdown did not expose titles in the captured chunk.",
+      "limitations": "Adapter now supports approved appname v2 API and public HTML fallback, but no live adapter success is claimed in this sandbox."
+    },
+    {
+      "source": "LinkedIn public jobs",
+      "source_type": "social_professional_network",
+      "url": "https://www.linkedin.com/jobs/search/?keywords=Medical%20Doctor&location=Afghanistan",
+      "result": "blocked_in_fetch_page_http_403",
+      "evidence": "fetch_page returned HTTP 403.",
+      "limitations": "Not enabled by default; do not bypass login/CAPTCHA/access controls."
+    },
+    {
+      "source": "Facebook public posts search",
+      "source_type": "social_network",
+      "url": "https://www.facebook.com/search/posts/?q=Afghanistan%20medical%20doctor%20job",
+      "result": "blocked_in_fetch_page_http_403",
+      "evidence": "fetch_page returned HTTP 403.",
+      "limitations": "Not implemented; do not bypass login/CAPTCHA/access controls."
+    }
+  ],
+  "full_test_suite_result": {
+    "command": ".venv/bin/python -m pytest -q",
+    "result": "212 passed, 1 skipped in 24.19s"
+  }
+}

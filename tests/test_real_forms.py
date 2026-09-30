@@ -35,6 +35,9 @@ from datetime import datetime, timezone
 
 import pytest
 
+if os.environ.get("RUN_REAL_FORMS") != "1":
+    pytest.skip("Real ATS form tests require RUN_REAL_FORMS=1 and installed Playwright browsers", allow_module_level=True)
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

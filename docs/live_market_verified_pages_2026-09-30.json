@@ -1,0 +1,2252 @@
+{
+  "run_at": "2026-09-30T08:05:47.637057+00:00",
+  "market_date_used": "2026-09-30",
+  "normal_live_source_run": {
+    "run_at": "2026-09-30T08:05:44.291494+00:00",
+    "market_date_used": "2026-09-30",
+    "profile_source": "Existing Dr. Frotan CV/profile fixture normalized by utils.profile_builder; no private identifiers or license number invented.",
+    "source_registry": {
+      "records": 36,
+      "validation_errors": [],
+      "active_sources_count": 15,
+      "active_sources": [
+        {
+          "id": "acbar",
+          "status": "ACTIVE",
+          "method": "acbar_html",
+          "url": "https://www.acbar.org/en/jobs"
+        },
+        {
+          "id": "wazifaha",
+          "status": "LIMITED",
+          "method": "registry_static_html",
+          "url": "https://wazifaha.org/jobs/"
+        },
+        {
+          "id": "reliefweb",
+          "status": "LIMITED",
+          "method": "reliefweb_api_or_html",
+          "url": "https://reliefweb.int/jobs?search=Afghanistan%20health"
+        },
+        {
+          "id": "unjobs_afghanistan",
+          "status": "ACTIVE",
+          "method": "unjobs_html",
+          "url": "https://unjobs.org/duty_stations/afghanistan"
+        },
+        {
+          "id": "unicef_careers",
+          "status": "ACTIVE",
+          "method": "unicef_careers_html",
+          "url": "https://jobs.unicef.org/en-us/search/?search-keyword=Afghanistan"
+        },
+        {
+          "id": "who_careers",
+          "status": "LIMITED",
+          "method": "registry_static_html",
+          "url": "https://careers.who.int/careersection/ex/jobsearch.ftl?lang=en"
+        },
+        {
+          "id": "unops_careers",
+          "status": "LIMITED",
+          "method": "registry_static_html",
+          "url": "https://careers.unops.org/"
+        },
+        {
+          "id": "undp_careers",
+          "status": "LIMITED",
+          "method": "registry_static_html",
+          "url": "https://jobs.undp.org/cj_view_jobs.cfm"
+        },
+        {
+          "id": "iom_recruit",
+          "status": "ACTIVE",
+          "method": "oracle_hcm_api",
+          "url": "https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?location=Afghanistan"
+        },
+        {
+          "id": "dacaar_jobs",
+          "status": "ACTIVE",
+          "method": "registry_static_html",
+          "url": "https://dacaar.org/jobs"
+        },
+        {
+          "id": "nrc_careers",
+          "status": "ACTIVE",
+          "method": "oracle_hcm_api",
+          "url": "https://ekum.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2019/jobs?location=Afghanistan"
+        },
+        {
+          "id": "akdn_careers",
+          "status": "ACTIVE",
+          "method": "registry_static_html",
+          "url": "https://akhs.odoo.com/jobs"
+        },
+        {
+          "id": "moph_vacancies",
+          "status": "ACTIVE",
+          "method": "registry_static_html",
+          "url": "https://moph.gov.af/en/vacancies"
+        },
+        {
+          "id": "ku_vacancies",
+          "status": "ACTIVE",
+          "method": "registry_static_html",
+          "url": "https://ku.edu.af/en/vacancies"
+        },
+        {
+          "id": "fmic",
+          "status": "ACTIVE",
+          "method": "registry_static_html",
+          "url": "https://www.fmic.org.af/WorkWithUs/vacancies/Pages/home.aspx"
+        }
+      ]
+    },
+    "scan_summary": {
+      "scan_id": "2026-09-30_live_market",
+      "started_at": "2026-09-30T12:00:00+00:00",
+      "finished_at": "2026-09-30T12:00:00+00:00",
+      "status": "COMPLETED",
+      "sources_attempted": [
+        "acbar",
+        "wazifaha",
+        "reliefweb",
+        "unjobs_afghanistan",
+        "unicef_careers",
+        "who_careers",
+        "unops_careers",
+        "undp_careers",
+        "iom_recruit",
+        "dacaar_jobs",
+        "nrc_careers",
+        "akdn_careers",
+        "moph_vacancies",
+        "ku_vacancies",
+        "fmic"
+      ],
+      "sources_successful": [
+        "acbar",
+        "akdn_careers",
+        "dacaar_jobs",
+        "fmic",
+        "iom_recruit",
+        "ku_vacancies",
+        "moph_vacancies",
+        "nrc_careers",
+        "reliefweb",
+        "undp_careers",
+        "unicef_careers",
+        "unjobs_afghanistan",
+        "unops_careers",
+        "wazifaha",
+        "who_careers"
+      ],
+      "sources_failed": [],
+      "discovered_count": 0,
+      "normalized_count": 0,
+      "deduplicated_count": 0,
+      "new_count": 0,
+      "updated_count": 0,
+      "unchanged_count": 0,
+      "closed_count": 0,
+      "ready_to_apply_count": 0,
+      "needs_verification_count": 0,
+      "not_eligible_count": 0,
+      "notifications_created": 0,
+      "errors": [],
+      "changes": []
+    },
+    "counts": {
+      "jobs_discovered_raw": 0,
+      "jobs_after_deduplication": 0,
+      "open_relevant_jobs": 0,
+      "ready_to_apply": 0,
+      "needs_verification": 0,
+      "not_eligible": 0,
+      "packages_prepared": 0
+    },
+    "ready_to_apply": [],
+    "needs_verification": [],
+    "not_eligible": [],
+    "all_open_relevant_jobs": [],
+    "best_actionable_by_deadline": [],
+    "packages_prepared": [],
+    "submission_violations": []
+  },
+  "source_registry": {
+    "records": 36,
+    "active_sources_count": 15,
+    "active_sources": [
+      {
+        "id": "acbar",
+        "status": "ACTIVE",
+        "method": "acbar_html",
+        "url": "https://www.acbar.org/en/jobs"
+      },
+      {
+        "id": "wazifaha",
+        "status": "LIMITED",
+        "method": "registry_static_html",
+        "url": "https://wazifaha.org/jobs/"
+      },
+      {
+        "id": "reliefweb",
+        "status": "LIMITED",
+        "method": "reliefweb_api_or_html",
+        "url": "https://reliefweb.int/jobs?search=Afghanistan%20health"
+      },
+      {
+        "id": "unjobs_afghanistan",
+        "status": "ACTIVE",
+        "method": "unjobs_html",
+        "url": "https://unjobs.org/duty_stations/afghanistan"
+      },
+      {
+        "id": "unicef_careers",
+        "status": "ACTIVE",
+        "method": "unicef_careers_html",
+        "url": "https://jobs.unicef.org/en-us/search/?search-keyword=Afghanistan"
+      },
+      {
+        "id": "who_careers",
+        "status": "LIMITED",
+        "method": "registry_static_html",
+        "url": "https://careers.who.int/careersection/ex/jobsearch.ftl?lang=en"
+      },
+      {
+        "id": "unops_careers",
+        "status": "LIMITED",
+        "method": "registry_static_html",
+        "url": "https://careers.unops.org/"
+      },
+      {
+        "id": "undp_careers",
+        "status": "LIMITED",
+        "method": "registry_static_html",
+        "url": "https://jobs.undp.org/cj_view_jobs.cfm"
+      },
+      {
+        "id": "iom_recruit",
+        "status": "ACTIVE",
+        "method": "oracle_hcm_api",
+        "url": "https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?location=Afghanistan"
+      },
+      {
+        "id": "dacaar_jobs",
+        "status": "ACTIVE",
+        "method": "registry_static_html",
+        "url": "https://dacaar.org/jobs"
+      },
+      {
+        "id": "nrc_careers",
+        "status": "ACTIVE",
+        "method": "oracle_hcm_api",
+        "url": "https://ekum.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2019/jobs?location=Afghanistan"
+      },
+      {
+        "id": "akdn_careers",
+        "status": "ACTIVE",
+        "method": "registry_static_html",
+        "url": "https://akhs.odoo.com/jobs"
+      },
+      {
+        "id": "moph_vacancies",
+        "status": "ACTIVE",
+        "method": "registry_static_html",
+        "url": "https://moph.gov.af/en/vacancies"
+      },
+      {
+        "id": "ku_vacancies",
+        "status": "ACTIVE",
+        "method": "registry_static_html",
+        "url": "https://ku.edu.af/en/vacancies"
+      },
+      {
+        "id": "fmic",
+        "status": "ACTIVE",
+        "method": "registry_static_html",
+        "url": "https://www.fmic.org.af/WorkWithUs/vacancies/Pages/home.aspx"
+      }
+    ],
+    "validation_errors": []
+  },
+  "scan_summary": {
+    "scan_id": "2026-09-30_live_verified_pages",
+    "started_at": "2026-09-30T12:30:00+00:00",
+    "finished_at": "2026-09-30T12:30:00+00:00",
+    "status": "COMPLETED",
+    "sources_attempted": [
+      "acbar",
+      "wazifaha",
+      "reliefweb",
+      "unjobs_afghanistan",
+      "unicef_careers",
+      "who_careers",
+      "unops_careers",
+      "undp_careers",
+      "iom_recruit",
+      "dacaar_jobs",
+      "nrc_careers",
+      "akdn_careers",
+      "moph_vacancies",
+      "ku_vacancies",
+      "fmic"
+    ],
+    "sources_successful": [
+      "acbar",
+      "akhs",
+      "fmic",
+      "iom_recruit",
+      "nrc_careers",
+      "unicef",
+      "unjobs"
+    ],
+    "sources_failed": [
+      {
+        "source": "python_https_live_discovery",
+        "error": "existing in-repo httpx/curl discovery hit TLS/SSL EOF in this sandbox; live page evidence was retrieved by Arena fetch_page and fed into existing pipeline"
+      }
+    ],
+    "discovered_count": 34,
+    "normalized_count": 34,
+    "deduplicated_count": 34,
+    "new_count": 34,
+    "updated_count": 0,
+    "unchanged_count": 0,
+    "closed_count": 1,
+    "ready_to_apply_count": 10,
+    "needs_verification_count": 16,
+    "not_eligible_count": 8,
+    "notifications_created": 40,
+    "errors": [
+      {
+        "phase": "source",
+        "source": "python_https_live_discovery",
+        "error": "existing in-repo httpx/curl discovery hit TLS/SSL EOF in this sandbox; live page evidence was retrieved by Arena fetch_page and fed into existing pipeline"
+      }
+    ],
+    "changes": [
+      {
+        "canonical_id": "watch_aeb9c295fd34296adf",
+        "change_type": "NEW",
+        "readiness_status": "READY_TO_APPLY",
+        "operational_priority": "READY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_5105090c3419cc75027d"
+        ]
+      },
+      {
+        "canonical_id": "watch_6b218689d6aa9b0b6f",
+        "change_type": "NEW",
+        "readiness_status": "READY_TO_APPLY",
+        "operational_priority": "READY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_ab374840bec02fbc7658"
+        ]
+      },
+      {
+        "canonical_id": "watch_4134ecab24ab7a942c",
+        "change_type": "NEW",
+        "readiness_status": "READY_TO_APPLY",
+        "operational_priority": "READY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_3a79c8157c444712760e"
+        ]
+      },
+      {
+        "canonical_id": "watch_144f634197369fea66",
+        "change_type": "NEW",
+        "readiness_status": "READY_TO_APPLY",
+        "operational_priority": "READY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_66e4bee7729713648da9"
+        ]
+      },
+      {
+        "canonical_id": "watch_061e136ccf4e01b51b",
+        "change_type": "NEW",
+        "readiness_status": "READY_TO_APPLY",
+        "operational_priority": "READY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_b9d519bd7f61b38ef90f"
+        ]
+      },
+      {
+        "canonical_id": "watch_ce42a55673bf4bcb20",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_effec364a5103005475a"
+        ]
+      },
+      {
+        "canonical_id": "watch_a723389753577d4fc4",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_c0bd9e13388e720f2dbe"
+        ]
+      },
+      {
+        "canonical_id": "watch_64cd99e07c02ab04b9",
+        "change_type": "NEW",
+        "readiness_status": "NOT_ELIGIBLE",
+        "operational_priority": "LOW",
+        "changed_fields": [],
+        "notification_ids": []
+      },
+      {
+        "canonical_id": "watch_9b50e6a1e8341ed358",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_2036327776612fe5369b"
+        ]
+      },
+      {
+        "canonical_id": "watch_9a986c349f9c19f5bf",
+        "change_type": "NEW",
+        "readiness_status": "NOT_ELIGIBLE",
+        "operational_priority": "LOW",
+        "changed_fields": [],
+        "notification_ids": []
+      },
+      {
+        "canonical_id": "watch_467e08ae8e79f69db2",
+        "change_type": "NEW",
+        "readiness_status": "READY_TO_APPLY",
+        "operational_priority": "LOW",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_97cab8bf8e10b860235b"
+        ]
+      },
+      {
+        "canonical_id": "watch_7789c04582eab43cd9",
+        "change_type": "NEW",
+        "readiness_status": "READY_TO_APPLY",
+        "operational_priority": "LOW",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_3c9c758b22c3477db54a"
+        ]
+      },
+      {
+        "canonical_id": "watch_bf7e0cc2d03655af61",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_adc7203db1d55c835b57"
+        ]
+      },
+      {
+        "canonical_id": "watch_4eb0805c749e681956",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_4ad90eeb39b5f2c71ac8"
+        ]
+      },
+      {
+        "canonical_id": "watch_cf1d67a7ba8f622c94",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_439f4b079cc9fe0ffd2b"
+        ]
+      },
+      {
+        "canonical_id": "watch_420a29ce83b05c963e",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_1e8dacb039e7e552315c"
+        ]
+      },
+      {
+        "canonical_id": "watch_1bf45ce69ee8dd008e",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_c8f8b94b9838118f2890"
+        ]
+      },
+      {
+        "canonical_id": "watch_8fc81262ce492967ae",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_2fda783ac3ab9b005d7f"
+        ]
+      },
+      {
+        "canonical_id": "watch_5f6ffbf89fb1f633ba",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_f3dac7e6b5608eeecf03"
+        ]
+      },
+      {
+        "canonical_id": "watch_1aef88e6e27c7473ac",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_5fe237e758b9f02df8f3"
+        ]
+      },
+      {
+        "canonical_id": "watch_79b6870a0efe76cc12",
+        "change_type": "NEW",
+        "readiness_status": "READY_TO_APPLY",
+        "operational_priority": "APPLY_SOON",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_7cad39524509416c314c"
+        ]
+      },
+      {
+        "canonical_id": "watch_17dc387797aff0f077",
+        "change_type": "NEW",
+        "readiness_status": "READY_TO_APPLY",
+        "operational_priority": "APPLY_TODAY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_d0082143f060e9c1d915"
+        ]
+      },
+      {
+        "canonical_id": "watch_56af614346d654be8a",
+        "change_type": "NEW",
+        "readiness_status": "READY_TO_APPLY",
+        "operational_priority": "APPLY_TODAY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_f7c793e7fab089b2ddfe"
+        ]
+      },
+      {
+        "canonical_id": "watch_61027aa509a59afc27",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_1a34b6e1990c72ee1697"
+        ]
+      },
+      {
+        "canonical_id": "watch_4168b91ce812fd7aa9",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_abaebd13ec7382049a77"
+        ]
+      },
+      {
+        "canonical_id": "watch_7639a2199a2968bb0f",
+        "change_type": "NEW",
+        "readiness_status": "NOT_ELIGIBLE",
+        "operational_priority": "LOW",
+        "changed_fields": [],
+        "notification_ids": []
+      },
+      {
+        "canonical_id": "watch_2608319d4157a85b3b",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "CLOSED",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_2cb9a8f882943ed81f11"
+        ]
+      },
+      {
+        "canonical_id": "watch_2b902fe6c40c431225",
+        "change_type": "NEW",
+        "readiness_status": "NOT_ELIGIBLE",
+        "operational_priority": "LOW",
+        "changed_fields": [],
+        "notification_ids": []
+      },
+      {
+        "canonical_id": "watch_a8e3fa4599286168cc",
+        "change_type": "NEW",
+        "readiness_status": "NOT_ELIGIBLE",
+        "operational_priority": "LOW",
+        "changed_fields": [],
+        "notification_ids": []
+      },
+      {
+        "canonical_id": "watch_9a0f2bc1411f2b354c",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_2735990219677928ad52"
+        ]
+      },
+      {
+        "canonical_id": "watch_da8a3014a6d6dbf9e4",
+        "change_type": "NEW",
+        "readiness_status": "NOT_ELIGIBLE",
+        "operational_priority": "LOW",
+        "changed_fields": [],
+        "notification_ids": []
+      },
+      {
+        "canonical_id": "watch_f35a6d4b6be9e02546",
+        "change_type": "NEW",
+        "readiness_status": "NOT_ELIGIBLE",
+        "operational_priority": "LOW",
+        "changed_fields": [],
+        "notification_ids": []
+      },
+      {
+        "canonical_id": "watch_a957d3f37dec62fc34",
+        "change_type": "NEW",
+        "readiness_status": "NEEDS_VERIFICATION",
+        "operational_priority": "VERIFY",
+        "changed_fields": [],
+        "notification_ids": [
+          "evt_dfa3129027503053adff"
+        ]
+      },
+      {
+        "canonical_id": "watch_2512d38a5fbe2933d1",
+        "change_type": "NEW",
+        "readiness_status": "NOT_ELIGIBLE",
+        "operational_priority": "LOW",
+        "changed_fields": [],
+        "notification_ids": []
+      }
+    ]
+  },
+  "counts": {
+    "normal_system_jobs_discovered_before_tls_fallback": 0,
+    "live_verified_jobs_ingested": 34,
+    "jobs_after_deduplication": 34,
+    "open_relevant_jobs": 31,
+    "ready_to_apply": 8,
+    "needs_verification": 15,
+    "not_eligible": 8,
+    "low_priority_noise_excluded": 2,
+    "packages_prepared": 8
+  },
+  "ready_to_apply": [
+    {
+      "id": "watch_aeb9c295fd34296adf",
+      "title": "Medical Officer",
+      "company": "French Medical Institute for Mothers and Children (FMIC)",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "2026-10-05",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "READY",
+      "application_route": "https://docs.google.com/forms/d/1doS8XyeEEV_aQ7FUW5tnrBSPTJtgHgk1UHm4mjReYQM/edit",
+      "source_urls": [
+        "https://www.fmic.org.af/WorkWithUs/vacancies/Pages/Medical-Officer-2026.aspx",
+        "https://docs.google.com/forms/d/1doS8XyeEEV_aQ7FUW5tnrBSPTJtgHgk1UHm4mjReYQM/edit"
+      ],
+      "match_counts": {
+        "Met": 11,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "High-provenance source",
+        "Deadline is in 5 day(s)"
+      ]
+    },
+    {
+      "id": "watch_6b218689d6aa9b0b6f",
+      "title": "Medical Doctor (Nawbahar BHC Fixed & Shahjoy DH Backup)",
+      "company": "Coordination of Humanitarian Assistance (CHA)",
+      "location": "Zabul, Afghanistan",
+      "closing_date": "2026-10-07",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "READY",
+      "application_route": "https://cha-net.org/jobs/application-form/medical-doctor-nawbahar-chc-fixed-shahjoy-dh-backup-6abc918cf1bd390013be91d0",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145911/medical-doctor-nawbahar-bhc-fixed-shahjoy-dh-backup",
+        "https://cha-net.org/jobs/application-form/medical-doctor-nawbahar-chc-fixed-shahjoy-dh-backup-6abc918cf1bd390013be91d0"
+      ],
+      "match_counts": {
+        "Met": 12,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 7 day(s)"
+      ]
+    },
+    {
+      "id": "watch_4134ecab24ab7a942c",
+      "title": "Medical Doctor (MD)",
+      "company": "HealthNet TPO",
+      "location": "Nangarhar, Afghanistan",
+      "closing_date": "2026-10-10",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "READY",
+      "application_route": "recruitment.kabul@hntpo.org",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145902/medical-doctor-md",
+        "mailto:recruitment.kabul@hntpo.org"
+      ],
+      "match_counts": {
+        "Met": 12,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 10 day(s)"
+      ]
+    },
+    {
+      "id": "watch_144f634197369fea66",
+      "title": "Technical Supervisor",
+      "company": "Bakhter Development Network - BDN",
+      "location": "Takhar, Afghanistan",
+      "closing_date": "2026-10-08",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "READY",
+      "application_route": "https://forms.gle/U3dJcBHhJamUZ5yE9",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145872/technical-supervisor",
+        "https://forms.gle/U3dJcBHhJamUZ5yE9"
+      ],
+      "match_counts": {
+        "Met": 10,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 8 day(s)"
+      ]
+    },
+    {
+      "id": "watch_061e136ccf4e01b51b",
+      "title": "TSFP Project Supervisor",
+      "company": "HealthNet TPO",
+      "location": "Kunar, Afghanistan",
+      "closing_date": "2026-10-10",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "READY",
+      "application_route": "recruitment.kabul@hntpo.org",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145882/tsfp-project-supervisor",
+        "mailto:recruitment.kabul@hntpo.org"
+      ],
+      "match_counts": {
+        "Met": 11,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 10 day(s)"
+      ]
+    },
+    {
+      "id": "watch_79b6870a0efe76cc12",
+      "title": "Physician/Medical Doctor",
+      "company": "Bakhter Development Network - BDN",
+      "location": "Badakhshan, Baghlan, Kunduz and other Afghanistan provinces",
+      "closing_date": "2026-10-03",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "APPLY_SOON",
+      "application_route": "https://forms.gle/rcWXTSUaXt8vwfFY8",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145806/physicianmedical-doctor",
+        "https://forms.gle/rcWXTSUaXt8vwfFY8"
+      ],
+      "match_counts": {
+        "Met": 7,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 3 day(s)"
+      ]
+    },
+    {
+      "id": "watch_17dc387797aff0f077",
+      "title": "Medical Doctor (Roster)",
+      "company": "PU-AMI",
+      "location": "Kunar, Nuristan and other Afghanistan provinces",
+      "closing_date": "2026-09-30",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "APPLY_TODAY",
+      "application_route": "https://forms.cloud.microsoft/e/M3L9jqP6p1",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145658/medical-doctor-roster",
+        "https://forms.cloud.microsoft/e/M3L9jqP6p1"
+      ],
+      "match_counts": {
+        "Met": 13,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 0 day(s)"
+      ]
+    },
+    {
+      "id": "watch_56af614346d654be8a",
+      "title": "Medical Doctor/In-charge",
+      "company": "Organization for People’s Health in Action (OPHA)",
+      "location": "Nuristan, Afghanistan",
+      "closing_date": "2026-09-30",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "APPLY_TODAY",
+      "application_route": "https://ee.kobotoolbox.org/x/kRwQBlvq",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145622/daktr-maaalg-msyol-klynyk-medical-doctorin-charge",
+        "https://ee.kobotoolbox.org/x/kRwQBlvq"
+      ],
+      "match_counts": {
+        "Met": 11,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 0 day(s)"
+      ]
+    }
+  ],
+  "needs_verification": [
+    {
+      "id": "watch_ce42a55673bf4bcb20",
+      "title": "Quality of Care and Capacity Building Officer",
+      "company": "Relief International (RI)",
+      "location": "Nimruz, Afghanistan",
+      "closing_date": "2026-10-04",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "vacancies.afghanistan@ri.org",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145861/quality-of-care-and-capacity-building-officer",
+        "mailto:vacancies.afghanistan@ri.org"
+      ],
+      "match_counts": {
+        "Met": 13,
+        "Needs verification": 2,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 4 day(s)"
+      ]
+    },
+    {
+      "id": "watch_a723389753577d4fc4",
+      "title": "Surgeon",
+      "company": "Aga Khan Health Services Afghanistan (AKHS-A)",
+      "location": "Kabul PHT, Afghanistan",
+      "closing_date": "2026-10-10",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://akhs.odoo.com/jobs/detail/surgeon-125",
+      "source_urls": [
+        "https://akhs.odoo.com/jobs/detail/surgeon-125"
+      ],
+      "match_counts": {
+        "Met": 8,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "High-provenance source",
+        "Deadline is in 10 day(s)"
+      ]
+    },
+    {
+      "id": "watch_9b50e6a1e8341ed358",
+      "title": "Medical Doctor (Female)",
+      "company": "Coordination of Humanitarian Assistance (CHA)",
+      "location": "Zabul, Afghanistan",
+      "closing_date": "2026-10-08",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://www.cha-net.org/jobs/application-form/medical-doctor-female-6a8d12c955c9840013a09b5e",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145910/medical-doctor-female-re-announced",
+        "https://www.cha-net.org/jobs/application-form/medical-doctor-female-6a8d12c955c9840013a09b5e"
+      ],
+      "match_counts": {
+        "Met": 12,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 8 day(s)"
+      ]
+    },
+    {
+      "id": "watch_bf7e0cc2d03655af61",
+      "title": "Pharmacy Officer",
+      "company": "Bakhter Development Network - BDN",
+      "location": "Baghlan, Afghanistan",
+      "closing_date": "2026-10-08",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://forms.gle/tQxYPMvhEp1iGJSNA",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145871/pharmacy-officer",
+        "https://forms.gle/tQxYPMvhEp1iGJSNA"
+      ],
+      "match_counts": {
+        "Met": 5,
+        "Needs verification": 2,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 8 day(s)"
+      ]
+    },
+    {
+      "id": "watch_4eb0805c749e681956",
+      "title": "Nurse",
+      "company": "Union Aid",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "2026-10-10",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "hr@unionaid.org",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145912/nurse",
+        "mailto:hr@unionaid.org"
+      ],
+      "match_counts": {
+        "Met": 8,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 10 day(s)"
+      ]
+    },
+    {
+      "id": "watch_cf1d67a7ba8f622c94",
+      "title": "Nurse Nutrition",
+      "company": "INTERSOS",
+      "location": "Kandahar, Afghanistan",
+      "closing_date": "2026-10-12",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://forms.gle/pCApoG8vVrZNbsmU8",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145868/nurse-nutrition",
+        "https://forms.gle/pCApoG8vVrZNbsmU8"
+      ],
+      "match_counts": {
+        "Met": 12,
+        "Needs verification": 2,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 12 day(s)"
+      ]
+    },
+    {
+      "id": "watch_420a29ce83b05c963e",
+      "title": "Mental Health Promoter",
+      "company": "INTERSOS",
+      "location": "Zabul, Afghanistan",
+      "closing_date": "2026-10-13",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://forms.gle/fj7j87vu4Y9aFwVv7",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145905/mental-health-promoter",
+        "https://forms.gle/fj7j87vu4Y9aFwVv7"
+      ],
+      "match_counts": {
+        "Met": 8,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 13 day(s)"
+      ]
+    },
+    {
+      "id": "watch_1bf45ce69ee8dd008e",
+      "title": "Production Pharmacist",
+      "company": "Etook Pharma Drugs Production Company",
+      "location": "Herat, Afghanistan",
+      "closing_date": "2026-10-20",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "info@etookpharma.af",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145907/production-pharmacist",
+        "mailto:info@etookpharma.af"
+      ],
+      "match_counts": {
+        "Met": 4,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 20 day(s)"
+      ]
+    },
+    {
+      "id": "watch_8fc81262ce492967ae",
+      "title": "Vaccinator (Kandahar)",
+      "company": "Afghan Red Crescent Society (ARCS)",
+      "location": "Kandahar, Afghanistan",
+      "closing_date": "2026-10-06",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "hr@arcs.af",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145878/oaksynatorkndhar",
+        "mailto:hr@arcs.af"
+      ],
+      "match_counts": {
+        "Met": 5,
+        "Needs verification": 2,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 6 day(s)"
+      ]
+    },
+    {
+      "id": "watch_5f6ffbf89fb1f633ba",
+      "title": "Cardiology Specialist Doctor",
+      "company": "Afghan Red Crescent Society (ARCS)",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "2026-10-05",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "hr@arcs.af",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145857/d-zh-dakhly-mtkhss-akr",
+        "mailto:hr@arcs.af"
+      ],
+      "match_counts": {
+        "Met": 6,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 5 day(s)"
+      ]
+    },
+    {
+      "id": "watch_1aef88e6e27c7473ac",
+      "title": "Pharmacist",
+      "company": "French Medical Institute for Mothers and Children (FMIC)",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "2026-10-12",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://docs.google.com/forms/d/1n12pNszI1pfzXxJdBngFkVt9XieP5E0YDBVl3Lv9sQ4/edit",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145856/pharmacist",
+        "https://docs.google.com/forms/d/1n12pNszI1pfzXxJdBngFkVt9XieP5E0YDBVl3Lv9sQ4/edit"
+      ],
+      "match_counts": {
+        "Met": 5,
+        "Needs verification": 2,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 12 day(s)"
+      ]
+    },
+    {
+      "id": "watch_61027aa509a59afc27",
+      "title": "Medical Doctor (Male)",
+      "company": "Afghanistan Relief and Sustainable Development Organization (ARSDO)",
+      "location": "Kunar, Laghman, Nangarhar and other Afghanistan provinces",
+      "closing_date": "2026-09-30",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://forms.gle/Jqfs2fhwhrrYfrEJ9",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145698/medical-doctor-male",
+        "https://forms.gle/Jqfs2fhwhrrYfrEJ9"
+      ],
+      "match_counts": {
+        "Met": 12,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 0 day(s)"
+      ]
+    },
+    {
+      "id": "watch_4168b91ce812fd7aa9",
+      "title": "Technical Assistant (Project Focal Point/ECHO)",
+      "company": "Afghan Red Crescent Society (ARCS)",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "2026-10-04",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "hr@arcs.af",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145834/technical-assistant-project-focal-pointecho",
+        "mailto:hr@arcs.af"
+      ],
+      "match_counts": {
+        "Met": 14,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 4 day(s)"
+      ]
+    },
+    {
+      "id": "watch_9a0f2bc1411f2b354c",
+      "title": "Medical Coordinator",
+      "company": "Médecins du Monde (MdM)",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://unjobs.org/vacancies/1788985054143",
+      "source_urls": [
+        "https://unjobs.org/vacancies/1788985054143"
+      ],
+      "match_counts": {
+        "Met": 6,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked"
+      ]
+    },
+    {
+      "id": "watch_a957d3f37dec62fc34",
+      "title": "Nurse",
+      "company": "UNAMA",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://unjobs.org/vacancies/1790589742575",
+      "source_urls": [
+        "https://unjobs.org/vacancies/1790589742575"
+      ],
+      "match_counts": {
+        "Met": 4,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked"
+      ]
+    }
+  ],
+  "not_eligible": [
+    {
+      "id": "watch_64cd99e07c02ab04b9",
+      "title": "Pediatrician (Child Specialist)",
+      "company": "Aga Khan Foundation",
+      "location": "Baghlan, Afghanistan",
+      "closing_date": "2026-10-06",
+      "readiness_status": "NOT_ELIGIBLE",
+      "operational_priority": "LOW",
+      "application_route": "Jobs.Afghanistan@akdn.org",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145914/pediatrician-child-specialist-re-announced-re-announced",
+        "mailto:Jobs.Afghanistan@akdn.org"
+      ],
+      "match_counts": {
+        "Met": 11,
+        "Needs verification": 2,
+        "Not met": 1
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as NOT_ELIGIBLE or low fit",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 6 day(s)"
+      ]
+    },
+    {
+      "id": "watch_9a986c349f9c19f5bf",
+      "title": "Information Management Consultant, Polio Section (Internationals Only)",
+      "company": "UNICEF Afghanistan",
+      "location": "Kabul / remote with travel, Afghanistan",
+      "closing_date": "2026-10-04",
+      "readiness_status": "NOT_ELIGIBLE",
+      "operational_priority": "LOW",
+      "application_route": "https://secure.dc7.pageuppeople.com/apply/671/gateway/default.aspx?c=apply&lJobID=595890&lJobSourceTypeID=796&sLanguage=en-us",
+      "source_urls": [
+        "https://jobs.unicef.org/en-us/job/595890/internationals-only-information-management-consultant-polio-section-afghanistan-6-months-remote-with-trip",
+        "https://secure.dc7.pageuppeople.com/apply/671/gateway/default.aspx?c=apply&lJobID=595890&lJobSourceTypeID=796&sLanguage=en-us"
+      ],
+      "match_counts": {
+        "Met": 9,
+        "Needs verification": 0,
+        "Not met": 1
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as NOT_ELIGIBLE or low fit",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "High-provenance source",
+        "Deadline is in 4 day(s)"
+      ]
+    },
+    {
+      "id": "watch_7639a2199a2968bb0f",
+      "title": "Hospital Director",
+      "company": "Organization for People’s Health in Action (OPHA)",
+      "location": "Laghman, Afghanistan",
+      "closing_date": "2026-10-08",
+      "readiness_status": "NOT_ELIGIBLE",
+      "operational_priority": "LOW",
+      "application_route": "https://www.acbar.org/en/jobs/details/145767/hospital-director",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145767/hospital-director"
+      ],
+      "match_counts": {
+        "Met": 7,
+        "Needs verification": 0,
+        "Not met": 2
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as NOT_ELIGIBLE or low fit",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 8 day(s)"
+      ]
+    },
+    {
+      "id": "watch_2b902fe6c40c431225",
+      "title": "Medical Doctor",
+      "company": "UNAMA",
+      "location": "Kunduz, Afghanistan",
+      "closing_date": "",
+      "readiness_status": "NOT_ELIGIBLE",
+      "operational_priority": "LOW",
+      "application_route": "https://unjobs.org/vacancies/1790200910231",
+      "source_urls": [
+        "https://unjobs.org/vacancies/1790200910231"
+      ],
+      "match_counts": {
+        "Met": 5,
+        "Needs verification": 0,
+        "Not met": 1
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as NOT_ELIGIBLE or low fit",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked"
+      ]
+    },
+    {
+      "id": "watch_a8e3fa4599286168cc",
+      "title": "Surgical Oncology Consultant",
+      "company": "World Health Organization (WHO)",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "",
+      "readiness_status": "NOT_ELIGIBLE",
+      "operational_priority": "LOW",
+      "application_route": "https://unjobs.org/vacancies/1789567491811",
+      "source_urls": [
+        "https://unjobs.org/vacancies/1789567491811"
+      ],
+      "match_counts": {
+        "Met": 4,
+        "Needs verification": 1,
+        "Not met": 1
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as NOT_ELIGIBLE or low fit",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked"
+      ]
+    },
+    {
+      "id": "watch_da8a3014a6d6dbf9e4",
+      "title": "Medical Doctor",
+      "company": "UNAMA",
+      "location": "Mazar-i-Sharif, Afghanistan",
+      "closing_date": "",
+      "readiness_status": "NOT_ELIGIBLE",
+      "operational_priority": "LOW",
+      "application_route": "https://unjobs.org/vacancies/1790258574072",
+      "source_urls": [
+        "https://unjobs.org/vacancies/1790258574072"
+      ],
+      "match_counts": {
+        "Met": 4,
+        "Needs verification": 0,
+        "Not met": 2
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as NOT_ELIGIBLE or low fit",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked"
+      ]
+    },
+    {
+      "id": "watch_f35a6d4b6be9e02546",
+      "title": "Medical Doctor",
+      "company": "UNAMA",
+      "location": "Gardez, Afghanistan",
+      "closing_date": "",
+      "readiness_status": "NOT_ELIGIBLE",
+      "operational_priority": "LOW",
+      "application_route": "https://unjobs.org/vacancies/1790251373811",
+      "source_urls": [
+        "https://unjobs.org/vacancies/1790251373811"
+      ],
+      "match_counts": {
+        "Met": 4,
+        "Needs verification": 0,
+        "Not met": 2
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as NOT_ELIGIBLE or low fit",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked"
+      ]
+    },
+    {
+      "id": "watch_2512d38a5fbe2933d1",
+      "title": "Laboratory Technologist",
+      "company": "UNAMA",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "",
+      "readiness_status": "NOT_ELIGIBLE",
+      "operational_priority": "LOW",
+      "application_route": "https://unjobs.org/vacancies/1790200910375",
+      "source_urls": [
+        "https://unjobs.org/vacancies/1790200910375"
+      ],
+      "match_counts": {
+        "Met": 5,
+        "Needs verification": 0,
+        "Not met": 2
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as NOT_ELIGIBLE or low fit",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked"
+      ]
+    }
+  ],
+  "low_priority_noise_excluded": [
+    {
+      "id": "watch_467e08ae8e79f69db2",
+      "title": "Supply Chain Assistant",
+      "company": "IOM",
+      "location": "Herat, Mazar-i-Sharif, Jalalabad, Kandahar, Afghanistan",
+      "closing_date": "2026-10-04",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "LOW",
+      "application_route": "https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?location=Afghanistan",
+      "source_urls": [
+        "https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?location=Afghanistan"
+      ],
+      "match_counts": {
+        "Met": 5,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "No clear medical/health relevance was detected"
+      ]
+    },
+    {
+      "id": "watch_7789c04582eab43cd9",
+      "title": "Humanitarian Access & Safety Manager Afghanistan",
+      "company": "Norwegian Refugee Council (NRC)",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "LOW",
+      "application_route": "https://ekum.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2019/jobs?location=Afghanistan",
+      "source_urls": [
+        "https://ekum.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2019/jobs?location=Afghanistan"
+      ],
+      "match_counts": {
+        "Met": 5,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "No clear medical/health relevance was detected"
+      ]
+    }
+  ],
+  "best_actionable_by_deadline": [
+    {
+      "id": "watch_17dc387797aff0f077",
+      "title": "Medical Doctor (Roster)",
+      "company": "PU-AMI",
+      "location": "Kunar, Nuristan and other Afghanistan provinces",
+      "closing_date": "2026-09-30",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "APPLY_TODAY",
+      "application_route": "https://forms.cloud.microsoft/e/M3L9jqP6p1",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145658/medical-doctor-roster",
+        "https://forms.cloud.microsoft/e/M3L9jqP6p1"
+      ],
+      "match_counts": {
+        "Met": 13,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 0 day(s)"
+      ]
+    },
+    {
+      "id": "watch_56af614346d654be8a",
+      "title": "Medical Doctor/In-charge",
+      "company": "Organization for People’s Health in Action (OPHA)",
+      "location": "Nuristan, Afghanistan",
+      "closing_date": "2026-09-30",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "APPLY_TODAY",
+      "application_route": "https://ee.kobotoolbox.org/x/kRwQBlvq",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145622/daktr-maaalg-msyol-klynyk-medical-doctorin-charge",
+        "https://ee.kobotoolbox.org/x/kRwQBlvq"
+      ],
+      "match_counts": {
+        "Met": 11,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 0 day(s)"
+      ]
+    },
+    {
+      "id": "watch_79b6870a0efe76cc12",
+      "title": "Physician/Medical Doctor",
+      "company": "Bakhter Development Network - BDN",
+      "location": "Badakhshan, Baghlan, Kunduz and other Afghanistan provinces",
+      "closing_date": "2026-10-03",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "APPLY_SOON",
+      "application_route": "https://forms.gle/rcWXTSUaXt8vwfFY8",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145806/physicianmedical-doctor",
+        "https://forms.gle/rcWXTSUaXt8vwfFY8"
+      ],
+      "match_counts": {
+        "Met": 7,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 3 day(s)"
+      ]
+    },
+    {
+      "id": "watch_aeb9c295fd34296adf",
+      "title": "Medical Officer",
+      "company": "French Medical Institute for Mothers and Children (FMIC)",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "2026-10-05",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "READY",
+      "application_route": "https://docs.google.com/forms/d/1doS8XyeEEV_aQ7FUW5tnrBSPTJtgHgk1UHm4mjReYQM/edit",
+      "source_urls": [
+        "https://www.fmic.org.af/WorkWithUs/vacancies/Pages/Medical-Officer-2026.aspx",
+        "https://docs.google.com/forms/d/1doS8XyeEEV_aQ7FUW5tnrBSPTJtgHgk1UHm4mjReYQM/edit"
+      ],
+      "match_counts": {
+        "Met": 11,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "High-provenance source",
+        "Deadline is in 5 day(s)"
+      ]
+    },
+    {
+      "id": "watch_6b218689d6aa9b0b6f",
+      "title": "Medical Doctor (Nawbahar BHC Fixed & Shahjoy DH Backup)",
+      "company": "Coordination of Humanitarian Assistance (CHA)",
+      "location": "Zabul, Afghanistan",
+      "closing_date": "2026-10-07",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "READY",
+      "application_route": "https://cha-net.org/jobs/application-form/medical-doctor-nawbahar-chc-fixed-shahjoy-dh-backup-6abc918cf1bd390013be91d0",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145911/medical-doctor-nawbahar-bhc-fixed-shahjoy-dh-backup",
+        "https://cha-net.org/jobs/application-form/medical-doctor-nawbahar-chc-fixed-shahjoy-dh-backup-6abc918cf1bd390013be91d0"
+      ],
+      "match_counts": {
+        "Met": 12,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 7 day(s)"
+      ]
+    },
+    {
+      "id": "watch_144f634197369fea66",
+      "title": "Technical Supervisor",
+      "company": "Bakhter Development Network - BDN",
+      "location": "Takhar, Afghanistan",
+      "closing_date": "2026-10-08",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "READY",
+      "application_route": "https://forms.gle/U3dJcBHhJamUZ5yE9",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145872/technical-supervisor",
+        "https://forms.gle/U3dJcBHhJamUZ5yE9"
+      ],
+      "match_counts": {
+        "Met": 10,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 8 day(s)"
+      ]
+    },
+    {
+      "id": "watch_4134ecab24ab7a942c",
+      "title": "Medical Doctor (MD)",
+      "company": "HealthNet TPO",
+      "location": "Nangarhar, Afghanistan",
+      "closing_date": "2026-10-10",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "READY",
+      "application_route": "recruitment.kabul@hntpo.org",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145902/medical-doctor-md",
+        "mailto:recruitment.kabul@hntpo.org"
+      ],
+      "match_counts": {
+        "Met": 12,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 10 day(s)"
+      ]
+    },
+    {
+      "id": "watch_061e136ccf4e01b51b",
+      "title": "TSFP Project Supervisor",
+      "company": "HealthNet TPO",
+      "location": "Kunar, Afghanistan",
+      "closing_date": "2026-10-10",
+      "readiness_status": "READY_TO_APPLY",
+      "operational_priority": "READY",
+      "application_route": "recruitment.kabul@hntpo.org",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145882/tsfp-project-supervisor",
+        "mailto:recruitment.kabul@hntpo.org"
+      ],
+      "match_counts": {
+        "Met": 11,
+        "Needs verification": 0,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Deterministic matcher classified this vacancy as READY_TO_APPLY",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 10 day(s)"
+      ]
+    },
+    {
+      "id": "watch_61027aa509a59afc27",
+      "title": "Medical Doctor (Male)",
+      "company": "Afghanistan Relief and Sustainable Development Organization (ARSDO)",
+      "location": "Kunar, Laghman, Nangarhar and other Afghanistan provinces",
+      "closing_date": "2026-09-30",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://forms.gle/Jqfs2fhwhrrYfrEJ9",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145698/medical-doctor-male",
+        "https://forms.gle/Jqfs2fhwhrrYfrEJ9"
+      ],
+      "match_counts": {
+        "Met": 12,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 0 day(s)"
+      ]
+    },
+    {
+      "id": "watch_ce42a55673bf4bcb20",
+      "title": "Quality of Care and Capacity Building Officer",
+      "company": "Relief International (RI)",
+      "location": "Nimruz, Afghanistan",
+      "closing_date": "2026-10-04",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "vacancies.afghanistan@ri.org",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145861/quality-of-care-and-capacity-building-officer",
+        "mailto:vacancies.afghanistan@ri.org"
+      ],
+      "match_counts": {
+        "Met": 13,
+        "Needs verification": 2,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 4 day(s)"
+      ]
+    },
+    {
+      "id": "watch_4168b91ce812fd7aa9",
+      "title": "Technical Assistant (Project Focal Point/ECHO)",
+      "company": "Afghan Red Crescent Society (ARCS)",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "2026-10-04",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "hr@arcs.af",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145834/technical-assistant-project-focal-pointecho",
+        "mailto:hr@arcs.af"
+      ],
+      "match_counts": {
+        "Met": 14,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 4 day(s)"
+      ]
+    },
+    {
+      "id": "watch_5f6ffbf89fb1f633ba",
+      "title": "Cardiology Specialist Doctor",
+      "company": "Afghan Red Crescent Society (ARCS)",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "2026-10-05",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "hr@arcs.af",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145857/d-zh-dakhly-mtkhss-akr",
+        "mailto:hr@arcs.af"
+      ],
+      "match_counts": {
+        "Met": 6,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 5 day(s)"
+      ]
+    },
+    {
+      "id": "watch_8fc81262ce492967ae",
+      "title": "Vaccinator (Kandahar)",
+      "company": "Afghan Red Crescent Society (ARCS)",
+      "location": "Kandahar, Afghanistan",
+      "closing_date": "2026-10-06",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "hr@arcs.af",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145878/oaksynatorkndhar",
+        "mailto:hr@arcs.af"
+      ],
+      "match_counts": {
+        "Met": 5,
+        "Needs verification": 2,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 6 day(s)"
+      ]
+    },
+    {
+      "id": "watch_9b50e6a1e8341ed358",
+      "title": "Medical Doctor (Female)",
+      "company": "Coordination of Humanitarian Assistance (CHA)",
+      "location": "Zabul, Afghanistan",
+      "closing_date": "2026-10-08",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://www.cha-net.org/jobs/application-form/medical-doctor-female-6a8d12c955c9840013a09b5e",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145910/medical-doctor-female-re-announced",
+        "https://www.cha-net.org/jobs/application-form/medical-doctor-female-6a8d12c955c9840013a09b5e"
+      ],
+      "match_counts": {
+        "Met": 12,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 8 day(s)"
+      ]
+    },
+    {
+      "id": "watch_bf7e0cc2d03655af61",
+      "title": "Pharmacy Officer",
+      "company": "Bakhter Development Network - BDN",
+      "location": "Baghlan, Afghanistan",
+      "closing_date": "2026-10-08",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://forms.gle/tQxYPMvhEp1iGJSNA",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145871/pharmacy-officer",
+        "https://forms.gle/tQxYPMvhEp1iGJSNA"
+      ],
+      "match_counts": {
+        "Met": 5,
+        "Needs verification": 2,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 8 day(s)"
+      ]
+    },
+    {
+      "id": "watch_a723389753577d4fc4",
+      "title": "Surgeon",
+      "company": "Aga Khan Health Services Afghanistan (AKHS-A)",
+      "location": "Kabul PHT, Afghanistan",
+      "closing_date": "2026-10-10",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://akhs.odoo.com/jobs/detail/surgeon-125",
+      "source_urls": [
+        "https://akhs.odoo.com/jobs/detail/surgeon-125"
+      ],
+      "match_counts": {
+        "Met": 8,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "High-provenance source",
+        "Deadline is in 10 day(s)"
+      ]
+    },
+    {
+      "id": "watch_4eb0805c749e681956",
+      "title": "Nurse",
+      "company": "Union Aid",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "2026-10-10",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "hr@unionaid.org",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145912/nurse",
+        "mailto:hr@unionaid.org"
+      ],
+      "match_counts": {
+        "Met": 8,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 10 day(s)"
+      ]
+    },
+    {
+      "id": "watch_cf1d67a7ba8f622c94",
+      "title": "Nurse Nutrition",
+      "company": "INTERSOS",
+      "location": "Kandahar, Afghanistan",
+      "closing_date": "2026-10-12",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://forms.gle/pCApoG8vVrZNbsmU8",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145868/nurse-nutrition",
+        "https://forms.gle/pCApoG8vVrZNbsmU8"
+      ],
+      "match_counts": {
+        "Met": 12,
+        "Needs verification": 2,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 12 day(s)"
+      ]
+    },
+    {
+      "id": "watch_1aef88e6e27c7473ac",
+      "title": "Pharmacist",
+      "company": "French Medical Institute for Mothers and Children (FMIC)",
+      "location": "Kabul, Afghanistan",
+      "closing_date": "2026-10-12",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://docs.google.com/forms/d/1n12pNszI1pfzXxJdBngFkVt9XieP5E0YDBVl3Lv9sQ4/edit",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145856/pharmacist",
+        "https://docs.google.com/forms/d/1n12pNszI1pfzXxJdBngFkVt9XieP5E0YDBVl3Lv9sQ4/edit"
+      ],
+      "match_counts": {
+        "Met": 5,
+        "Needs verification": 2,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 12 day(s)"
+      ]
+    },
+    {
+      "id": "watch_420a29ce83b05c963e",
+      "title": "Mental Health Promoter",
+      "company": "INTERSOS",
+      "location": "Zabul, Afghanistan",
+      "closing_date": "2026-10-13",
+      "readiness_status": "NEEDS_VERIFICATION",
+      "operational_priority": "VERIFY",
+      "application_route": "https://forms.gle/fj7j87vu4Y9aFwVv7",
+      "source_urls": [
+        "https://www.acbar.org/en/jobs/details/145905/mental-health-promoter",
+        "https://forms.gle/fj7j87vu4Y9aFwVv7"
+      ],
+      "match_counts": {
+        "Met": 8,
+        "Needs verification": 1,
+        "Not met": 0
+      },
+      "priority_reasons": [
+        "Specific requirement(s) need user verification before applying",
+        "Medical/health relevance detected from the title or vacancy text",
+        "Application route is available",
+        "Medium-provenance source; employer route should be checked",
+        "Deadline is in 13 day(s)"
+      ]
+    }
+  ],
+  "packages_prepared": [
+    {
+      "job_id": "watch_17dc387797aff0f077",
+      "ok": true,
+      "readiness_status": "READY_TO_APPLY",
+      "route_type": "online_form",
+      "package_status": "READY_TO_SUBMIT",
+      "application_route": "https://forms.cloud.microsoft/e/M3L9jqP6p1",
+      "deadline": "2026-09-30",
+      "no_submission_performed": true,
+      "paths": {
+        "tailored_cv": {
+          "txt": "documents/live_market_test_2026-09-30/watch_17dc387797aff0f077_medical_doctor_roster_tailored_cv.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_17dc387797aff0f077_medical_doctor_roster_tailored_cv.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_17dc387797aff0f077_medical_doctor_roster_tailored_cv.pdf"
+        },
+        "cover_letter": {
+          "txt": "documents/live_market_test_2026-09-30/watch_17dc387797aff0f077_medical_doctor_roster_cover_letter.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_17dc387797aff0f077_medical_doctor_roster_cover_letter.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_17dc387797aff0f077_medical_doctor_roster_cover_letter.pdf"
+        },
+        "application_package_txt": "documents/live_market_test_2026-09-30/watch_17dc387797aff0f077_medical_doctor_roster_complete_application_package.txt",
+        "application_package_json": "documents/live_market_test_2026-09-30/watch_17dc387797aff0f077_medical_doctor_roster_complete_application_package.json",
+        "form_fields_prefill_checklist": "documents/live_market_test_2026-09-30/watch_17dc387797aff0f077_medical_doctor_roster_form_fields_prefill_checklist.txt"
+      },
+      "missing_items": [],
+      "review_warnings": []
+    },
+    {
+      "job_id": "watch_56af614346d654be8a",
+      "ok": true,
+      "readiness_status": "READY_TO_APPLY",
+      "route_type": "online_form",
+      "package_status": "READY_TO_SUBMIT",
+      "application_route": "https://ee.kobotoolbox.org/x/kRwQBlvq",
+      "deadline": "2026-09-30",
+      "no_submission_performed": true,
+      "paths": {
+        "tailored_cv": {
+          "txt": "documents/live_market_test_2026-09-30/watch_56af614346d654be8a_medical_doctor_in_charge_tailored_cv.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_56af614346d654be8a_medical_doctor_in_charge_tailored_cv.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_56af614346d654be8a_medical_doctor_in_charge_tailored_cv.pdf"
+        },
+        "cover_letter": {
+          "txt": "documents/live_market_test_2026-09-30/watch_56af614346d654be8a_medical_doctor_in_charge_cover_letter.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_56af614346d654be8a_medical_doctor_in_charge_cover_letter.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_56af614346d654be8a_medical_doctor_in_charge_cover_letter.pdf"
+        },
+        "application_package_txt": "documents/live_market_test_2026-09-30/watch_56af614346d654be8a_medical_doctor_in_charge_complete_application_package.txt",
+        "application_package_json": "documents/live_market_test_2026-09-30/watch_56af614346d654be8a_medical_doctor_in_charge_complete_application_package.json",
+        "form_fields_prefill_checklist": "documents/live_market_test_2026-09-30/watch_56af614346d654be8a_medical_doctor_in_charge_form_fields_prefill_checklist.txt"
+      },
+      "missing_items": [],
+      "review_warnings": []
+    },
+    {
+      "job_id": "watch_79b6870a0efe76cc12",
+      "ok": true,
+      "readiness_status": "READY_TO_APPLY",
+      "route_type": "online_form",
+      "package_status": "READY_TO_SUBMIT",
+      "application_route": "https://forms.gle/rcWXTSUaXt8vwfFY8",
+      "deadline": "2026-10-03",
+      "no_submission_performed": true,
+      "paths": {
+        "tailored_cv": {
+          "txt": "documents/live_market_test_2026-09-30/watch_79b6870a0efe76cc12_physician_medical_doctor_tailored_cv.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_79b6870a0efe76cc12_physician_medical_doctor_tailored_cv.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_79b6870a0efe76cc12_physician_medical_doctor_tailored_cv.pdf"
+        },
+        "cover_letter": {
+          "txt": "documents/live_market_test_2026-09-30/watch_79b6870a0efe76cc12_physician_medical_doctor_cover_letter.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_79b6870a0efe76cc12_physician_medical_doctor_cover_letter.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_79b6870a0efe76cc12_physician_medical_doctor_cover_letter.pdf"
+        },
+        "application_package_txt": "documents/live_market_test_2026-09-30/watch_79b6870a0efe76cc12_physician_medical_doctor_complete_application_package.txt",
+        "application_package_json": "documents/live_market_test_2026-09-30/watch_79b6870a0efe76cc12_physician_medical_doctor_complete_application_package.json",
+        "form_fields_prefill_checklist": "documents/live_market_test_2026-09-30/watch_79b6870a0efe76cc12_physician_medical_doctor_form_fields_prefill_checklist.txt"
+      },
+      "missing_items": [],
+      "review_warnings": []
+    },
+    {
+      "job_id": "watch_aeb9c295fd34296adf",
+      "ok": true,
+      "readiness_status": "READY_TO_APPLY",
+      "route_type": "online_form",
+      "package_status": "READY_TO_SUBMIT",
+      "application_route": "https://docs.google.com/forms/d/1doS8XyeEEV_aQ7FUW5tnrBSPTJtgHgk1UHm4mjReYQM/viewform",
+      "deadline": "2026-10-05",
+      "no_submission_performed": true,
+      "paths": {
+        "tailored_cv": {
+          "txt": "documents/live_market_test_2026-09-30/watch_aeb9c295fd34296adf_medical_officer_tailored_cv.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_aeb9c295fd34296adf_medical_officer_tailored_cv.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_aeb9c295fd34296adf_medical_officer_tailored_cv.pdf"
+        },
+        "cover_letter": {
+          "txt": "documents/live_market_test_2026-09-30/watch_aeb9c295fd34296adf_medical_officer_cover_letter.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_aeb9c295fd34296adf_medical_officer_cover_letter.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_aeb9c295fd34296adf_medical_officer_cover_letter.pdf"
+        },
+        "application_package_txt": "documents/live_market_test_2026-09-30/watch_aeb9c295fd34296adf_medical_officer_complete_application_package.txt",
+        "application_package_json": "documents/live_market_test_2026-09-30/watch_aeb9c295fd34296adf_medical_officer_complete_application_package.json",
+        "form_fields_prefill_checklist": "documents/live_market_test_2026-09-30/watch_aeb9c295fd34296adf_medical_officer_form_fields_prefill_checklist.txt"
+      },
+      "missing_items": [],
+      "review_warnings": []
+    },
+    {
+      "job_id": "watch_6b218689d6aa9b0b6f",
+      "ok": true,
+      "readiness_status": "READY_TO_APPLY",
+      "route_type": "online_form",
+      "package_status": "READY_TO_SUBMIT",
+      "application_route": "https://cha-net.org/jobs/application-form/medical-doctor-nawbahar-chc-fixed-shahjoy-dh-backup-6abc918cf1bd390013be91d0",
+      "deadline": "2026-10-07",
+      "no_submission_performed": true,
+      "paths": {
+        "tailored_cv": {
+          "txt": "documents/live_market_test_2026-09-30/watch_6b218689d6aa9b0b6f_medical_doctor_nawbahar_bhc_fixed_shahjoy_dh_backup_tailored_cv.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_6b218689d6aa9b0b6f_medical_doctor_nawbahar_bhc_fixed_shahjoy_dh_backup_tailored_cv.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_6b218689d6aa9b0b6f_medical_doctor_nawbahar_bhc_fixed_shahjoy_dh_backup_tailored_cv.pdf"
+        },
+        "cover_letter": {
+          "txt": "documents/live_market_test_2026-09-30/watch_6b218689d6aa9b0b6f_medical_doctor_nawbahar_bhc_fixed_shahjoy_dh_backup_cover_letter.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_6b218689d6aa9b0b6f_medical_doctor_nawbahar_bhc_fixed_shahjoy_dh_backup_cover_letter.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_6b218689d6aa9b0b6f_medical_doctor_nawbahar_bhc_fixed_shahjoy_dh_backup_cover_letter.pdf"
+        },
+        "application_package_txt": "documents/live_market_test_2026-09-30/watch_6b218689d6aa9b0b6f_medical_doctor_nawbahar_bhc_fixed_shahjoy_dh_backup_complete_application_package.txt",
+        "application_package_json": "documents/live_market_test_2026-09-30/watch_6b218689d6aa9b0b6f_medical_doctor_nawbahar_bhc_fixed_shahjoy_dh_backup_complete_application_package.json",
+        "form_fields_prefill_checklist": "documents/live_market_test_2026-09-30/watch_6b218689d6aa9b0b6f_medical_doctor_nawbahar_bhc_fixed_shahjoy_dh_backup_form_fields_prefill_checklist.txt"
+      },
+      "missing_items": [],
+      "review_warnings": []
+    },
+    {
+      "job_id": "watch_144f634197369fea66",
+      "ok": true,
+      "readiness_status": "READY_TO_APPLY",
+      "route_type": "online_form",
+      "package_status": "READY_TO_SUBMIT",
+      "application_route": "https://forms.gle/U3dJcBHhJamUZ5yE9",
+      "deadline": "2026-10-08",
+      "no_submission_performed": true,
+      "paths": {
+        "tailored_cv": {
+          "txt": "documents/live_market_test_2026-09-30/watch_144f634197369fea66_technical_supervisor_tailored_cv.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_144f634197369fea66_technical_supervisor_tailored_cv.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_144f634197369fea66_technical_supervisor_tailored_cv.pdf"
+        },
+        "cover_letter": {
+          "txt": "documents/live_market_test_2026-09-30/watch_144f634197369fea66_technical_supervisor_cover_letter.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_144f634197369fea66_technical_supervisor_cover_letter.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_144f634197369fea66_technical_supervisor_cover_letter.pdf"
+        },
+        "application_package_txt": "documents/live_market_test_2026-09-30/watch_144f634197369fea66_technical_supervisor_complete_application_package.txt",
+        "application_package_json": "documents/live_market_test_2026-09-30/watch_144f634197369fea66_technical_supervisor_complete_application_package.json",
+        "form_fields_prefill_checklist": "documents/live_market_test_2026-09-30/watch_144f634197369fea66_technical_supervisor_form_fields_prefill_checklist.txt"
+      },
+      "missing_items": [],
+      "review_warnings": []
+    },
+    {
+      "job_id": "watch_4134ecab24ab7a942c",
+      "ok": true,
+      "readiness_status": "READY_TO_APPLY",
+      "route_type": "email",
+      "package_status": "NEEDS_USER_INPUT",
+      "application_route": "recruitment.kabul@hntpo.org",
+      "deadline": "2026-10-10",
+      "no_submission_performed": true,
+      "paths": {
+        "tailored_cv": {
+          "txt": "documents/live_market_test_2026-09-30/watch_4134ecab24ab7a942c_medical_doctor_md_tailored_cv.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_4134ecab24ab7a942c_medical_doctor_md_tailored_cv.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_4134ecab24ab7a942c_medical_doctor_md_tailored_cv.pdf"
+        },
+        "cover_letter": {
+          "txt": "documents/live_market_test_2026-09-30/watch_4134ecab24ab7a942c_medical_doctor_md_cover_letter.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_4134ecab24ab7a942c_medical_doctor_md_cover_letter.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_4134ecab24ab7a942c_medical_doctor_md_cover_letter.pdf"
+        },
+        "application_package_txt": "documents/live_market_test_2026-09-30/watch_4134ecab24ab7a942c_medical_doctor_md_complete_application_package.txt",
+        "application_package_json": "documents/live_market_test_2026-09-30/watch_4134ecab24ab7a942c_medical_doctor_md_complete_application_package.json",
+        "form_fields_prefill_checklist": "documents/live_market_test_2026-09-30/watch_4134ecab24ab7a942c_medical_doctor_md_form_fields_prefill_checklist.txt"
+      },
+      "missing_items": [
+        "Completed organization application form"
+      ],
+      "review_warnings": []
+    },
+    {
+      "job_id": "watch_061e136ccf4e01b51b",
+      "ok": true,
+      "readiness_status": "READY_TO_APPLY",
+      "route_type": "email",
+      "package_status": "NEEDS_USER_INPUT",
+      "application_route": "recruitment.kabul@hntpo.org",
+      "deadline": "2026-10-10",
+      "no_submission_performed": true,
+      "paths": {
+        "tailored_cv": {
+          "txt": "documents/live_market_test_2026-09-30/watch_061e136ccf4e01b51b_tsfp_project_supervisor_tailored_cv.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_061e136ccf4e01b51b_tsfp_project_supervisor_tailored_cv.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_061e136ccf4e01b51b_tsfp_project_supervisor_tailored_cv.pdf"
+        },
+        "cover_letter": {
+          "txt": "documents/live_market_test_2026-09-30/watch_061e136ccf4e01b51b_tsfp_project_supervisor_cover_letter.txt",
+          "docx": "documents/live_market_test_2026-09-30/watch_061e136ccf4e01b51b_tsfp_project_supervisor_cover_letter.docx",
+          "pdf": "documents/live_market_test_2026-09-30/watch_061e136ccf4e01b51b_tsfp_project_supervisor_cover_letter.pdf"
+        },
+        "application_package_txt": "documents/live_market_test_2026-09-30/watch_061e136ccf4e01b51b_tsfp_project_supervisor_complete_application_package.txt",
+        "application_package_json": "documents/live_market_test_2026-09-30/watch_061e136ccf4e01b51b_tsfp_project_supervisor_complete_application_package.json",
+        "form_fields_prefill_checklist": "documents/live_market_test_2026-09-30/watch_061e136ccf4e01b51b_tsfp_project_supervisor_form_fields_prefill_checklist.txt"
+      },
+      "missing_items": [
+        "Completed organization application form"
+      ],
+      "review_warnings": []
+    }
+  ],
+  "submission_violations": []
+}

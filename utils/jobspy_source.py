@@ -31,13 +31,13 @@ def discover_jobspy_jobs(profile: dict) -> list:
 
     search_config = profile.get("search", {})
     queries = search_config.get("queries", profile["preferences"].get("roles", []))
-    locations = search_config.get("locations", profile["preferences"].get("locations", ["Remote"]))
-    distance = search_config.get("distance_miles", 100)  # Wide net — let AI score relevance
-    results_wanted = search_config.get("results_per_query", 50)  # More results per query
+    locations = search_config.get("locations", profile["preferences"].get("locations", ["Afghanistan", "Kabul"]))
+    distance = search_config.get("distance_miles", 100)
+    results_wanted = search_config.get("results_per_query", 25)
 
-    # Always include "Remote" if not already there
-    if not any("remote" in loc.lower() for loc in locations):
-        locations = locations + ["Remote"]
+    # Afghanistan-first default; Remote is optional, not automatic.
+    if not locations:
+        locations = ["Afghanistan", "Kabul"]
 
     all_jobs = []
 
@@ -47,8 +47,9 @@ def discover_jobspy_jobs(profile: dict) -> list:
         print("  ⚠ python-jobspy not installed. Run: pip install python-jobspy")
         return []
 
-    # Sites to search
-    sites = ["indeed", "linkedin", "glassdoor", "zip_recruiter", "google"]
+    # Sites to search. LinkedIn/Glassdoor are not enabled by default because
+    # public access is often login/CAPTCHA-gated and must not be bypassed.
+    sites = search_config.get("jobspy_sites") or ["indeed", "google"]
 
     for query in queries:
         for location in locations:
@@ -60,7 +61,7 @@ def discover_jobspy_jobs(profile: dict) -> list:
                     location=location,
                     distance=distance,
                     results_wanted=results_wanted,
-                    country_indeed="USA",
+                    country_indeed=search_config.get("country_indeed", "Afghanistan"),
                     is_remote=profile["preferences"].get("remote_only", False),
                 )
 

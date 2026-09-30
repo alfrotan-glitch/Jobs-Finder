@@ -13,9 +13,32 @@ DB_PATH = Path(__file__).parent.parent / "applications.db"
 
 # All valid statuses
 VALID_STATUSES = [
-    "discovered", "matched", "applied", "skipped", "failed",
-    "interviewing", "offer", "rejected", "withdrawn", "archived", "ignored"
+    # Discovery and analysis
+    "discovered", "analyzed", "recommended", "needs_verification", "not_eligible", "matched", "skipped",
+    # Review-first application workflow
+    "prepared", "review", "opened", "submitted", "applied", "failed",
+    # Follow-up pipeline
+    "interviewing", "offer", "rejected", "withdrawn", "archived", "ignored",
 ]
+
+# Explicit workflow guardrails. update_job_status remains permissive for manual
+# corrections, but transition_application_state enforces review-first flow.
+ALLOWED_TRANSITIONS = {
+    "discovered": {"analyzed", "recommended", "needs_verification", "not_eligible", "opened", "skipped", "ignored", "archived"},
+    "analyzed": {"recommended", "needs_verification", "not_eligible", "prepared", "review", "skipped", "ignored", "archived"},
+    "recommended": {"prepared", "review", "opened", "skipped", "ignored", "archived"},
+    "needs_verification": {"prepared", "review", "opened", "skipped", "ignored", "archived"},
+    "not_eligible": {"prepared", "review", "opened", "skipped", "ignored", "archived"},
+    "prepared": {"review", "opened", "submitted", "applied", "archived"},
+    "review": {"opened", "submitted", "applied", "archived"},
+    "opened": {"submitted", "applied", "failed", "interviewing", "rejected", "withdrawn", "archived"},
+    "submitted": {"applied", "interviewing", "offer", "rejected", "withdrawn", "archived"},
+    "applied": {"interviewing", "offer", "rejected", "withdrawn", "archived"},
+    "interviewing": {"offer", "rejected", "withdrawn", "archived"},
+    "offer": {"withdrawn", "archived"},
+    "rejected": {"archived"},
+    "failed": {"opened", "prepared", "review", "archived"},
+}
 
 
 def get_db() -> sqlite3.Connection:
@@ -76,6 +99,18 @@ def _migrate_schema(conn: sqlite3.Connection):
         "tags": "TEXT DEFAULT ''",
         "description": "TEXT DEFAULT ''",
         "tailored_resume": "TEXT DEFAULT ''",
+        "requirements_json": "TEXT DEFAULT ''",
+        "match_json": "TEXT DEFAULT ''",
+        "priority": "TEXT DEFAULT ''",
+        "source_url": "TEXT DEFAULT ''",
+        "application_email": "TEXT DEFAULT ''",
+        "application_subject": "TEXT DEFAULT ''",
+        "reference_number": "TEXT DEFAULT ''",
+        "closing_date": "TEXT DEFAULT ''",
+        "provenance_json": "TEXT DEFAULT ''",
+        "documents_json": "TEXT DEFAULT ''",
+        "last_opened_at": "TEXT",
+        "submitted_at": "TEXT",
         "follow_up_date": "TEXT",
         "last_activity": "TEXT",
         "follow_up_count": "INTEGER DEFAULT 0",
@@ -115,19 +150,32 @@ def log_discovered(job) -> None:
     conn = get_db()
     try:
         metadata = json.dumps(job.metadata) if isinstance(job.metadata, dict) else job.metadata
+        meta = job.metadata if isinstance(job.metadata, dict) else {}
+        requirements_json = json.dumps(meta.get("requirements", {}), ensure_ascii=False) if meta.get("requirements") else ""
+        facts = meta.get("requirements", {}).get("facts", {}) if isinstance(meta.get("requirements"), dict) else {}
+        provenance_json = json.dumps(meta.get("requirements", {}).get("provenance", []), ensure_ascii=False) if isinstance(meta.get("requirements"), dict) else ""
         conn.execute("""
             INSERT OR IGNORE INTO applications
             (id, title, company, platform, url, apply_url, location, description, source,
-             salary_min, salary_max, date_posted, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             salary_min, salary_max, date_posted, metadata, requirements_json,
+             source_url, application_email, application_subject, reference_number,
+             closing_date, provenance_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             job.id, job.title, job.company, job.platform, job.url, job.apply_url,
             job.location, getattr(job, 'description', ''),
-            job.metadata.get('source', job.platform) if isinstance(job.metadata, dict) else job.platform,
-            job.metadata.get('salary_min') if isinstance(job.metadata, dict) else None,
-            job.metadata.get('salary_max') if isinstance(job.metadata, dict) else None,
-            job.metadata.get('date_posted', '') if isinstance(job.metadata, dict) else '',
-            metadata
+            meta.get('source', job.platform),
+            meta.get('salary_min'),
+            meta.get('salary_max'),
+            meta.get('date_posted', ''),
+            metadata,
+            requirements_json,
+            meta.get('source_url', job.url),
+            meta.get('application_email') or facts.get('application_email', ''),
+            meta.get('application_subject') or facts.get('application_subject', ''),
+            meta.get('reference_number') or facts.get('reference_number', ''),
+            meta.get('closing_date') or facts.get('closing_date', ''),
+            provenance_json,
         ))
         conn.commit()
     finally:
@@ -135,17 +183,59 @@ def log_discovered(job) -> None:
     _emit("job_discovered", {"id": job.id, "title": job.title, "company": job.company})
 
 
-def log_matched(job_id: str, score: int, reasoning: str, cover_letter: str) -> None:
-    """Update a job with its match results."""
+def log_matched(job_id: str, score: int | None, reasoning: str, cover_letter: str, match_report: dict = None, priority: str = None) -> None:
+    """Update a job with match results.
+
+    score is kept for backwards compatibility. The MD-first product uses
+    match_json + priority instead of a single arbitrary score.
+    """
+    match_json = json.dumps(match_report or {}, ensure_ascii=False)
+    priority = priority or (match_report or {}).get("priority", "")
+    status = _status_for_priority(priority) if priority else "matched"
+    requirements_json = json.dumps((match_report or {}).get("extracted_requirements", {}), ensure_ascii=False) if match_report else ""
+    provenance_json = json.dumps((match_report or {}).get("provenance", []), ensure_ascii=False) if match_report else ""
+    facts = (match_report or {}).get("facts", {})
     conn = get_db()
     conn.execute("""
         UPDATE applications
-        SET match_score = ?, reasoning = ?, cover_letter = ?, status = 'matched'
+        SET match_score = ?, reasoning = ?, cover_letter = ?,
+            status = CASE WHEN status IN ('prepared','review','opened','submitted','applied','interviewing','offer','rejected','withdrawn','archived') THEN status ELSE ? END,
+            match_json = ?, priority = ?, requirements_json = COALESCE(NULLIF(?, ''), requirements_json),
+            provenance_json = COALESCE(NULLIF(?, ''), provenance_json),
+            application_email = COALESCE(NULLIF(?, ''), application_email),
+            application_subject = COALESCE(NULLIF(?, ''), application_subject),
+            reference_number = COALESCE(NULLIF(?, ''), reference_number),
+            closing_date = COALESCE(NULLIF(?, ''), closing_date)
         WHERE id = ?
-    """, (score, reasoning, cover_letter, job_id))
+    """, (
+        score, reasoning, cover_letter, status,
+        match_json, priority, requirements_json, provenance_json,
+        facts.get("application_email", "") or "",
+        facts.get("application_subject", "") or "",
+        facts.get("reference_number", "") or "",
+        facts.get("closing_date", "") or "",
+        job_id,
+    ))
     conn.commit()
     conn.close()
-    _emit("job_matched", {"id": job_id, "score": score})
+    _emit("job_matched", {"id": job_id, "score": score, "priority": priority})
+
+
+def _status_for_priority(priority: str) -> str:
+    if priority == "Review first":
+        return "recommended"
+    if priority in ("Review soon", "Needs verification"):
+        return "needs_verification"
+    if priority in ("Low priority", "Closed"):
+        return "not_eligible"
+    return "analyzed"
+
+
+def log_medical_match(job_id: str, match_report: dict) -> None:
+    """Store deterministic medical eligibility results."""
+    priority = match_report.get("priority", "")
+    reasoning = match_report.get("explanation", "")
+    log_matched(job_id, None, reasoning, "", match_report=match_report, priority=priority)
 
 
 def log_applied(job_id: str, success: bool) -> None:
@@ -306,7 +396,7 @@ def get_all_jobs(
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         # Validate sort column
-        valid_sorts = ["discovered_at", "match_score", "company", "title", "status", "applied_at"]
+        valid_sorts = ["discovered_at", "match_score", "priority", "closing_date", "company", "title", "status", "applied_at"]
         if sort_by not in valid_sorts:
             sort_by = "discovered_at"
         if sort_order not in ("asc", "desc"):
@@ -337,18 +427,146 @@ def get_job_by_id(job_id: str) -> dict:
     return dict(row) if row else None
 
 
+def _watcher_recommended_jobs(limit: int = 25) -> list[dict]:
+    """Return actionable watcher-backed application rows if watcher tables exist."""
+    conn = get_db()
+    try:
+        table = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='job_watch_vacancies'").fetchone()
+        if not table:
+            return []
+        rows = conn.execute(
+            """
+            SELECT a.*,
+                   w.readiness_status AS watcher_readiness_status,
+                   w.operational_priority AS watcher_operational_priority,
+                   w.last_change_type AS watcher_change_type,
+                   w.priority_reasons_json AS watcher_priority_reasons_json,
+                   w.first_discovered_at AS watcher_first_discovered_at,
+                   w.last_changed_at AS watcher_last_changed_at,
+                   w.source_urls_json AS watcher_source_urls_json
+            FROM job_watch_vacancies w
+            JOIN applications a ON a.id = w.canonical_id
+            WHERE w.current_status = 'ACTIVE'
+              AND w.readiness_status IN ('READY_TO_APPLY', 'NEEDS_VERIFICATION')
+              AND w.operational_priority NOT IN ('LOW', 'CLOSED')
+              AND (w.closing_date IS NULL OR w.closing_date = '' OR date(w.closing_date) >= date('now'))
+              AND a.status NOT IN ('ignored', 'archived', 'rejected', 'withdrawn', 'submitted', 'applied')
+            ORDER BY
+              CASE
+                WHEN w.last_change_type = 'NEW' AND w.readiness_status = 'READY_TO_APPLY' THEN 0
+                WHEN w.readiness_status = 'READY_TO_APPLY' AND w.closing_date != '' AND date(w.closing_date) <= date('now', '+7 day') THEN 1
+                WHEN w.last_change_type = 'NEW' AND w.readiness_status = 'NEEDS_VERIFICATION' THEN 2
+                WHEN w.last_change_type = 'UPDATED' AND w.readiness_status IN ('READY_TO_APPLY', 'NEEDS_VERIFICATION') THEN 3
+                WHEN w.readiness_status = 'READY_TO_APPLY' THEN 4
+                ELSE 5
+              END,
+              CASE WHEN w.closing_date IS NULL OR w.closing_date = '' THEN '9999-99-99' ELSE w.closing_date END ASC,
+              w.last_changed_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+
+def get_recommended_jobs(limit: int = 25) -> list:
+    """Actionable jobs the user should look at today.
+
+    Prefer persistent watcher recommendations.  Fall back to legacy analyzed
+    tracker rows only when the watcher has not produced state yet.
+    """
+    watcher_rows = _watcher_recommended_jobs(limit=limit)
+    if watcher_rows:
+        return watcher_rows
+    jobs, _ = get_all_jobs(limit=1000)
+    rank = {"Review first": 0, "Review soon": 1, "Needs verification": 2, "Low priority": 9, "Closed": 10, "": 8}
+    today = date.today()
+    def open_or_undated(job: dict) -> bool:
+        closing = str(job.get("closing_date") or "")[:10]
+        if not closing:
+            return True
+        try:
+            return date.fromisoformat(closing) >= today
+        except ValueError:
+            return True
+    eligible = [
+        j for j in jobs
+        if j.get("status") not in {"ignored", "archived", "rejected", "withdrawn", "not_eligible", "submitted", "applied"}
+        and open_or_undated(j)
+    ]
+    eligible.sort(key=lambda j: (rank.get(j.get("priority", ""), 8), j.get("closing_date") or "9999-99-99", j.get("discovered_at") or ""))
+    return eligible[:limit]
+
+
 def update_job_status(job_id: str, status: str) -> bool:
-    """Update a job's status."""
+    """Update a job's status (manual correction path)."""
     if status not in VALID_STATUSES:
         return False
     conn = get_db()
     try:
-        conn.execute("UPDATE applications SET status = ? WHERE id = ?", (status, job_id))
+        conn.execute("UPDATE applications SET status = ?, last_activity = ? WHERE id = ?", (status, datetime.now().isoformat(), job_id))
         conn.commit()
     finally:
         conn.close()
     _emit("job_status_changed", {"id": job_id, "status": status})
     return True
+
+
+def transition_application_state(job_id: str, new_status: str, *, explicit_confirmation: bool = False, note: str = "") -> tuple[bool, str]:
+    """Enforce safe application state transitions.
+
+    Submitting/marking applied requires explicit_confirmation=True. This keeps
+    automation review-first and prevents accidental final submission.
+    """
+    if new_status not in VALID_STATUSES:
+        return False, f"Invalid status: {new_status}"
+    job = get_job_by_id(job_id)
+    if not job:
+        return False, "Job not found"
+    current = job.get("status") or "discovered"
+    allowed = ALLOWED_TRANSITIONS.get(current, set())
+    if new_status not in allowed and new_status != current:
+        return False, f"Transition {current} -> {new_status} is not allowed"
+    if new_status in {"submitted", "applied"} and not explicit_confirmation:
+        return False, "Explicit user confirmation is required before final submission"
+
+    now = datetime.now().isoformat()
+    conn = get_db()
+    try:
+        if new_status in {"submitted", "applied"}:
+            from datetime import timedelta
+            follow_up = (datetime.now() + timedelta(days=7)).isoformat()
+            conn.execute("""
+                UPDATE applications
+                SET status = ?, submitted_at = COALESCE(submitted_at, ?), applied_at = COALESCE(applied_at, ?),
+                    last_activity = ?, follow_up_date = COALESCE(follow_up_date, ?), notes = CASE WHEN ? != '' THEN COALESCE(notes, '') || ? ELSE notes END
+                WHERE id = ?
+            """, (new_status, now, now, now, follow_up, note, f"\n{note}", job_id))
+        elif new_status == "opened":
+            conn.execute("""
+                UPDATE applications SET status = ?, last_opened_at = ?, last_activity = ? WHERE id = ?
+            """, (new_status, now, now, job_id))
+        else:
+            conn.execute("UPDATE applications SET status = ?, last_activity = ? WHERE id = ?", (new_status, now, job_id))
+        conn.commit()
+    finally:
+        conn.close()
+    _emit("job_status_changed", {"id": job_id, "status": new_status})
+    return True, "ok"
+
+
+def get_match_report(job_id: str) -> dict:
+    job = get_job_by_id(job_id)
+    if not job or not job.get("match_json"):
+        return {}
+    try:
+        return json.loads(job["match_json"])
+    except (TypeError, json.JSONDecodeError):
+        return {}
 
 
 def update_job_notes(job_id: str, notes: str) -> bool:
@@ -430,11 +648,12 @@ def get_companies() -> list:
 
 
 def update_tailored_resume(job_id: str, tailored_data: dict) -> bool:
-    """Store tailored resume data for a job."""
+    """Store tailored resume/document data for a job."""
+    payload = json.dumps(tailored_data, ensure_ascii=False)
     conn = get_db()
     conn.execute(
-        "UPDATE applications SET tailored_resume = ? WHERE id = ?",
-        (json.dumps(tailored_data), job_id)
+        "UPDATE applications SET tailored_resume = ?, documents_json = ?, status = CASE WHEN status IN ('recommended','needs_verification','not_eligible','analyzed','matched','discovered') THEN 'prepared' ELSE status END WHERE id = ?",
+        (payload, payload, job_id)
     )
     conn.commit()
     conn.close()
@@ -446,12 +665,13 @@ def get_tailored_resume(job_id: str) -> dict:
     """Get tailored resume data for a job."""
     conn = get_db()
     row = conn.execute(
-        "SELECT tailored_resume FROM applications WHERE id = ?", (job_id,)
+        "SELECT tailored_resume, documents_json FROM applications WHERE id = ?", (job_id,)
     ).fetchone()
     conn.close()
-    if row and row["tailored_resume"]:
+    payload = (row["documents_json"] or row["tailored_resume"]) if row else ""
+    if payload:
         try:
-            return json.loads(row["tailored_resume"])
+            return json.loads(payload)
         except (json.JSONDecodeError, TypeError):
             pass
     return {}

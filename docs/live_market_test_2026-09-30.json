@@ -1,0 +1,172 @@
+{
+  "run_at": "2026-09-30T08:06:10.994379+00:00",
+  "market_date_used": "2026-09-30",
+  "profile_source": "Existing Dr. Frotan CV/profile fixture normalized by utils.profile_builder; no private identifiers or license number invented.",
+  "source_registry": {
+    "records": 36,
+    "validation_errors": [],
+    "active_sources_count": 15,
+    "active_sources": [
+      {
+        "id": "acbar",
+        "status": "ACTIVE",
+        "method": "acbar_html",
+        "url": "https://www.acbar.org/en/jobs"
+      },
+      {
+        "id": "wazifaha",
+        "status": "LIMITED",
+        "method": "registry_static_html",
+        "url": "https://wazifaha.org/jobs/"
+      },
+      {
+        "id": "reliefweb",
+        "status": "LIMITED",
+        "method": "reliefweb_api_or_html",
+        "url": "https://reliefweb.int/jobs?search=Afghanistan%20health"
+      },
+      {
+        "id": "unjobs_afghanistan",
+        "status": "ACTIVE",
+        "method": "unjobs_html",
+        "url": "https://unjobs.org/duty_stations/afghanistan"
+      },
+      {
+        "id": "unicef_careers",
+        "status": "ACTIVE",
+        "method": "unicef_careers_html",
+        "url": "https://jobs.unicef.org/en-us/search/?search-keyword=Afghanistan"
+      },
+      {
+        "id": "who_careers",
+        "status": "LIMITED",
+        "method": "registry_static_html",
+        "url": "https://careers.who.int/careersection/ex/jobsearch.ftl?lang=en"
+      },
+      {
+        "id": "unops_careers",
+        "status": "LIMITED",
+        "method": "registry_static_html",
+        "url": "https://careers.unops.org/"
+      },
+      {
+        "id": "undp_careers",
+        "status": "LIMITED",
+        "method": "registry_static_html",
+        "url": "https://jobs.undp.org/cj_view_jobs.cfm"
+      },
+      {
+        "id": "iom_recruit",
+        "status": "ACTIVE",
+        "method": "oracle_hcm_api",
+        "url": "https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?location=Afghanistan"
+      },
+      {
+        "id": "dacaar_jobs",
+        "status": "ACTIVE",
+        "method": "registry_static_html",
+        "url": "https://dacaar.org/jobs"
+      },
+      {
+        "id": "nrc_careers",
+        "status": "ACTIVE",
+        "method": "oracle_hcm_api",
+        "url": "https://ekum.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2019/jobs?location=Afghanistan"
+      },
+      {
+        "id": "akdn_careers",
+        "status": "ACTIVE",
+        "method": "registry_static_html",
+        "url": "https://akhs.odoo.com/jobs"
+      },
+      {
+        "id": "moph_vacancies",
+        "status": "ACTIVE",
+        "method": "registry_static_html",
+        "url": "https://moph.gov.af/en/vacancies"
+      },
+      {
+        "id": "ku_vacancies",
+        "status": "ACTIVE",
+        "method": "registry_static_html",
+        "url": "https://ku.edu.af/en/vacancies"
+      },
+      {
+        "id": "fmic",
+        "status": "ACTIVE",
+        "method": "registry_static_html",
+        "url": "https://www.fmic.org.af/WorkWithUs/vacancies/Pages/home.aspx"
+      }
+    ]
+  },
+  "scan_summary": {
+    "scan_id": "2026-09-30_live_market",
+    "started_at": "2026-09-30T12:00:00+00:00",
+    "finished_at": "2026-09-30T12:00:00+00:00",
+    "status": "COMPLETED",
+    "sources_attempted": [
+      "acbar",
+      "wazifaha",
+      "reliefweb",
+      "unjobs_afghanistan",
+      "unicef_careers",
+      "who_careers",
+      "unops_careers",
+      "undp_careers",
+      "iom_recruit",
+      "dacaar_jobs",
+      "nrc_careers",
+      "akdn_careers",
+      "moph_vacancies",
+      "ku_vacancies",
+      "fmic"
+    ],
+    "sources_successful": [
+      "acbar",
+      "akdn_careers",
+      "dacaar_jobs",
+      "fmic",
+      "iom_recruit",
+      "ku_vacancies",
+      "moph_vacancies",
+      "nrc_careers",
+      "reliefweb",
+      "undp_careers",
+      "unicef_careers",
+      "unjobs_afghanistan",
+      "unops_careers",
+      "wazifaha",
+      "who_careers"
+    ],
+    "sources_failed": [],
+    "discovered_count": 0,
+    "normalized_count": 0,
+    "deduplicated_count": 0,
+    "new_count": 0,
+    "updated_count": 0,
+    "unchanged_count": 0,
+    "closed_count": 0,
+    "ready_to_apply_count": 0,
+    "needs_verification_count": 0,
+    "not_eligible_count": 0,
+    "notifications_created": 0,
+    "errors": [],
+    "changes": []
+  },
+  "counts": {
+    "jobs_discovered_raw": 0,
+    "jobs_after_deduplication": 0,
+    "open_relevant_jobs": 0,
+    "ready_to_apply": 0,
+    "needs_verification": 0,
+    "not_eligible": 0,
+    "packages_prepared": 0
+  },
+  "ready_to_apply": [],
+  "needs_verification": [],
+  "not_eligible": [],
+  "all_open_relevant_jobs": [],
+  "best_actionable_by_deadline": [],
+  "packages_prepared": [],
+  "submission_violations": []
+}

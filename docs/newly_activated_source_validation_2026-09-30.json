@@ -1,0 +1,180 @@
+{
+  "date": "2026-09-30",
+  "pipeline": "RawVacancy -> Normalize -> Validate -> Job -> Deduplicate -> Freshness -> Requirements -> Match Profile -> Existing review-first workflow (no submission)",
+  "samples": [
+    {
+      "source": "fmic",
+      "organization": "French Medical Institute for Mothers and Children",
+      "title": "Medical Officer",
+      "location": "Kabul, Afghanistan",
+      "vacancy_url": "https://www.fmic.org.af/WorkWithUs/vacancies/Pages/Medical-Officer-2026.aspx",
+      "posting_date": "2026-09-30",
+      "closing_date": "2026-10-05",
+      "application_route": "https://docs.google.com/forms/d/1doS8XyeEEV_aQ7FUW5tnrBSPTJtgHgk1UHm4mjReYQM/edit",
+      "source_urls": [
+        "https://www.fmic.org.af/WorkWithUs/vacancies/Pages/home.aspx",
+        "https://www.fmic.org.af/WorkWithUs/vacancies/Pages/Medical-Officer-2026.aspx",
+        "https://docs.google.com/forms/d/1doS8XyeEEV_aQ7FUW5tnrBSPTJtgHgk1UHm4mjReYQM/edit"
+      ],
+      "provenance": [
+        {
+          "source": "FMIC official Work With Us",
+          "url": "https://www.fmic.org.af/WorkWithUs/vacancies/Pages/Medical-Officer-2026.aspx",
+          "reliability": "high"
+        }
+      ],
+      "normalized_valid": true,
+      "validation_errors": [],
+      "fresh_on_2026_09_30": true,
+      "requirements_count": 12,
+      "readiness_status": "READY_TO_APPLY",
+      "priority": "Review first",
+      "match_counts": {
+        "Met": 13,
+        "Not met": 0,
+        "Needs verification": 0
+      },
+      "application_workflow_note": "Matched through deterministic readiness workflow; no application submitted."
+    },
+    {
+      "source": "akdn_careers",
+      "organization": "Aga Khan Health Services Afghanistan (AKHS-A)",
+      "title": "Surgeon",
+      "location": "Kabul, Afghanistan",
+      "vacancy_url": "https://akhs.odoo.com/jobs/detail/surgeon-125",
+      "posting_date": "2026-09-23",
+      "closing_date": "2026-10-10",
+      "application_route": "https://akhs.odoo.com/jobs/detail/surgeon-125",
+      "source_urls": [
+        "https://akhs.odoo.com/jobs",
+        "https://akhs.odoo.com/jobs/detail/surgeon-125"
+      ],
+      "provenance": [
+        {
+          "source": "AKHS-A official Odoo jobs",
+          "url": "https://akhs.odoo.com/jobs/detail/surgeon-125",
+          "reliability": "high"
+        }
+      ],
+      "normalized_valid": true,
+      "validation_errors": [],
+      "fresh_on_2026_09_30": true,
+      "requirements_count": 8,
+      "readiness_status": "NEEDS_VERIFICATION",
+      "priority": "Needs verification",
+      "match_counts": {
+        "Met": 8,
+        "Not met": 0,
+        "Needs verification": 1
+      },
+      "application_workflow_note": "Matched through deterministic readiness workflow; no application submitted."
+    },
+    {
+      "source": "iom_recruit",
+      "organization": "International Organization for Migration (IOM)",
+      "title": "Supply Chain Assistant",
+      "location": "Herat, Jalalabad, Kandahar, Mazar-I-Sharif, Afghanistan",
+      "vacancy_url": "https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/22777",
+      "posting_date": "2026-09-20",
+      "closing_date": "2026-10-04",
+      "application_route": "https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/22777",
+      "source_urls": [
+        "https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?location=Afghanistan",
+        "https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/22777"
+      ],
+      "provenance": [
+        {
+          "source": "IOM official Oracle HCM Careers",
+          "url": "https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/22777",
+          "reliability": "high"
+        }
+      ],
+      "normalized_valid": true,
+      "validation_errors": [],
+      "fresh_on_2026_09_30": true,
+      "requirements_count": 7,
+      "readiness_status": "NOT_ELIGIBLE",
+      "priority": "Low priority",
+      "match_counts": {
+        "Met": 6,
+        "Not met": 1,
+        "Needs verification": 1
+      },
+      "application_workflow_note": "Matched through deterministic readiness workflow; no application submitted."
+    },
+    {
+      "source": "nrc_careers",
+      "organization": "Norwegian Refugee Council (NRC)",
+      "title": "Humanitarian Access & Safety Manager Afghanistan",
+      "location": "Kabul, Afghanistan",
+      "vacancy_url": "https://ekum.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2019/job/21597",
+      "posting_date": "2026-09-16",
+      "closing_date": "2026-09-30",
+      "application_route": "https://ekum.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2019/job/21597",
+      "source_urls": [
+        "https://ekum.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2019/jobs?location=Afghanistan",
+        "https://ekum.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2019/job/21597"
+      ],
+      "provenance": [
+        {
+          "source": "NRC official Oracle HCM Careers",
+          "url": "https://ekum.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2019/job/21597",
+          "reliability": "high"
+        }
+      ],
+      "normalized_valid": true,
+      "validation_errors": [],
+      "fresh_on_2026_09_30": true,
+      "requirements_count": 6,
+      "readiness_status": "READY_TO_APPLY",
+      "priority": "Low priority",
+      "match_counts": {
+        "Met": 7,
+        "Not met": 0,
+        "Needs verification": 0
+      },
+      "application_workflow_note": "Matched through deterministic readiness workflow; no application submitted."
+    },
+    {
+      "source": "wazifaha",
+      "organization": "Relief International (RI)",
+      "title": "Quality of Care and Capacity Building Officer",
+      "location": "Nimruz, Afghanistan",
+      "vacancy_url": "https://www.wazifaha.org/jobs/31611/quality-of-care-and-capacity-building-officer",
+      "posting_date": "2026-09-29",
+      "closing_date": "2026-10-04",
+      "application_route": "vacancies.afghanistan@ri.org",
+      "source_urls": [
+        "https://www.wazifaha.org/companies/relief-international-ri",
+        "https://www.wazifaha.org/jobs/31611/quality-of-care-and-capacity-building-officer"
+      ],
+      "provenance": [
+        {
+          "source": "Wazifaha public job board",
+          "url": "https://www.wazifaha.org/jobs/31611/quality-of-care-and-capacity-building-officer",
+          "reliability": "medium"
+        }
+      ],
+      "normalized_valid": true,
+      "validation_errors": [],
+      "fresh_on_2026_09_30": true,
+      "requirements_count": 13,
+      "readiness_status": "NEEDS_VERIFICATION",
+      "priority": "Needs verification",
+      "match_counts": {
+        "Met": 12,
+        "Not met": 0,
+        "Needs verification": 3
+      },
+      "application_workflow_note": "Matched through deterministic readiness workflow; no application submitted."
+    }
+  ],
+  "deduplication_check": {
+    "input_count_with_duplicate": 6,
+    "unique_count_after_deduplicate": 5,
+    "last_duplicate_source_urls_preserved": [
+      "https://www.wazifaha.org/companies/relief-international-ri",
+      "https://www.wazifaha.org/jobs/31611/quality-of-care-and-capacity-building-officer"
+    ]
+  }
+}

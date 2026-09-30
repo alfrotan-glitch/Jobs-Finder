@@ -13,8 +13,10 @@ applications.db-shm
 # Cache
 .cache/
 
-# Resumes (may contain PII)
+# Resumes and generated profile/CV/application artifacts (may contain PII)
 resumes/
+profiles/
+documents/
 
 # IDE
 .vscode/

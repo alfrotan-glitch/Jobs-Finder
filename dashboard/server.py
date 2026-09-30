@@ -41,6 +41,10 @@ from utils.tracker import (
     log_matched,
     log_skipped,
     get_unscored_jobs,
+    get_recommended_jobs,
+    log_medical_match,
+    transition_application_state,
+    get_match_report,
     VALID_STATUSES,
     ignore_jobs,
     purge_all,
@@ -72,7 +76,7 @@ async def lifespan(app):
     except Exception:
         pass
 
-app = FastAPI(title="MR.Jobs", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Afghan MD Job Assistant", version="2.0.0", lifespan=lifespan)
 
 
 @app.get("/api/health")
@@ -169,7 +173,7 @@ EventBus.subscribe(_on_event)
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request) -> HTMLResponse:
     """Serve the single-page dashboard."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 
 # ===========================================================================
@@ -214,6 +218,12 @@ async def list_jobs(
     return {"jobs": jobs, "total": total, "limit": limit, "offset": offset}
 
 
+@app.get("/api/recommended")
+async def recommended_jobs(limit: int = 25) -> dict:
+    """Return the jobs the user should look at today."""
+    return {"jobs": get_recommended_jobs(limit=limit)}
+
+
 @app.get("/api/jobs/{job_id}")
 async def get_job(job_id: str) -> dict:
     """Return a single job record by ID."""
@@ -221,6 +231,53 @@ async def get_job(job_id: str) -> dict:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@app.get("/api/jobs/{job_id}/analysis")
+async def get_job_analysis(job_id: str) -> dict:
+    """Return deterministic medical eligibility analysis for a job."""
+    job = get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    report = get_match_report(job_id)
+    if report:
+        return report
+    import yaml
+    from utils.medical_matcher import match_job_against_profile
+    from utils.resume_parser import extract_resume_text
+
+    profile_path = BASE_DIR.parent / "profile.yaml"
+    with open(profile_path) as f:
+        profile = yaml.safe_load(f)
+    resume_text = extract_resume_text(profile.get("resume_path", ""))
+    report = match_job_against_profile(job, profile, resume_text=resume_text).to_dict()
+    log_medical_match(job_id, report)
+    return report
+
+
+@app.post("/api/jobs/{job_id}/open")
+async def open_job_application(job_id: str) -> dict:
+    """Mark the job opened and return the real application URL for the browser."""
+    job = get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    url = job.get("apply_url") or job.get("url")
+    if not url:
+        raise HTTPException(status_code=400, detail="No application URL available")
+    transition_application_state(job_id, "opened")
+    return {"url": url, "job_id": job_id}
+
+
+@app.post("/api/jobs/{job_id}/confirm-submitted")
+async def confirm_submitted(job_id: str, body: dict = {}) -> dict:
+    """Record a manual final submission only with explicit confirmation."""
+    phrase = f"SUBMITTED {job_id}"
+    if body.get("confirmation") != phrase:
+        raise HTTPException(status_code=400, detail=f"Type exactly: {phrase}")
+    ok, message = transition_application_state(job_id, "submitted", explicit_confirmation=True, note="User confirmed manual submission in dashboard")
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {"ok": True, "status": "submitted"}
 
 
 @app.patch("/api/jobs/{job_id}")
@@ -237,6 +294,8 @@ async def update_job(job_id: str, body: dict) -> dict:
         raise HTTPException(status_code=404, detail="Job not found")
 
     if "status" in body:
+        if body["status"] in {"submitted", "applied"}:
+            raise HTTPException(status_code=400, detail="Use the explicit submission confirmation endpoint to record a submitted application")
         if not update_job_status(job_id, body["status"]):
             raise HTTPException(
                 status_code=400,
@@ -368,6 +427,41 @@ async def dismiss_follow_up_endpoint(job_id: str) -> dict:
 # REST API — Profile
 # ===========================================================================
 
+
+def _sanitize_profile_settings(profile: dict) -> dict:
+    """Keep nontechnical Settings values safe and scheduler-compatible."""
+    import re
+
+    watcher = profile.setdefault("watcher", {})
+    schedule = profile.setdefault("schedule", {})
+    thresholds = watcher.get("deadline_alert_days", schedule.get("deadline_alert_days", [7, 3, 1]))
+    if isinstance(thresholds, str):
+        thresholds = [int(item) for item in re.findall(r"\d+", thresholds)]
+    if not isinstance(thresholds, list):
+        thresholds = [7, 3, 1]
+    thresholds = sorted({int(item) for item in thresholds if str(item).isdigit() and int(item) >= 0}, reverse=True) or [7, 3, 1]
+    watcher["deadline_alert_days"] = thresholds
+    schedule["deadline_alert_days"] = thresholds
+
+    try:
+        interval = float(watcher.get("scan_interval_hours", schedule.get("job_watch_interval_hours", 6)))
+    except (TypeError, ValueError):
+        interval = 6
+    if interval < 1:
+        interval = 1
+    watcher["scan_interval_hours"] = interval
+    schedule["job_watch_interval_hours"] = interval
+    schedule["discover_interval_hours"] = interval
+    watcher["enabled"] = bool(watcher.get("enabled", schedule.get("enabled", True)))
+    schedule["enabled"] = watcher["enabled"]
+    watcher["auto_prepare_ready_to_apply"] = bool(watcher.get("auto_prepare_ready_to_apply", False))
+    watcher.setdefault("application_out_dir", "documents/applications")
+    notifications = profile.setdefault("notifications", {})
+    for key in ["new_jobs", "needs_verification", "deadline_alerts", "updates", "closed", "source_failures"]:
+        notifications[key] = bool(notifications.get(key, True))
+    return profile
+
+
 @app.get("/api/profile")
 async def get_profile() -> dict:
     """Return the current profile.yaml as JSON, or signal setup needed."""
@@ -377,6 +471,22 @@ async def get_profile() -> dict:
         return {"needs_setup": True}
     with open(profile_path) as f:
         return yaml.safe_load(f)
+
+
+@app.get("/api/profile/evidence")
+async def get_profile_evidence() -> dict:
+    """Return read-only structured evidence parsed from the profile/CV."""
+    import yaml
+    from utils.resume_parser import extract_resume_text
+    from utils.profile import build_profile_evidence
+
+    profile_path = BASE_DIR.parent / "profile.yaml"
+    if not profile_path.exists():
+        return {"needs_setup": True, "evidence": {}}
+    with open(profile_path) as f:
+        profile = yaml.safe_load(f) or {}
+    resume_text = extract_resume_text(profile.get("resume_path", ""))
+    return {"evidence": build_profile_evidence(profile, resume_text=resume_text).to_dict()}
 
 
 @app.post("/api/setup")
@@ -401,6 +511,7 @@ async def run_setup(body: dict) -> dict:
                 base[key] = value
 
     deep_merge(defaults, body)
+    defaults = _sanitize_profile_settings(defaults)
 
     with open(profile_path, "w") as f:
         yaml.dump(defaults, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
@@ -432,6 +543,7 @@ async def update_profile(body: dict) -> dict:
                 base[key] = value
 
     deep_merge(profile, body)
+    profile = _sanitize_profile_settings(profile)
 
     with open(profile_path, "w") as f:
         yaml.dump(profile, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
@@ -441,6 +553,13 @@ async def update_profile(body: dict) -> dict:
         from utils.llm import clear_backend_cache
         clear_backend_cache()
     except ImportError:
+        pass
+
+    try:
+        from scheduler import setup_scheduler, start_scheduler
+        setup_scheduler()
+        start_scheduler()
+    except Exception:
         pass
 
     return profile
@@ -616,20 +735,21 @@ async def trigger_discover() -> dict:
         try:
             await broadcast_event({"type": "discovery_started", "data": {}})
 
-            from utils.discovery import discover_all_jobs
-            from utils.tracker import is_already_seen, log_discovered
+            from utils.job_watcher import run_job_watch_scan
 
-            jobs = await discover_all_jobs(profile)
-            new_count = 0
-            for job in jobs:
-                if not is_already_seen(job.id):
-                    log_discovered(job)
-                    new_count += 1
-
+            result = await run_job_watch_scan(profile)
             await broadcast_event(
                 {
                     "type": "discovery_complete",
-                    "data": {"total": len(jobs), "new": new_count},
+                    "data": {
+                        "total": result.get("deduplicated_count", 0),
+                        "new": result.get("new_count", 0),
+                        "updated": result.get("updated_count", 0),
+                        "unchanged": result.get("unchanged_count", 0),
+                        "ready_to_apply": result.get("ready_to_apply_count", 0),
+                        "needs_verification": result.get("needs_verification_count", 0),
+                        "scan_id": result.get("scan_id"),
+                    },
                 }
             )
         except Exception as exc:
@@ -656,32 +776,20 @@ async def rescore_job(job_id: str) -> dict:
     async def _do_rescore() -> None:
         try:
             import yaml
-            from utils.brain import ClaudeBrain
+            from utils.medical_matcher import match_job_against_profile
+            from utils.resume_parser import extract_resume_text
+            from utils.tracker import log_medical_match
 
             profile_path = BASE_DIR.parent / "profile.yaml"
             with open(profile_path) as f:
                 profile = yaml.safe_load(f)
 
-            brain = ClaudeBrain(verbose=False, profile=profile)
-            from utils.resume_parser import extract_resume_text
             resume_text = extract_resume_text(profile.get("resume_path", ""))
-            desc = (
-                job.get("description", "")
-                or f"Job: {job['title']} at {job['company']}. Location: {job['location']}"
-            )
-            result = brain.match_job(desc, profile, resume_text=resume_text)
-            score: int = result.get("score", 0)
-            reasoning: str = result.get("reasoning", "")
-            cover_letter: str = result.get("cover_letter", "")
-
-            log_matched(job_id, score, reasoning, cover_letter)
-
-            min_score: int = profile["preferences"].get("min_match_score", 65)
-            if score < min_score:
-                log_skipped(job_id, f"Score {score} < {min_score}")
+            result = match_job_against_profile(job, profile, resume_text=resume_text).to_dict()
+            log_medical_match(job_id, result)
 
             await broadcast_event(
-                {"type": "rescore_complete", "data": {"id": job_id, "score": score}}
+                {"type": "rescore_complete", "data": {"id": job_id, "priority": result.get("priority")}}
             )
         except Exception as exc:
             await broadcast_event(
@@ -707,25 +815,25 @@ async def tailor_job(job_id: str) -> dict:
     async def _do_tailor():
         try:
             import yaml
-            from utils.resume_tailor import tailor_resume
+            from utils.documents import prepare_application_bundle
+            from utils.medical_matcher import match_job_against_profile
             from utils.resume_parser import extract_resume_text
-            from utils.brain import ClaudeBrain
+            from utils.tracker import log_medical_match
 
             profile_path = BASE_DIR.parent / "profile.yaml"
             with open(profile_path) as f:
                 profile = yaml.safe_load(f)
 
             resume_text = extract_resume_text(profile.get("resume_path", ""))
-            desc = job.get("description", "") or f"Job: {job['title']} at {job['company']}"
-
-            brain = ClaudeBrain(verbose=False, profile=profile)
-            result = tailor_resume(desc, resume_text, profile, brain=brain)
+            match_report = match_job_against_profile(job, profile, resume_text=resume_text).to_dict()
+            log_medical_match(job_id, match_report)
+            result = prepare_application_bundle(job, profile, match_report, resume_text=resume_text)
 
             update_tailored_resume(job_id, result)
 
             await broadcast_event({
                 "type": "tailor_complete",
-                "data": {"id": job_id, "has_content": bool(result.get("tailored_summary"))}
+                "data": {"id": job_id, "has_content": bool(result.get("cover_letter"))}
             })
         except Exception as exc:
             await broadcast_event({
@@ -760,36 +868,19 @@ async def score_all_unscored() -> dict:
     async def _do_score_all() -> None:
         try:
             import yaml
-            from utils.brain import ClaudeBrain
+            from utils.medical_matcher import match_job_against_profile
+            from utils.resume_parser import extract_resume_text
+            from utils.tracker import log_medical_match
 
             profile_path = BASE_DIR.parent / "profile.yaml"
             with open(profile_path) as f:
                 profile = yaml.safe_load(f)
 
-            brain = ClaudeBrain(verbose=False, profile=profile)
-            from utils.resume_parser import extract_resume_text
             resume_text = extract_resume_text(profile.get("resume_path", ""))
-            min_score: int = profile["preferences"].get("min_match_score", 65)
-
             for job_row in unscored:
                 try:
-                    desc = (
-                        job_row.get("description", "")
-                        or (
-                            f"Job: {job_row['title']} at {job_row['company']}. "
-                            f"Location: {job_row['location']}"
-                        )
-                    )
-                    result = brain.match_job(desc, profile, resume_text=resume_text)
-                    score: int = result.get("score", 0)
-                    log_matched(
-                        job_row["id"],
-                        score,
-                        result.get("reasoning", ""),
-                        result.get("cover_letter", ""),
-                    )
-                    if score < min_score:
-                        log_skipped(job_row["id"], f"Score {score} < {min_score}")
+                    result = match_job_against_profile(job_row, profile, resume_text=resume_text).to_dict()
+                    log_medical_match(job_row["id"], result)
                 except Exception:
                     # Skip individual failures so the batch continues
                     pass
@@ -836,6 +927,10 @@ async def apply_single_job(job_id: str, body: dict = {}) -> dict:
         raise HTTPException(status_code=409, detail="An apply session is already running")
 
     dry_run = body.get("dry_run", True)
+    if not dry_run:
+        phrase = f"SUBMIT {job_id}"
+        if body.get("confirmation") != phrase:
+            raise HTTPException(status_code=400, detail=f"Explicit confirmation required. Type exactly: {phrase}")
 
     async def _do_apply():
         _apply_state["running"] = True
@@ -854,7 +949,9 @@ async def apply_single_job(job_id: str, body: dict = {}) -> dict:
                 profile = yaml.safe_load(f)
 
             brain = ClaudeBrain(verbose=False, profile=profile)
-            cover_letter = job.get("cover_letter", "")
+            from utils.tracker import get_tailored_resume
+            docs = get_tailored_resume(job_id)
+            cover_letter = docs.get("cover_letter") or docs.get("tailored_cover_letter") or job.get("cover_letter", "")
 
             await broadcast_event({
                 "type": "apply_started",
@@ -880,6 +977,7 @@ async def apply_single_job(job_id: str, body: dict = {}) -> dict:
 
                 platform = job.get("platform", "")
                 apply_url = job["apply_url"]
+                transition_application_state(job_id, "opened")
 
                 success = await apply_smart(
                     page, apply_url, profile, brain,
@@ -891,7 +989,7 @@ async def apply_single_job(job_id: str, body: dict = {}) -> dict:
                 )
 
                 if not dry_run:
-                    log_applied(job_id, success)
+                    transition_application_state(job_id, "submitted" if success else "failed", explicit_confirmation=True, note="Submitted via assisted dashboard flow")
 
                 await broadcast_event({
                     "type": "apply_complete",
@@ -935,12 +1033,14 @@ async def apply_batch(body: dict = {}) -> dict:
         raise HTTPException(status_code=409, detail="An apply session is already running")
 
     dry_run = body.get("dry_run", True)
+    if not dry_run:
+        raise HTTPException(status_code=400, detail="Batch final submission is disabled. Open one job at a time and confirm before submitting.")
     max_count = body.get("max_count", 10)
     min_score_override = body.get("min_score")
 
-    # Get matched jobs that haven't been applied to yet
+    # Get review-ready jobs that haven't been applied to yet
     from utils.tracker import get_all_jobs as get_jobs_filtered, get_today_count
-    matched_jobs, _ = get_jobs_filtered(status="matched", sort_by="match_score", sort_order="desc", limit=500)
+    matched_jobs, _ = get_jobs_filtered(sort_by="priority", sort_order="asc", limit=500)
 
     import yaml
     profile_path = BASE_DIR.parent / "profile.yaml"
@@ -951,11 +1051,11 @@ async def apply_batch(body: dict = {}) -> dict:
     rate_limits = profile.get("rate_limits", {})
     max_per_day = rate_limits.get("max_applications_per_day", 25)
 
-    # Filter to only jobs with apply URLs and above score threshold
+    # Filter to only review-ready jobs with application URLs.
     eligible = [
         j for j in matched_jobs
         if j.get("apply_url")
-        and (j.get("match_score") or 0) >= min_score
+        and j.get("status") in {"recommended", "needs_verification", "prepared", "review", "opened", "matched"}
     ][:max_count]
 
     if not eligible:
@@ -1187,15 +1287,14 @@ _yolo_state = {
 @app.post("/api/yolo")
 async def start_yolo(body: dict = {}) -> dict:
     """
-    YOLO Mode — Fully autonomous: discover → score → apply → repeat.
+    Legacy autonomous mode is disabled.
 
-    Body options:
-        dry_run      — bool, default True. Safety net.
-        continuous   — bool, default False. If True, loops forever with interval.
-        interval_min — int, minutes between cycles (default 360 = 6 hours).
-        max_apply    — int, max applications per cycle (default 10).
-        min_score    — int, override minimum score threshold.
+    The product is now review-first: discover, analyze, prepare documents, open
+    the real application page, stop before final submission, and require user
+    confirmation.
     """
+    raise HTTPException(status_code=410, detail="Autonomous apply mode is disabled. Use the review-first workflow.")
+
     if _yolo_state["running"]:
         raise HTTPException(status_code=409, detail="YOLO mode already running")
     if _apply_state["running"]:
@@ -1530,6 +1629,106 @@ async def ingest_mcp_jobs(body: dict) -> dict:
         "type": "mcp_ingest_complete",
         "data": result
     })
+    return result
+
+
+# ===========================================================================
+# REST API — Job Watcher
+# ===========================================================================
+
+@app.get("/api/watch/summary")
+async def watch_summary() -> dict:
+    """Return concise watcher counts and latest scan status."""
+    from utils.job_watcher import get_watcher_summary
+
+    return get_watcher_summary()
+
+
+@app.get("/api/watch/opportunities")
+async def watch_opportunities(limit: int = 25) -> dict:
+    """Return active READY_TO_APPLY / NEEDS_VERIFICATION opportunities."""
+    from utils.job_watcher import get_actionable_opportunities
+
+    return {"jobs": get_actionable_opportunities(limit=limit)}
+
+
+@app.get("/api/watch/jobs")
+async def watch_jobs(active_only: bool = True, limit: int = 100) -> dict:
+    """Return persistent watcher vacancies."""
+    from utils.job_watcher import get_watcher_jobs
+
+    return {"jobs": get_watcher_jobs(active_only=active_only, limit=limit)}
+
+
+@app.get("/api/watch/notifications")
+async def watch_notifications(state: Optional[str] = None, limit: int = 50) -> dict:
+    """Return internal notification events."""
+    from utils.job_watcher import get_notifications
+
+    return {"notifications": get_notifications(state=state, limit=limit)}
+
+
+@app.post("/api/watch/notifications/{notification_id}/seen")
+async def watch_notification_seen(notification_id: str) -> dict:
+    """Mark one watcher notification as seen."""
+    from utils.job_watcher import mark_notification_seen
+
+    ok = mark_notification_seen(notification_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"ok": True}
+
+
+@app.get("/api/system/source-registry")
+async def system_source_registry() -> dict:
+    """Return source registry status for Advanced/System."""
+    from utils.source_registry import load_source_registry, registry_status_counts, validate_source_registry
+
+    records = load_source_registry()
+    return {
+        "counts": registry_status_counts(records),
+        "active": [r["id"] for r in records if r.get("enabled_in_autonomous_discovery") and r.get("reliability_status") in {"ACTIVE", "LIMITED"}],
+        "errors": validate_source_registry(records),
+    }
+
+
+@app.get("/api/watch/scans")
+async def watch_scans(limit: int = 20) -> dict:
+    """Return scan audit records for Advanced/System."""
+    from utils.job_watcher import get_scan_audits
+
+    return {"scans": get_scan_audits(limit=limit)}
+
+
+@app.post("/api/watch/scan")
+async def watch_scan_now() -> dict:
+    """Run one manual job-watch scan now."""
+    import yaml
+    from utils.job_watcher import run_job_watch_scan
+
+    profile_path = BASE_DIR.parent / "profile.yaml"
+    with open(profile_path, encoding="utf-8") as f:
+        profile = yaml.safe_load(f) or {}
+    result = await run_job_watch_scan(profile)
+    await broadcast_event({"type": "job_watch_scan_complete", "data": result})
+    return result
+
+
+@app.post("/api/watch/jobs/{job_id}/prepare")
+async def watch_prepare_job(job_id: str) -> dict:
+    """Prepare a review-first application package for a watcher job."""
+    import yaml
+    from utils.job_watcher import prepare_application_for_watcher_job
+    from utils.resume_parser import extract_resume_text
+
+    profile_path = BASE_DIR.parent / "profile.yaml"
+    with open(profile_path, encoding="utf-8") as f:
+        profile = yaml.safe_load(f) or {}
+    resume_text = extract_resume_text(profile.get("resume_path", ""))
+    result = prepare_application_for_watcher_job(job_id, profile, resume_text=resume_text)
+    if not result.get("ok"):
+        raise HTTPException(status_code=404, detail=result.get("error", "Could not prepare package"))
+    await broadcast_event({"type": "application_package_prepared", "data": result})
     return result
 
 

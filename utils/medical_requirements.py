@@ -162,6 +162,128 @@ MEDICAL_DISCOVERY_KEYWORDS = [
     "ipc",
 ]
 
+UNKNOWN_SOURCE_TOKENS = {
+    "",
+    "unknown",
+    "unknown source",
+    "n/a",
+    "na",
+    "none",
+    "not specified",
+    "not provided",
+    "malformed",
+}
+
+EMAIL_PATTERN = r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}"
+
+MD_ACCEPTANCE_PATTERNS = [
+    r"\bM\.?D\.?\b",
+    r"\bMBBS\b",
+    r"\bMedical\s+Doctor\b",
+    r"\bDoctor\s+of\s+Medicine\b",
+    r"\bPhysician\b",
+    r"\bMedical\s+Officer\b",
+    r"\bDoctor\s*\(\s*MD\s*\)\b",
+]
+
+MD_ROLE_TITLE_PATTERNS = [
+    r"\bmedical\s+doctor\b",
+    r"\bmedical\s+officer\b",
+    r"\bphysician\b",
+    r"\bclinician\b",
+    r"\bdoctor\b",
+    r"\bM\.?D\.?\b",
+    r"\bMBBS\b",
+]
+
+PUBLIC_HEALTH_ROLE_PATTERNS = [
+    r"\bpublic\s+health\s+(?:officer|advisor|specialist|coordinator|manager|supervisor)\b",
+    r"\bhealth\s+(?:and\s+nutrition\s+)?(?:officer|advisor|specialist|coordinator|manager|supervisor)\b",
+    r"\bnutrition\s+(?:officer|advisor|specialist|coordinator|manager|supervisor)\b",
+    r"\bHMIS\s+(?:officer|manager|coordinator|specialist)\b",
+    r"\bhealth\s+data\s+(?:officer|manager|coordinator|specialist)\b",
+    r"\bclinical\s+(?:supervisor|coordinator|advisor|mentor)\b",
+]
+
+ROLE_DUTY_COMPATIBILITY_PATTERNS = [
+    r"\bclinical\b",
+    r"\bpatient\b",
+    r"\bdiagnos(?:is|e)\b",
+    r"\btreatment\b",
+    r"\bOPD\b",
+    r"\bPHC\b",
+    r"primary\s+health\s*care",
+    r"\bHMIS\b",
+    r"\bhealth\s+data\b",
+    r"\bIMAM\b",
+    r"\bCMAM\b",
+    r"\bSAM\b",
+    r"\bTFU\b",
+    r"therapeutic\s+feeding",
+    r"\bmalnutrition\b",
+    r"\bsupervis(?:e|ion|ory)\b",
+    r"\bcoordinat(?:e|ion|or)\b",
+    r"\bMoPH\b",
+    r"Ministry\s+of\s+Public\s+Health",
+]
+
+INCOMPATIBLE_PROFESSIONAL_ROLES: list[dict[str, Any]] = [
+    {
+        "key": "nursing",
+        "label": "nursing / nurse-specific role",
+        "title_patterns": [r"\b(?:staff\s+)?nurse\b", r"\bnursing\b", r"\bnutrition\s+nurse\b"],
+        "qualification_patterns": [r"\bregistered\s+nurse\b", r"\bnursing\s+(?:degree|diploma|certificate|license|licence)\b", r"\bvalid\s+nurs(?:e|ing)\s+licen[cs]e\b"],
+    },
+    {
+        "key": "midwifery",
+        "label": "midwifery-specific role",
+        "title_patterns": [r"\bmidwife\b", r"\bmidwifery\b"],
+        "qualification_patterns": [r"\bmidwifery\s+(?:degree|diploma|certificate|license|licence)\b", r"\bregistered\s+midwife\b"],
+    },
+    {
+        "key": "pharmacy",
+        "label": "pharmacy / pharmacist-specific role",
+        "title_patterns": [r"\bpharmacist\b", r"\bpharmacy\s+(?:officer|assistant|technician|manager|supervisor)\b"],
+        "qualification_patterns": [r"\b(?:B\.?Sc\.?|Bachelor(?:'s)?)\s+(?:degree\s+)?in\s+pharmacy\b", r"\bPharm\s*D\b", r"\bpharmacy\s+(?:degree|license|licence|registration)\b"],
+    },
+    {
+        "key": "laboratory",
+        "label": "laboratory-specific role",
+        "title_patterns": [r"\blab(?:oratory)?\s+(?:technician|technologist|officer|assistant|manager)\b", r"\blaboratory\b"],
+        "qualification_patterns": [r"\blab(?:oratory)?\s+(?:degree|diploma|certificate|license|licence)\b", r"\bmedical\s+laboratory\s+technology\b"],
+    },
+    {
+        "key": "radiology",
+        "label": "radiology / imaging-specific role",
+        "title_patterns": [r"\bradiolog(?:y|ist|ic)\b", r"\bx[-\s]?ray\s+(?:technician|technologist|officer)\b", r"\bultrasound\s+(?:technician|technologist)\b"],
+        "qualification_patterns": [r"\bradiology\s+(?:degree|diploma|certificate|license|licence)\b", r"\bmedical\s+imaging\s+(?:degree|diploma|certificate)\b"],
+    },
+    {
+        "key": "dentistry",
+        "label": "dentist / dental-specific role",
+        "title_patterns": [r"\bdentist\b", r"\bdental\s+(?:doctor|surgeon|officer|assistant|technician)\b"],
+        "qualification_patterns": [r"\bdental\s+(?:degree|diploma|license|licence|registration)\b", r"\bdoctor\s+of\s+dental\s+(?:surgery|medicine)\b", r"\bDDS\b", r"\bDMD\b"],
+    },
+    {
+        "key": "physiotherapy",
+        "label": "physiotherapy-specific role",
+        "title_patterns": [r"\bphysiotherapist\b", r"\bphysical\s+therapist\b", r"\bphysiotherapy\b"],
+        "qualification_patterns": [r"\bphysiotherapy\s+(?:degree|diploma|license|licence|registration)\b", r"\bphysical\s+therapy\s+(?:degree|diploma|license|licence)\b"],
+    },
+    {
+        "key": "nutrition_promoter",
+        "label": "nutrition promoter / community-promotion role",
+        "title_patterns": [r"\bnutrition\s+promot(?:er|or)\b", r"\bcommunity\s+nutrition\s+(?:promot(?:er|or)|worker)\b"],
+        "qualification_patterns": [r"\bnutrition\s+promot(?:er|or)\s+(?:certificate|experience)\b"],
+    },
+    {
+        "key": "vaccinator",
+        "label": "vaccinator / EPI-certificate role",
+        "title_patterns": [r"\bvaccinator\b", r"\bEPI\s+vaccinator\b"],
+        "qualification_patterns": [r"\bvaccin(?:ation|ator)\s+certificate\b", r"\bEPI\s+(?:certificate|certification)\b"],
+    },
+]
+
 TERM_REQUIREMENTS: dict[str, dict[str, Any]] = {
     "md_degree": {
         "label": "Medical degree (MD / MBBS / physician)",
@@ -530,6 +652,296 @@ def _add_requirement(
     provenance.append({"field": key, "source": source_field, "quote": quote})
 
 
+# ---------------------------------------------------------------------------
+# Canonical source / application-route helpers
+# ---------------------------------------------------------------------------
+
+
+def is_valid_http_url(url: str | None) -> bool:
+    if not url:
+        return False
+    try:
+        parsed = urlparse(str(url).strip())
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc) and "." in parsed.netloc
+    except Exception:
+        return False
+
+
+def is_valid_email(value: str | None) -> bool:
+    return bool(re.fullmatch(EMAIL_PATTERN, str(value or "").strip(), flags=re.I))
+
+
+def is_valid_application_route(value: str | None) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if text.lower().startswith("mailto:"):
+        text = text.split(":", 1)[1].split("?", 1)[0].strip()
+    return is_valid_email(text) or is_valid_http_url(text)
+
+
+def _first_string(*values: Any) -> str:
+    for value in values:
+        if isinstance(value, list):
+            nested = _first_string(*value)
+            if nested:
+                return nested
+            continue
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _first_valid_http(*values: Any) -> str:
+    for value in values:
+        if isinstance(value, list):
+            nested = _first_valid_http(*value)
+            if nested:
+                return nested
+            continue
+        text = str(value or "").strip()
+        if is_valid_http_url(text):
+            return text
+    return ""
+
+
+def _metadata_from_job(job: Any) -> dict[str, Any]:
+    get = job.get if isinstance(job, dict) else lambda key, default=None: getattr(job, key, default)
+    metadata = get("metadata", {}) or {}
+    if isinstance(metadata, str):
+        try:
+            import json
+
+            parsed = json.loads(metadata)
+            metadata = parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            metadata = {}
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _job_get(job: Any, key: str, default: Any = "") -> Any:
+    return job.get(key, default) if isinstance(job, dict) else getattr(job, key, default)
+
+
+def source_name_is_valid(value: str | None) -> bool:
+    text = str(value or "").strip().lower()
+    return bool(text and text not in UNKNOWN_SOURCE_TOKENS)
+
+
+def canonical_source_fields(job: Any) -> dict[str, Any]:
+    """Canonical, non-guessed source/application-route model for a vacancy.
+
+    The function only normalizes data already present on the source item. It
+    never fabricates a source name or URL. A direct application destination is
+    an email or an HTTP(S) application/form URL; an official vacancy page is
+    retained as a manual review route but does not by itself prove the job is
+    ready to apply.
+    """
+    metadata = _metadata_from_job(job)
+    title = _first_string(_job_get(job, "title"), metadata.get("title"))
+    employer = _first_string(_job_get(job, "company"), _job_get(job, "organization"), metadata.get("company"), metadata.get("organization"), metadata.get("employer"))
+    source_name = _first_string(_job_get(job, "source_name"), metadata.get("source_name"), metadata.get("source"), _job_get(job, "platform"), _job_get(job, "source"))
+    if source_name.lower() == "acbar":
+        source_name = "ACBAR"
+    elif source_name.lower() == "reliefweb":
+        source_name = "ReliefWeb"
+
+    source_url = _first_valid_http(
+        _job_get(job, "source_url"),
+        metadata.get("source_url"),
+        metadata.get("source_listing_url"),
+        metadata.get("source_homepage"),
+        metadata.get("source_urls"),
+    )
+    vacancy_url = _first_valid_http(_job_get(job, "vacancy_url"), metadata.get("vacancy_url"), _job_get(job, "url"), metadata.get("url"))
+    if not source_url and vacancy_url:
+        source_url = vacancy_url
+
+    requested_method = _first_string(_job_get(job, "application_method"), metadata.get("application_method")).upper()
+    raw_apply = _first_string(
+        _job_get(job, "apply_url"),
+        metadata.get("apply_url"),
+        metadata.get("application_url"),
+        _job_get(job, "apply_email"),
+        metadata.get("apply_email"),
+        metadata.get("application_email"),
+    )
+    application_email = ""
+    application_url = ""
+    for candidate in [_job_get(job, "apply_email"), metadata.get("apply_email"), metadata.get("application_email"), raw_apply]:
+        text = str(candidate or "").strip()
+        if text.lower().startswith("mailto:"):
+            text = text.split(":", 1)[1].split("?", 1)[0].strip()
+        if is_valid_email(text):
+            application_email = text
+            break
+
+    for candidate in [metadata.get("application_url"), metadata.get("apply_url"), _job_get(job, "apply_url"), raw_apply]:
+        text = str(candidate or "").strip()
+        if not is_valid_http_url(text):
+            continue
+        # A source/vacancy page is not a web application route unless the
+        # source explicitly provided it as a web application/form route.
+        if vacancy_url and text == vacancy_url and requested_method not in {"WEB", "ONLINE_FORM"}:
+            continue
+        application_url = text
+        break
+
+    if application_email:
+        application_method = "EMAIL"
+        apply_email = application_email
+        apply_url = application_url or None
+    elif application_url:
+        application_method = "WEB"
+        apply_email = ""
+        apply_url = application_url
+    else:
+        application_method = "UNAVAILABLE"
+        apply_email = ""
+        apply_url = None
+
+    direct_route = application_email or application_url
+
+    problems: list[str] = []
+    if not source_name_is_valid(source_name):
+        problems.append("missing_or_unknown_source_name")
+    if not source_url:
+        problems.append("missing_or_invalid_source_url")
+    if not vacancy_url and not direct_route:
+        problems.append("missing_official_vacancy_url_or_application_route")
+    if not title:
+        problems.append("missing_title")
+    if not employer or employer.strip().lower() in UNKNOWN_SOURCE_TOKENS or employer.strip().lower() in {"unknown employer", "unknown organization", "unknown org"}:
+        problems.append("missing_identifiable_employer")
+    if raw_apply and not is_valid_application_route(raw_apply):
+        problems.append("malformed_application_route")
+
+    source_valid = not any(problem in problems for problem in [
+        "missing_or_unknown_source_name",
+        "missing_or_invalid_source_url",
+        "missing_official_vacancy_url_or_application_route",
+        "missing_title",
+        "missing_identifiable_employer",
+    ])
+    return {
+        "source_name": source_name,
+        "source_url": source_url,
+        "vacancy_url": vacancy_url,
+        "apply_url": apply_url,
+        "apply_email": apply_email,
+        "application_method": application_method,
+        "application_email": application_email,
+        "application_url": application_url,
+        "direct_application_route": direct_route,
+        "source_valid": source_valid,
+        "is_actionable": source_valid and bool(vacancy_url or direct_route),
+        "problems": problems,
+    }
+
+
+def has_actionable_source(job: Any) -> bool:
+    return bool(canonical_source_fields(job).get("is_actionable"))
+
+
+# ---------------------------------------------------------------------------
+# Role-family compatibility extraction
+# ---------------------------------------------------------------------------
+
+
+def _pattern_hit(patterns: Iterable[str], text: str) -> tuple[str, int, int] | None:
+    for pattern in patterns:
+        match = re.search(pattern, text or "", flags=re.I)
+        if match:
+            return match.group(0), match.start(), match.end()
+    return None
+
+
+def _md_is_accepted(text: str) -> bool:
+    return _pattern_hit(MD_ACCEPTANCE_PATTERNS, text) is not None
+
+
+def analyze_professional_role(title: str, text: str) -> dict[str, Any]:
+    clean_title = normalize_text(title)
+    scoped = requirement_relevant_text(normalize_text(text))
+    combined = "\n".join(part for part in [clean_title, scoped] if part)
+    role_text = combined or clean_title
+    md_accepted = _md_is_accepted(role_text)
+    md_title = _pattern_hit(MD_ROLE_TITLE_PATTERNS, clean_title)
+
+    blocker: dict[str, Any] | None = None
+    blocker_hit: tuple[str, int, int] | None = None
+    for spec in INCOMPATIBLE_PROFESSIONAL_ROLES:
+        blocker_hit = _pattern_hit(spec["title_patterns"], clean_title)
+        if not blocker_hit:
+            blocker_hit = _pattern_hit(spec["qualification_patterns"], scoped)
+        if blocker_hit:
+            blocker = spec
+            break
+
+    if blocker and not md_accepted:
+        quote_text = clean_title if _pattern_hit(blocker["title_patterns"], clean_title) else scoped
+        _, start, end = blocker_hit or ("", 0, 0)
+        return {
+            "classification": "incompatible_professional_role",
+            "role_family": blocker["key"],
+            "label": blocker["label"],
+            "md_accepted": False,
+            "requires_md": False,
+            "evidence": _snippet(quote_text, start, end) if quote_text else blocker["label"],
+            "explanation": f"The vacancy is {blocker['label']} and does not state that an MD/physician qualification is accepted.",
+        }
+
+    if md_title or md_accepted:
+        hit = md_title or _pattern_hit(MD_ACCEPTANCE_PATTERNS, role_text) or ("", 0, 0)
+        quote_text = clean_title if md_title else role_text
+        _, start, end = hit
+        return {
+            "classification": "md_physician_role",
+            "role_family": "medical_doctor_physician",
+            "label": "MD / physician-compatible role",
+            "md_accepted": True,
+            "requires_md": True,
+            "evidence": _snippet(quote_text, start, end) if quote_text else "MD/physician qualification accepted",
+            "explanation": "The role title or qualifications explicitly accept MD/medical-doctor/physician credentials.",
+        }
+
+    public_health_hit = _pattern_hit(PUBLIC_HEALTH_ROLE_PATTERNS, clean_title)
+    compatible_duty_hit = _pattern_hit(ROLE_DUTY_COMPATIBILITY_PATTERNS, role_text)
+    if public_health_hit and compatible_duty_hit:
+        _, start, end = public_health_hit
+        return {
+            "classification": "health_public_health_compatible",
+            "role_family": "medical_public_health_nutrition",
+            "label": "Medical/public-health/nutrition-compatible role",
+            "md_accepted": False,
+            "requires_md": False,
+            "evidence": _snippet(clean_title, start, end) or clean_title,
+            "explanation": "The actual role family and duties are health/public-health/nutrition coordination rather than a different professional license.",
+        }
+
+    if looks_medical(role_text):
+        return {
+            "classification": "ambiguous_health_words",
+            "role_family": "ambiguous_health_or_medical_words",
+            "label": "Ambiguous health/medical wording",
+            "md_accepted": False,
+            "requires_md": False,
+            "evidence": _snippet(role_text, 0, min(len(role_text), 80)) if role_text else "health/medical terminology",
+            "explanation": "The vacancy contains health/medical/nutrition words, but the role family and accepted qualification are not specific enough.",
+        }
+
+    return {
+        "classification": "not_medical_or_public_health",
+        "role_family": "other",
+        "label": "Not a medical/public-health role",
+        "md_accepted": False,
+        "requires_md": False,
+        "evidence": clean_title or _snippet(role_text, 0, min(len(role_text), 80)),
+        "explanation": "No medical-doctor/public-health role family was deterministically identified.",
+    }
+
+
 def parse_closing_date(text: str, today: date | None = None) -> str | None:
     """Extract the first likely closing/deadline date and return ISO date."""
     if not text:
@@ -726,7 +1138,7 @@ def extract_reference_number(text: str) -> str | None:
 
 
 def extract_application_email(text: str) -> str | None:
-    match = re.search(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", text, flags=re.I)
+    match = re.search(EMAIL_PATTERN, text, flags=re.I)
     return match.group(0) if match else None
 
 
@@ -761,13 +1173,7 @@ def extract_application_url(text: str, fallback: str = "") -> str | None:
 
 
 def is_valid_application_url(url: str | None) -> bool:
-    if not url:
-        return False
-    try:
-        parsed = urlparse(url)
-        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
-    except Exception:
-        return False
+    return is_valid_http_url(url)
 
 
 def extract_application_subject(text: str, title: str = "") -> str | None:
@@ -827,35 +1233,40 @@ def extract_locations(text: str, explicit_location: str = "") -> list[str]:
 
 
 def extract_gender_requirement(text: str) -> str | None:
-    lower = text.lower()
-    first_line = (text or "").splitlines()[0].lower() if text else ""
-    if re.search(r"\bmale\s*/\s*female\b|\bfemale\s*/\s*male\b|\bmale\s+and\s+female\b", first_line):
+    lower = normalize_text(text).lower()
+    if not lower:
         return None
-    if re.search(r"\bfemale\b", first_line):
-        return "female"
-    if re.search(r"\bmale\b", first_line):
-        return "male"
-    if re.search(r"\bmale\s*/\s*female\b|\bfemale\s*/\s*male\b|\bmale\s+and\s+female\b", lower):
+    if re.search(r"\b(?:male\s*/\s*female|female\s*/\s*male|male\s+and\s+female|female\s+and\s+male|all\s+genders|any\s+gender)\b", lower):
         return None
+
+    # Preferences/encouragement are not hard eligibility constraints.
     if (
-        "female candidates are strongly encouraged" in lower
-        or "women are strongly encouraged" in lower
-        or re.search(r"\bfemale\s+candidate\s+(?:is\s+)?point\s+plus\b", lower)
-        or re.search(r"\bfemale\s+(?:candidate|candidates)\s+(?:preferred|encouraged)\b", lower)
+        re.search(r"\b(?:female|women)\s+(?:candidates?\s+)?(?:are\s+)?(?:strongly\s+)?(?:encouraged|preferred)\b", lower)
+        or re.search(r"\bfemale\s+candidate\s+(?:is\s+)?(?:a\s+)?(?:point\s+)?plus\b", lower)
     ):
         return "female_encouraged"
-    if re.search(r"\bgender\s*[:\-]\s*female\b", lower):
-        return "female"
-    if re.search(r"\bgender\s*[:\-]\s*male\b", lower):
-        return "male"
-    if re.search(r"\b(?:must\s+be|shortlist(?:ed)?\s+candidates?\s+must\s+be|only)\s+female\b", lower):
-        return "female"
-    if re.search(r"\bfemale\s+(?:only|required|applicants|candidate|candidates|(?:medical\s+)?doctor|md|staff)\b", lower) or re.search(r"\bonly\s+female\b", lower):
-        return "female"
-    if re.search(r"\b(?:must\s+be|only)\s+male\b", lower):
-        return "male"
-    if re.search(r"\bmale\s+(?:only|required|applicants|candidate|candidates|(?:medical\s+)?doctor|md|staff)\b", lower) or re.search(r"\bonly\s+male\b", lower):
-        return "male"
+    if re.search(r"\b(?:male|men)\s+(?:candidates?\s+)?(?:are\s+)?(?:strongly\s+)?(?:encouraged|preferred)\b", lower):
+        return "male_encouraged"
+
+    hard_patterns = [
+        ("female", r"\bgender\s*[:\-]\s*female\b"),
+        ("male", r"\bgender\s*[:\-]\s*male\b"),
+        ("female", r"\b(?:sex|gender)\s*[:\-]\s*(?:woman|women)\b"),
+        ("male", r"\b(?:sex|gender)\s*[:\-]\s*(?:man|men)\b"),
+        ("female", r"\b(?:female|women)\s+only\b"),
+        ("male", r"\b(?:male|men)\s+only\b"),
+        ("female", r"\bonly\s+(?:female|women)\b"),
+        ("male", r"\bonly\s+(?:male|men)\b"),
+        ("female", r"\b(?:must\s+be|required\s+to\s+be|candidates?\s+must\s+be|applicants?\s+must\s+be)\s+(?:female|women)\b"),
+        ("male", r"\b(?:must\s+be|required\s+to\s+be|candidates?\s+must\s+be|applicants?\s+must\s+be)\s+(?:male|men)\b"),
+        ("female", r"\b(?:female|women)\s+(?:applicants?|candidates?|staff)\s+(?:only|required)\b"),
+        ("male", r"\b(?:male|men)\s+(?:applicants?|candidates?|staff)\s+(?:only|required)\b"),
+        ("female", r"^\s*female\s+(?:medical\s+doctor|doctor|md|physician|nurse|midwife|staff|officer)\b"),
+        ("male", r"^\s*male\s+(?:medical\s+doctor|doctor|md|physician|nurse|staff|officer)\b"),
+    ]
+    for value, pattern in hard_patterns:
+        if re.search(pattern, lower, flags=re.I):
+            return value
     return None
 
 
@@ -907,6 +1318,20 @@ def extract_requirements_from_text(
     fact_combined = "\n".join(part for part in [title_clean, location, clean] if part)
     requirements: list[Requirement] = []
     provenance: list[dict[str, str]] = []
+
+    role_analysis = analyze_professional_role(title_clean, scoped_clean)
+    requirements.append(
+        Requirement(
+            key="role_family_compatibility",
+            label="Role family / professional qualification compatibility",
+            required="Required",
+            value=role_analysis,
+            evidence=[role_analysis.get("evidence", "")],
+            source_field="title/requirements/duties",
+            criticality="essential",
+        )
+    )
+    provenance.append({"field": "role_family_compatibility", "source": "title/requirements/duties", "quote": str(role_analysis.get("evidence", ""))})
 
     for key, spec in TERM_REQUIREMENTS.items():
         found = _find_first(spec["patterns"], combined)
@@ -1062,7 +1487,8 @@ def extract_requirements_from_text(
         "nationality_requirement": nationality,
         "residency_requirement": residency,
         "source_url": source_url,
-        "is_medical": looks_medical(f"{title}\n{text}"),
+        "role_analysis": role_analysis,
+        "is_medical": role_analysis.get("classification") not in {"not_medical_or_public_health"},
     }
     for field_name, value in facts.items():
         if value:
@@ -1074,20 +1500,52 @@ def extract_requirements_from_text(
 def extract_requirements_from_job(job: Any, today: date | None = None) -> ExtractedRequirements:
     """Convenience wrapper for Job dataclass or DB-row dictionaries."""
     get = job.get if isinstance(job, dict) else lambda key, default=None: getattr(job, key, default)
-    metadata = get("metadata", {}) or {}
-    if isinstance(metadata, str):
-        try:
-            import json
-
-            metadata = json.loads(metadata)
-        except Exception:
-            metadata = {}
-    source_url = metadata.get("source_url") or get("url", "")
-    return extract_requirements_from_text(
+    metadata = _metadata_from_job(job)
+    source = canonical_source_fields(job)
+    # Pass only a direct application/form URL into URL extraction. The official
+    # vacancy page is preserved separately as vacancy_url/application_method and
+    # does not by itself satisfy READY_TO_APPLY.
+    direct_application_url = source.get("application_url") if source.get("application_method") == "WEB" else ""
+    extracted = extract_requirements_from_text(
         get("description", "") or "",
         title=get("title", "") or "",
         location=get("location", "") or "",
-        source_url=source_url,
-        application_url=get("apply_url", "") or get("url", ""),
+        source_url=source.get("source_url") or metadata.get("source_url") or "",
+        application_url=direct_application_url or "",
         today=today,
     )
+    source_requirement = Requirement(
+        key="source_validity",
+        label="Valid source and official vacancy route",
+        required="Required",
+        value=source,
+        evidence=[
+            f"Source: {source.get('source_name') or 'UNKNOWN'}",
+            f"Source URL: {source.get('source_url') or 'missing'}",
+            f"Vacancy URL: {source.get('vacancy_url') or 'missing'}",
+            f"Application method: {source.get('application_method') or 'none'}",
+        ],
+        source_field="source/application metadata",
+        criticality="essential",
+    )
+    extracted.requirements.insert(0, source_requirement)
+    extracted.provenance.insert(0, {"field": "source_validity", "source": "source/application metadata", "quote": "; ".join(source_requirement.evidence)})
+    extracted.facts.update(
+        {
+            "source_name": source.get("source_name"),
+            "source_url": source.get("source_url"),
+            "vacancy_url": source.get("vacancy_url"),
+            "apply_url": source.get("apply_url"),
+            "apply_email": source.get("apply_email"),
+            "application_method": source.get("application_method"),
+            "source_valid": source.get("source_valid"),
+            "source_problems": source.get("problems") or [],
+            "official_route": source.get("apply_url") or source.get("vacancy_url") or source.get("source_url"),
+        }
+    )
+    if source.get("apply_email") and not extracted.facts.get("application_email"):
+        extracted.facts["application_email"] = source["apply_email"]
+    if source.get("application_url") and source.get("application_method") == "WEB" and not extracted.facts.get("application_url"):
+        extracted.facts["application_url"] = source["application_url"]
+        extracted.facts["application_url_valid"] = is_valid_application_url(source["application_url"])
+    return extracted

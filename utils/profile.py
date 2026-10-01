@@ -191,6 +191,7 @@ MEDICAL_TERM_KEYS = {
     "afghanistan_experience": [r"\bAfghanistan\b", r"\bAfghan\b", r"\bMoPH\b", r"Ministry of Public Health"],
     "moph_coordination": [r"\bMoPH\b", r"Ministry of Public Health", r"provincial public health", r"health authorit(?:y|ies)"],
     "safeguarding_psea": [r"\bsafeguarding\b", r"\bPSEA\b", r"protection from sexual exploitation", r"child protection"],
+    "quality_improvement": [r"\bquality\s+improvement\b", r"\bquality\s+assurance\b", r"\bQA\s*/\s*QI\b", r"\bclinical\s*/\s*service\s+audit\b", r"\bclinical\s+audit\b"],
     "emergency_response": [r"emergency response", r"outbreak", r"COVID-?19", r"rapid response", r"contact tracing"],
     "supply_logistics": [r"medical supply", r"stock (?:management|monitoring)", r"forecasting", r"logistics", r"procurement"],
 }
@@ -524,15 +525,34 @@ def _quote_for_alias(text: str, aliases: list[str]) -> str:
     return ""
 
 
+def _add_term_matches(evidence: ProfileEvidence, text: str, source: str, *, verified: bool) -> None:
+    for key, patterns in MEDICAL_TERM_KEYS.items():
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.I)
+            if match:
+                quote = normalize_text(text[max(0, match.start() - 50): match.end() + 50])
+                evidence.add(key, True, source, quote, verified=verified)
+                break
+
+
 def _add_terms(evidence: ProfileEvidence, texts: list[tuple[str, str]]) -> None:
     for source, text in texts:
-        for key, patterns in MEDICAL_TERM_KEYS.items():
-            for pattern in patterns:
-                match = re.search(pattern, text, flags=re.I)
-                if match:
-                    quote = normalize_text(text[max(0, match.start() - 50): match.end() + 50])
-                    evidence.add(key, True, source, quote, verified=False)
-                    break
+        _add_term_matches(evidence, text, source, verified=False)
+
+
+def _add_verified_profile_terms(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
+    """Promote terms from explicitly verified profile facts into verified evidence."""
+    work = profile.get("work_history") or profile.get("experience") or []
+    if isinstance(work, list):
+        for entry in work:
+            if isinstance(entry, dict) and is_verified_flag(entry.get("verified")):
+                text = "\n".join(_iter_strings({k: v for k, v in entry.items() if k != "verified"}))
+                _add_term_matches(evidence, text, "profile.work_history", verified=True)
+    for key in ["skills", "certificates", "certifications", "training"]:
+        for item in _iter_dicts(profile.get(key)):
+            name = item.get("name") or item.get("title") or ""
+            if name and is_verified_flag(item.get("verified")):
+                _add_term_matches(evidence, str(name), f"profile.{key}", verified=True)
 
 
 def _extract_years_from_text(text: str, context_terms: list[str]) -> float | None:
@@ -695,6 +715,7 @@ def build_profile_evidence(profile: dict[str, Any], resume_text: str = "", today
     _add_skills_and_certificates(evidence, profile)
     _add_languages(evidence, profile, texts)
     _add_terms(evidence, texts)
+    _add_verified_profile_terms(evidence, profile)
     _add_experience_years(evidence, profile, resume_text, today=today)
 
     # CV-only medical degree evidence.

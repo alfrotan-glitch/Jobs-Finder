@@ -4,74 +4,224 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Jobs-Finder</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%231f5f68'/%3E%3Ctext x='32' y='39' text-anchor='middle' font-family='Arial' font-size='22' font-weight='700' fill='white'%3EJF%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <p class="eyebrow">Afghanistan Job Finder</p>
-      <h1>Find relevant vacancies and prepare application packages.</h1>
+  <div class="appShell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="brandRow">
+        <div class="brandMark" aria-hidden="true">JF</div>
+        <div class="brandText">
+          <strong>Jobs-Finder</strong>
+          <span>Professional workstation</span>
+        </div>
+        <button id="collapseSidebar" class="iconButton sidebarCollapse" aria-label="Collapse sidebar" title="Collapse sidebar">‹</button>
+      </div>
+
+      <nav class="sideNav">
+        <button data-tab="dashboard" class="navItem active"><span aria-hidden="true">⌂</span><span>Dashboard</span></button>
+        <button data-tab="recommended" class="navItem"><span aria-hidden="true">★</span><span>Recommended</span></button>
+        <button data-tab="jobs" class="navItem"><span aria-hidden="true">□</span><span>All Jobs</span></button>
+        <button data-tab="applications" class="navItem"><span aria-hidden="true">✓</span><span>Applications</span></button>
+        <button data-tab="profile" class="navItem"><span aria-hidden="true">◦</span><span>My Profile</span></button>
+        <button data-tab="settings" class="navItem"><span aria-hidden="true">⚙</span><span>Settings</span></button>
+      </nav>
+
+      <div class="sidebarBottom">
+        <div class="systemCard">
+          <span class="microLabel">System status</span>
+          <strong id="sidebarSystemStatus">Ready</strong>
+        </div>
+        <button data-tab="advanced" class="navItem advancedLink"><span aria-hidden="true">⌁</span><span>Advanced</span></button>
+        <div class="profileMini">
+          <div id="sidebarAvatar" class="avatar" aria-hidden="true">JF</div>
+          <div>
+            <strong id="sidebarName">Profile not loaded</strong>
+            <span id="sidebarTitle">Medical Doctor</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topBar">
+        <div>
+          <p id="pageSubtitle" class="pageSubtitle">Overview</p>
+          <h1 id="pageTitle">Dashboard</h1>
+        </div>
+        <div class="topRight">
+          <div id="topScanStatus" class="scanStatus"><span></span> Ready</div>
+          <div id="topAvatar" class="avatar" aria-hidden="true">JF</div>
+          <div class="topIdentity">
+            <strong id="topName">Jobs-Finder</strong>
+            <span id="topRole">Professional job search</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="content" id="mainContent">
+        <section id="status" class="notice" aria-live="polite">Ready. Run a scan when you want to look for new vacancies.</section>
+
+        <section id="dashboard" class="panel active" aria-labelledby="dashboardTitle">
+          <div class="heroPanel">
+            <div>
+              <p class="microLabel">Welcome</p>
+              <h2 id="dashboardTitle">Good morning<span id="welcomeName"></span></h2>
+              <p class="heroMeta" id="welcomeMeta">Medical Doctor · Kabul, Afghanistan</p>
+              <p class="heroCopy">Find suitable opportunities, prepare stronger applications, and keep your applications organized.</p>
+            </div>
+            <button id="findJobs" class="primary largeAction">Find Jobs</button>
+          </div>
+
+          <div class="metricsGrid" aria-label="Job-search summary">
+            <article class="metricCard"><span>Recommended</span><strong id="metricRecommended">0</strong></article>
+            <article class="metricCard"><span>New Jobs</span><strong id="metricJobs">0</strong></article>
+            <article class="metricCard"><span>Ready to Apply</span><strong id="metricReady">0</strong></article>
+            <article class="metricCard"><span>Applications</span><strong id="metricApplications">0</strong></article>
+          </div>
+
+          <div class="twoColumn dashboardGrid">
+            <section class="surfaceBlock">
+              <div class="sectionHeader">
+                <div>
+                  <p class="microLabel">Recommended jobs</p>
+                  <h3>Needs attention</h3>
+                </div>
+                <button class="textButton" data-tab-target="recommended">View all</button>
+              </div>
+              <div id="dashboardRecommendedList" class="jobList compactList"></div>
+            </section>
+
+            <section class="surfaceBlock">
+              <div class="sectionHeader">
+                <div>
+                  <p class="microLabel">Next step</p>
+                  <h3>What to do now</h3>
+                </div>
+              </div>
+              <div id="nextStepBox" class="nextStepBox"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="recommended" class="panel" aria-labelledby="recommendedTitle">
+          <div class="sectionIntro">
+            <p class="microLabel">Recommended</p>
+            <h2 id="recommendedTitle">Most relevant vacancies</h2>
+            <p>Prioritized opportunities worth reviewing first, based on confirmed profile details.</p>
+          </div>
+          <div id="recommendedList" class="jobList"></div>
+        </section>
+
+        <section id="jobs" class="panel" aria-labelledby="jobsTitle">
+          <div class="sectionIntro">
+            <p class="microLabel">All Jobs</p>
+            <h2 id="jobsTitle">Discovered vacancies</h2>
+            <p>All actionable vacancies returned after source, relevance, and safety checks.</p>
+          </div>
+          <div id="jobsList" class="jobList"></div>
+        </section>
+
+        <section id="applications" class="panel" aria-labelledby="applicationsTitle">
+          <div class="sectionIntro">
+            <p class="microLabel">Applications</p>
+            <h2 id="applicationsTitle">Application pipeline</h2>
+            <p>Track packages you have prepared and applications you have manually submitted.</p>
+          </div>
+          <div class="pipeline" aria-label="Application pipeline">
+            <div><span id="stageFound">0</span><strong>Found</strong></div>
+            <div><span id="stageReviewed">0</span><strong>Reviewed</strong></div>
+            <div><span id="stagePackage">0</span><strong>Package Ready</strong></div>
+            <div><span id="stageApplied">0</span><strong>Applied</strong></div>
+            <div><span>Manual</span><strong>Follow-up</strong></div>
+          </div>
+          <div id="applicationsList" class="jobList"></div>
+        </section>
+
+        <section id="profile" class="panel" aria-labelledby="profileTitle">
+          <div id="profileHeader" class="profileHeader"></div>
+          <div class="profileGrid">
+            <section class="surfaceBlock wideBlock">
+              <h3 id="profileTitle">Professional Summary</h3>
+              <div id="profileSummaryBox"></div>
+            </section>
+            <section class="surfaceBlock wideBlock">
+              <h3>Experience</h3>
+              <div id="profileExperienceBox" class="timelineList"></div>
+            </section>
+            <section class="surfaceBlock"><h3>Education</h3><div id="profileEducationBox"></div></section>
+            <section class="surfaceBlock"><h3>Registration</h3><div id="profileRegistrationBox"></div></section>
+            <section class="surfaceBlock"><h3>Medical Exit Examination</h3><div id="profileExitExamBox"></div></section>
+            <section class="surfaceBlock wideBlock"><h3>Training & Certifications</h3><div id="profileTrainingBox" class="tagGrid"></div></section>
+            <section class="surfaceBlock wideBlock"><h3>Skills</h3><div id="profileSkillsBox"></div></section>
+            <section class="surfaceBlock"><h3>Languages</h3><div id="profileLanguagesBox"></div></section>
+          </div>
+
+          <section class="surfaceBlock reviewBlock">
+            <div class="sectionHeader">
+              <div>
+                <p class="microLabel">Profile checks</p>
+                <h3>Application readiness</h3>
+              </div>
+            </div>
+            <p class="sectionHelp">Items that need confirmation are not treated as ready until you explicitly confirm them.</p>
+            <div id="profileReview"></div>
+          </section>
+
+          <section class="surfaceBlock importBlock">
+            <h3>Import a CV</h3>
+            <p class="sectionHelp">Optional. Importing creates a draft profile only; it never marks facts verified automatically.</p>
+            <div class="importRow">
+              <input type="file" id="cvFile" accept=".pdf,.txt,.md,.markdown,.rst,.csv">
+              <button id="importCvBtn" class="secondary">Import CV</button>
+            </div>
+          </section>
+        </section>
+
+        <section id="settings" class="panel" aria-labelledby="settingsTitle">
+          <div class="sectionIntro">
+            <p class="microLabel">Settings</p>
+            <h2 id="settingsTitle">Preferences</h2>
+            <p>Simple, user-facing configuration. Technical details are kept in Advanced.</p>
+          </div>
+          <div class="settingsGrid">
+            <section class="surfaceBlock"><h3>Job Search</h3><div id="settingsJobSearch"></div></section>
+            <section class="surfaceBlock"><h3>Application Preferences</h3><div id="settingsApplications"></div></section>
+            <section class="surfaceBlock"><h3>Sources</h3><div id="settingsSources"></div></section>
+            <section class="surfaceBlock"><h3>Privacy</h3><div id="settingsPrivacy"></div></section>
+          </div>
+        </section>
+
+        <section id="advanced" class="panel advancedPanel" aria-labelledby="advancedTitle">
+          <div class="sectionIntro">
+            <p class="microLabel">Advanced</p>
+            <h2 id="advancedTitle">Technical diagnostics</h2>
+            <p>Source connectivity, scan status, and raw diagnostic details for troubleshooting.</p>
+          </div>
+          <div class="advancedGrid">
+            <section class="surfaceBlock"><h3>Source connectivity</h3><div id="advancedSources"></div></section>
+            <section class="surfaceBlock"><h3>Scan summary</h3><div id="advancedScan"></div></section>
+            <section class="surfaceBlock"><h3>Failures</h3><div id="advancedFailures"></div></section>
+            <section class="surfaceBlock"><h3>System health</h3><div id="advancedHealth"></div></section>
+          </div>
+          <pre id="advancedLog" class="log">No scan run in this browser session.</pre>
+        </section>
+      </main>
     </div>
-    <button id="findJobs" class="primary">Find Jobs</button>
-  </header>
+  </div>
 
-  <nav class="tabs" aria-label="Main navigation">
-    <button data-tab="recommended" class="active">Recommended</button>
-    <button data-tab="jobs">Jobs</button>
-    <button data-tab="applications">Applications</button>
-    <button data-tab="profile">My Profile</button>
-    <button data-tab="settings">Settings</button>
-    <button data-tab="advanced">Advanced</button>
-  </nav>
-
-  <main>
-    <section id="status" class="status">Ready. Press “Find Jobs” to scan reachable sources.</section>
-
-    <section id="recommended" class="panel active">
-      <h2>Recommended</h2>
-      <p class="muted">Jobs worth reviewing now, based on verified profile evidence.</p>
-      <div id="recommendedList" class="cards"></div>
-    </section>
-
-    <section id="jobs" class="panel">
-      <h2>Jobs</h2>
-      <div id="jobsList" class="cards"></div>
-    </section>
-
-    <section id="applications" class="panel">
-      <h2>Applications</h2>
-      <p class="muted">Prepared packages and manually-applied vacancies.</p>
-      <div id="applicationsList" class="cards"></div>
-    </section>
-
-    <section id="profile" class="panel">
-      <h2>My Profile</h2>
-      <div id="profileBox" class="card"></div>
-
-      <div class="card">
-        <h3>Import a CV (optional)</h3>
-        <p class="muted">Creates a draft profile from your CV. Nothing is marked verified automatically — review and confirm each fact below before scanning or applying.</p>
-        <input type="file" id="cvFile" accept=".pdf,.txt,.md,.markdown,.rst,.csv">
-        <button id="importCvBtn" class="secondary">Import CV</button>
+  <div id="drawerBackdrop" class="drawerBackdrop" hidden></div>
+  <aside id="detailDrawer" class="detailDrawer" aria-hidden="true" aria-labelledby="drawerTitle">
+    <div class="drawerHeader">
+      <div>
+        <p id="drawerKicker" class="microLabel">Vacancy</p>
+        <h2 id="drawerTitle">Job details</h2>
       </div>
-
-      <div class="card">
-        <h3>Verification review</h3>
-        <p class="muted">These statuses control matching and documents. “Needs verification” never counts as met until you confirm it.</p>
-        <div id="profileReview"></div>
-      </div>
-    </section>
-
-    <section id="settings" class="panel">
-      <h2>Settings</h2>
-      <div id="settingsBox" class="card">Loading current configuration…</div>
-    </section>
-
-    <section id="advanced" class="panel">
-      <h2>Advanced</h2>
-      <pre id="advancedLog" class="log">No scan run in this browser session.</pre>
-    </section>
-  </main>
+      <button id="closeDrawer" class="iconButton" aria-label="Close details">×</button>
+    </div>
+    <div id="drawerContent" class="drawerContent"></div>
+  </aside>
 
   <script src="/static/app.js"></script>
 </body>

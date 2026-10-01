@@ -78,3 +78,12 @@ def test_new_vacancy_defaults_to_not_created_package_status(tmp_path, monkeypatc
     tracker.log_discovered(job)
     stored = tracker.get_job_by_id("j4")
     assert stored["package_status"] == "NOT_CREATED"
+
+
+def test_unknown_source_is_not_listed_as_actionable_job(tmp_path, monkeypatch):
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
+    unknown = Job("bad", "Medical Officer", "Org", "Kabul", "https://example.org/bad", "hr@example.org", "UNKNOWN", metadata={"source_name": "UNKNOWN"})
+    valid = Job("good", "Medical Officer", "Org", "Kabul", "https://example.org/good", "hr@example.org", "ACBAR", metadata={"source_name": "ACBAR", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/good", "application_method": "email"})
+    tracker.log_discovered(unknown)
+    tracker.log_discovered(valid)
+    assert [job["id"] for job in tracker.list_actionable_jobs()] == ["good"]

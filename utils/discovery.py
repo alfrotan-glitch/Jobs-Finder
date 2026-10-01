@@ -1,18 +1,52 @@
+"""Small Afghanistan-first discovery pipeline.
+
+The product has one discovery path:
+fetch a small set of maintained Afghanistan-relevant sources, normalize their
+vacancies, deduplicate, extract useful requirements, and return a scan status
+that never confuses technical failure with an empty market.
 """
-Job Discovery — Scrape job listings from ATS platforms and job boards.
-Supports: Greenhouse, Lever, JobSpy (Indeed/LinkedIn/Glassdoor/ZipRecruiter/Google),
-RSS feeds (RemoteOK), and custom career page scraping.
-"""
+
+from __future__ import annotations
 
 import asyncio
-import json
+import hashlib
 import re
-from dataclasses import dataclass, asdict, field
-from typing import Optional
-from playwright.async_api import async_playwright, Page
+from dataclasses import asdict, dataclass, field
+from datetime import date, datetime, timezone
+from typing import Any, Awaitable, Callable
+from urllib.parse import urljoin
+
+import httpx
+from bs4 import BeautifulSoup
+
+from utils.medical_requirements import extract_requirements_from_job, looks_medical, parse_closing_date, strip_html
+
+SCAN_COMPLETE = "SCAN_COMPLETE"
+NO_RELEVANT_JOBS_FOUND = "NO_RELEVANT_JOBS_FOUND"
+PARTIAL_SCAN = "PARTIAL_SCAN"
+SOURCES_UNAVAILABLE = "SOURCES_UNAVAILABLE"
+SCAN_FAILED = "SCAN_FAILED"
+
+DEFAULT_USER_AGENT = "Jobs-Finder Afghanistan Job Assistant/3.0"
+
+MEDICAL_SEARCH_TERMS = (
+    "medical",
+    "doctor",
+    "physician",
+    "health",
+    "clinic",
+    "hospital",
+    "nutrition",
+    "phc",
+    "bphs",
+    "ephs",
+    "hmis",
+    "quality of care",
+    "capacity building",
+)
 
 
-@dataclass
+@dataclass(slots=True)
 class Job:
     id: str
     title: str
@@ -20,251 +54,428 @@ class Job:
     location: str
     url: str
     apply_url: str
-    platform: str  # "greenhouse" | "lever" | "linkedin" | "jobspy_*" | "remoteok" | "career_page"
+    platform: str
     description: str = ""
     department: str = ""
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def deduplicate_jobs(jobs: list) -> list:
-    """Deduplicate jobs by (title_lower, company_lower) to avoid cross-source duplicates."""
-    seen = set()
-    unique = []
+@dataclass(slots=True)
+class SourceReport:
+    id: str
+    name: str
+    tier: str
+    attempted: bool = False
+    ok: bool = False
+    jobs_found: int = 0
+    error: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class ScanResult:
+    status: str
+    jobs: list[Job]
+    source_reports: list[SourceReport]
+    started_at: str
+    finished_at: str
+    message: str
+
+    @property
+    def successful_sources(self) -> int:
+        return sum(1 for report in self.source_reports if report.ok)
+
+    @property
+    def failed_sources(self) -> int:
+        return sum(1 for report in self.source_reports if report.attempted and not report.ok)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "message": self.message,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "jobs": [job.to_dict() for job in self.jobs],
+            "source_reports": [report.to_dict() for report in self.source_reports],
+            "successful_sources": self.successful_sources,
+            "failed_sources": self.failed_sources,
+            "job_count": len(self.jobs),
+        }
+
+
+SourceFetcher = Callable[[dict[str, Any]], Awaitable[list[Job]]]
+
+SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
+    "acbar": {
+        "name": "ACBAR Jobs",
+        "tier": "A",
+        "fetcher": "discover_acbar_jobs",
+        "active": True,
+    },
+    "reliefweb": {
+        "name": "ReliefWeb Afghanistan jobs",
+        "tier": "B",
+        "fetcher": "discover_reliefweb_jobs",
+        "active": True,
+    },
+}
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def stable_job_id(source: str, *parts: str) -> str:
+    raw = "|".join(str(part or "") for part in parts)
+    return f"{source}_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:16]}"
+
+
+def normalize_space(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _canonical(value: str) -> str:
+    value = str(value or "").lower()
+    value = re.sub(r"https?://", "", value)
+    value = re.sub(r"[?#].*$", "", value)
+    value = re.sub(r"[^a-z0-9]+", " ", value)
+    return normalize_space(value)
+
+
+def is_expired(job: Job | dict[str, Any], *, today: date | None = None) -> bool:
+    today = today or date.today()
+    data = job if isinstance(job, dict) else job.to_dict()
+    metadata = data.get("metadata") or {}
+    closing = metadata.get("closing_date") or data.get("closing_date")
+    if not closing:
+        return False
+    try:
+        return date.fromisoformat(str(closing)[:10]) < today
+    except ValueError:
+        return False
+
+
+def deduplicate_jobs(jobs: list[Job], *, today: date | None = None) -> list[Job]:
+    seen: set[str] = set()
+    out: list[Job] = []
     for job in jobs:
-        key = (job.title.lower().strip(), job.company.lower().strip())
-        if key not in seen:
-            seen.add(key)
-            unique.append(job)
-    return unique
+        if is_expired(job, today=today):
+            continue
+        key = _canonical(job.url or job.apply_url) or _canonical(f"{job.title} {job.company} {job.location}")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(job)
+    return out
 
 
-async def discover_greenhouse_jobs(company_slug: str, role_keywords: list[str]) -> list[Job]:
-    """
-    Scrape jobs from a Greenhouse board.
-    URL pattern: https://boards.greenhouse.io/{company_slug}
-    API pattern: https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs
+def enrich_job(job: Job, *, today: date | None = None) -> Job:
+    job.metadata = dict(job.metadata or {})
+    job.metadata.setdefault("source", job.platform)
+    job.metadata.setdefault("source_url", job.url)
+    job.metadata.setdefault("source_urls", [url for url in [job.url, job.apply_url] if url])
+    if not job.metadata.get("closing_date"):
+        parsed = parse_closing_date("\n".join([job.title, job.location, job.description, str(job.metadata)]))
+        if parsed:
+            job.metadata["closing_date"] = parsed
+    requirements = extract_requirements_from_job(job.to_dict(), today=today)
+    job.metadata["requirements"] = requirements.to_dict()
+    facts = requirements.facts
+    for key in ["closing_date", "application_email", "application_url", "application_subject", "reference_number"]:
+        if facts.get(key) and not job.metadata.get(key):
+            job.metadata[key] = facts[key]
+    if not job.apply_url:
+        job.apply_url = job.metadata.get("application_email") or job.metadata.get("application_url") or job.url
+    return job
 
-    NOTE: We do LOOSE filtering here — check title AND description against
-    role keywords AND skill keywords. The AI scoring engine makes the real
-    relevance decision later. Better to surface too many jobs than miss good ones.
-    """
-    import httpx
 
-    jobs = []
-    api_url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs?content=true"
+def _enabled_sources(profile: dict[str, Any]) -> list[str]:
+    config = profile.get("sources", {}) if isinstance(profile.get("sources"), dict) else {}
+    enabled = config.get("enabled")
+    disabled = set(config.get("disabled") or [])
+    if enabled:
+        return [source for source in enabled if source in SOURCE_REGISTRY and source not in disabled]
+    return [source for source, spec in SOURCE_REGISTRY.items() if spec.get("active") and source not in disabled]
 
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(api_url)
-            resp.raise_for_status()
-            data = resp.json()
 
-        for job_data in data.get("jobs", []):
-            title = job_data.get("title", "")
+async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: date | None = None) -> ScanResult:
+    profile = profile or {}
+    today = today or date.today()
+    started = utc_now()
+    source_reports: list[SourceReport] = []
+    jobs: list[Job] = []
 
-            # Loose filter: check title AND description for any role or skill keyword
-            # This catches "SDE", "Software Developer", "Platform Eng" etc.
-            title_lower = title.lower()
-            raw_desc = job_data.get("content", "")
-            desc_lower = re.sub(r'<[^>]+>', ' ', raw_desc).lower()
-            combined = f"{title_lower} {desc_lower}"
+    enabled = _enabled_sources(profile)
+    if not enabled:
+        finished = utc_now()
+        return ScanResult(
+            status=SCAN_FAILED,
+            jobs=[],
+            source_reports=[],
+            started_at=started,
+            finished_at=finished,
+            message="No active discovery sources are enabled.",
+        )
 
-            # Build broad keyword list: roles + any extra keywords from profile
-            broad_keywords = [kw.lower() for kw in role_keywords]
-            # Also match on common tech role stems
-            broad_keywords.extend([
-                "engineer", "developer", "architect", "sre", "devops",
-                "sde", "sse", "staff", "principal", "lead",
-            ])
-            # Deduplicate
-            broad_keywords = list(set(broad_keywords))
+    for source_id in enabled:
+        spec = SOURCE_REGISTRY[source_id]
+        report = SourceReport(id=source_id, name=spec["name"], tier=spec["tier"], attempted=True)
+        try:
+            fetcher = globals()[spec["fetcher"]]
+            found = await fetcher(profile)
+            report.ok = True
+            report.jobs_found = len(found)
+            jobs.extend(found)
+        except Exception as exc:  # source isolation is mandatory
+            report.error = str(exc)
+        source_reports.append(report)
 
-            if not any(kw in combined for kw in broad_keywords):
+    normalized = [enrich_job(job, today=today) for job in jobs if _job_is_relevant(job)]
+    deduped = deduplicate_jobs(normalized, today=today)
+
+    successful = sum(1 for report in source_reports if report.ok)
+    failed = sum(1 for report in source_reports if report.attempted and not report.ok)
+    if successful == 0:
+        status = SOURCES_UNAVAILABLE
+        message = "Live scan incomplete. Job sources could not be reached."
+    elif failed:
+        status = PARTIAL_SCAN
+        message = f"Partial market scan. {failed} of {len(source_reports)} sources unavailable."
+    elif not deduped:
+        status = NO_RELEVANT_JOBS_FOUND
+        message = "Scan completed. No relevant current vacancies were found in the reachable sources."
+    else:
+        status = SCAN_COMPLETE
+        message = f"Scan completed. {len(deduped)} relevant current vacancies found."
+
+    return ScanResult(status=status, jobs=deduped, source_reports=source_reports, started_at=started, finished_at=utc_now(), message=message)
+
+
+async def discover_all_jobs(profile: dict[str, Any] | None = None) -> list[Job]:
+    """Compatibility wrapper for older CLI/tests: returns jobs only."""
+    return (await run_discovery_scan(profile)).jobs
+
+
+def run_discovery_scan_sync(profile: dict[str, Any] | None = None, *, today: date | None = None) -> ScanResult:
+    return asyncio.run(run_discovery_scan(profile, today=today))
+
+
+def _job_is_relevant(job: Job) -> bool:
+    text = "\n".join([job.title, job.company, job.location, job.description])
+    if looks_medical(text):
+        return True
+    lower = text.lower()
+    return any(term in lower for term in MEDICAL_SEARCH_TERMS)
+
+
+async def discover_acbar_jobs(profile: dict[str, Any]) -> list[Job]:
+    cfg = ((profile.get("job_sources") or {}).get("acbar") or {}) if isinstance(profile, dict) else {}
+    urls = cfg.get("urls") or [
+        "https://www.acbar.org/en/jobs",
+        "https://www.acbar.org/en/jobs?page=2",
+        "https://www.acbar.org/en/jobs?page=3",
+    ]
+    timeout = float(cfg.get("timeout_seconds", 25))
+    detail_limit = int(cfg.get("detail_limit", 30))
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
+        summaries: list[Job] = []
+        for url in urls:
+            response = await client.get(url)
+            response.raise_for_status()
+            summaries.extend(_parse_acbar_listing(response.text, url))
+        summaries = deduplicate_jobs(summaries)[:detail_limit]
+        detailed: list[Job] = []
+        for job in summaries:
+            if not _job_is_relevant(job):
                 continue
+            try:
+                detail = await client.get(job.url)
+                detail.raise_for_status()
+                detailed.append(_parse_acbar_detail(detail.text, job))
+            except Exception:
+                detailed.append(job)
+        return detailed
 
-            location = job_data.get("location", {}).get("name", "Unknown")
 
-            # Strip HTML from description
-            raw_desc = job_data.get("content", "")
-            description = re.sub(r'<[^>]+>', ' ', raw_desc)
-            description = re.sub(r'\s+', ' ', description).strip()
-
-            job = Job(
-                id=str(job_data["id"]),
+def _parse_acbar_listing(html: str, base_url: str) -> list[Job]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    jobs: list[Job] = []
+    for anchor in soup.select('a[href*="/en/jobs/details/"]'):
+        title = normalize_space(anchor.get_text(" ", strip=True))
+        href = urljoin(base_url, anchor.get("href", ""))
+        if not title or not href or title.lower() in {"more locations", "view all jobs"}:
+            continue
+        card = anchor.find_parent(["div", "article", "li", "section"]) or anchor.parent
+        context = normalize_space(card.get_text(" ", strip=True) if card else anchor.get_text(" ", strip=True))
+        company = _guess_company_from_listing_context(context, title) or "Unknown"
+        closing = parse_closing_date(context) or ""
+        location = _guess_location(context) or "Afghanistan"
+        jobs.append(
+            Job(
+                id=stable_job_id("acbar", href, title, company),
                 title=title,
-                company=company_slug,
+                company=company,
                 location=location,
-                url=f"https://boards.greenhouse.io/{company_slug}/jobs/{job_data['id']}",
-                apply_url=f"https://boards.greenhouse.io/{company_slug}/jobs/{job_data['id']}#app",
-                platform="greenhouse",
-                description=description[:5000],
-                department=", ".join(
-                    d.get("name", "") for d in job_data.get("departments", [])
-                ),
+                url=href,
+                apply_url=href,
+                platform="acbar",
+                description=context,
                 metadata={
-                    "updated_at": job_data.get("updated_at", ""),
-                    "requisition_id": job_data.get("requisition_id", ""),
-                }
+                    "source": "ACBAR",
+                    "source_tier": "A",
+                    "source_url": href,
+                    "closing_date": closing,
+                    "source_provenance": [{"source": "ACBAR listing", "url": base_url, "field": "listing card"}],
+                },
             )
-            jobs.append(job)
-
-    except Exception as e:
-        print(f"  ⚠ Greenhouse [{company_slug}]: {e}")
-
+        )
     return jobs
 
 
-async def discover_lever_jobs(company_slug: str, role_keywords: list[str]) -> list[Job]:
-    """
-    Scrape jobs from a Lever board.
-    API pattern: https://api.lever.co/v0/postings/{company_slug}
+def _parse_acbar_detail(html: str, job: Job) -> Job:
+    soup = BeautifulSoup(html or "", "html.parser")
+    text = strip_html(soup.get_text("\n", strip=True))
+    title_node = soup.find(["h1", "h2"])
+    if title_node:
+        title = normalize_space(title_node.get_text(" ", strip=True)).replace("ACBAR:", "").strip()
+        if title:
+            job.title = title
+    job.description = normalize_space(text)[:12000]
+    email = _extract_email(text)
+    if email:
+        job.apply_url = email
+        job.metadata["application_email"] = email
+    app_url = _extract_application_url(text)
+    if app_url:
+        job.metadata["application_url"] = app_url
+        if not email:
+            job.apply_url = app_url
+    closing = parse_closing_date(text)
+    if closing:
+        job.metadata["closing_date"] = closing
+    ref = _extract_reference(text)
+    if ref:
+        job.metadata["reference_number"] = ref
+    subject = _extract_subject(text)
+    if subject:
+        job.metadata["application_subject"] = subject
+    job.metadata.setdefault("source_provenance", []).append({"source": "ACBAR detail", "url": job.url, "field": "vacancy page"})
+    return job
 
-    NOTE: Loose filtering — let the AI scoring decide relevance.
-    """
-    import httpx
 
-    jobs = []
-    api_url = f"https://api.lever.co/v0/postings/{company_slug}?mode=json"
+async def discover_reliefweb_jobs(profile: dict[str, Any]) -> list[Job]:
+    cfg = ((profile.get("job_sources") or {}).get("reliefweb") or {}) if isinstance(profile, dict) else {}
+    timeout = float(cfg.get("timeout_seconds", 25))
+    limit = int(cfg.get("limit", 20))
+    url = cfg.get("url") or "https://reliefweb.int/jobs?search=Afghanistan%20health%20medical%20nutrition"
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+    return _parse_reliefweb_listing(response.text, url, limit=limit)
 
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(api_url)
-            resp.raise_for_status()
-            data = resp.json()
 
-        for posting in data:
-            title = posting.get("text", "")
-
-            # Loose filter: check title AND description
-            title_lower = title.lower()
-            desc_lower = posting.get("descriptionPlain", "").lower()
-            combined = f"{title_lower} {desc_lower}"
-
-            broad_keywords = [kw.lower() for kw in role_keywords]
-            broad_keywords.extend([
-                "engineer", "developer", "architect", "sre", "devops",
-                "sde", "sse", "staff", "principal", "lead",
-            ])
-            broad_keywords = list(set(broad_keywords))
-
-            if not any(kw in combined for kw in broad_keywords):
-                continue
-
-            categories = posting.get("categories", {})
-            location = categories.get("location", "Unknown")
-            description = posting.get("descriptionPlain", "")
-
-            job = Job(
-                id=posting["id"],
+def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int) -> list[Job]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    jobs: list[Job] = []
+    for anchor in soup.select('a[href*="/job/"]'):
+        title = normalize_space(anchor.get_text(" ", strip=True))
+        href = urljoin(base_url, anchor.get("href", ""))
+        if not title or not href:
+            continue
+        card = anchor.find_parent(["article", "li", "div"]) or anchor.parent
+        context = normalize_space(card.get_text(" ", strip=True) if card else title)
+        if "afghanistan" not in context.lower() and "afghanistan" not in title.lower():
+            continue
+        if not _job_is_relevant(Job("", title, "", "", href, href, "reliefweb", context)):
+            continue
+        company = _guess_reliefweb_company(context) or "ReliefWeb source"
+        closing = parse_closing_date(context) or ""
+        jobs.append(
+            Job(
+                id=stable_job_id("reliefweb", href, title, company),
                 title=title,
-                company=company_slug,
-                location=location,
-                url=posting.get("hostedUrl", ""),
-                apply_url=posting.get("applyUrl", posting.get("hostedUrl", "")),
-                platform="lever",
-                description=description[:5000],
-                department=categories.get("team", ""),
+                company=company,
+                location="Afghanistan",
+                url=href,
+                apply_url=href,
+                platform="reliefweb",
+                description=context,
                 metadata={
-                    "commitment": categories.get("commitment", ""),
-                    "created_at": posting.get("createdAt", ""),
-                }
+                    "source": "ReliefWeb",
+                    "source_tier": "B",
+                    "source_url": href,
+                    "closing_date": closing,
+                    "source_provenance": [{"source": "ReliefWeb listing", "url": base_url, "field": "listing card"}],
+                },
             )
-            jobs.append(job)
-
-    except Exception as e:
-        print(f"  ⚠ Lever [{company_slug}]: {e}")
-
-    return jobs
+        )
+        if len(jobs) >= limit:
+            break
+    return deduplicate_jobs(jobs)
 
 
-async def discover_all_jobs(profile: dict) -> list[Job]:
-    """
-    Discover jobs from all configured sources in profile.yaml.
-    Runs enabled sources: greenhouse, lever, jobspy, rss, career_pages.
-    Deduplicates results across sources.
-    """
-    all_jobs = []
-    role_keywords = profile["preferences"]["roles"]
-    boards = profile.get("target_boards", {})
+def _guess_company_from_listing_context(context: str, title: str) -> str:
+    text = context.replace(title, " ", 1)
+    text = re.sub(r"\bNEW\b|\bFull Time\b|\bPart Time\b", " ", text, flags=re.I)
+    text = re.sub(r"\b\d+\s+(?:minutes?|hours?|days?|weeks?)\s+ago\b", " ", text, flags=re.I)
+    text = re.sub(r"\b20\d{2}-\d{2}-\d{2}\b", " ", text)
+    parts = [normalize_space(p) for p in re.split(r"[•\n]+", text) if normalize_space(p)]
+    for part in parts:
+        if not _guess_location(part) and len(part) <= 100:
+            return part
+    return ""
 
-    # Greenhouse boards
-    gh_companies = boards.get("greenhouse", [])
-    if gh_companies:
-        print(f"\n🌿 Scanning {len(gh_companies)} Greenhouse boards...")
-        tasks = [discover_greenhouse_jobs(slug, role_keywords) for slug in gh_companies]
-        results = await asyncio.gather(*tasks)
-        for jobs in results:
-            all_jobs.extend(jobs)
-            if jobs:
-                print(f"   ✅ {jobs[0].company}: {len(jobs)} matching jobs")
 
-    # Lever boards
-    lever_companies = boards.get("lever", [])
-    if lever_companies:
-        print(f"\n🔧 Scanning {len(lever_companies)} Lever boards...")
-        tasks = [discover_lever_jobs(slug, role_keywords) for slug in lever_companies]
-        results = await asyncio.gather(*tasks)
-        for jobs in results:
-            all_jobs.extend(jobs)
-            if jobs:
-                print(f"   ✅ {jobs[0].company}: {len(jobs)} matching jobs")
+def _guess_location(text: str) -> str:
+    provinces = [
+        "Badakhshan", "Badghis", "Baghlan", "Balkh", "Bamian", "Daikondi", "Farah", "Faryab", "Ghazni",
+        "Ghowr", "Ghor", "Helmand", "Herat", "Jawzjan", "Kabul", "Kandahar", "Kapisa", "Khost", "Kunar",
+        "Kunduz", "Laghman", "Logar", "Maidan Wardak", "Nangarhar", "Nimruz", "Nuristan", "Oruzgan",
+        "Paktia", "Paktika", "Panjshir", "Parwan", "Samangan", "Sar-e Pol", "Takhar", "Zabul",
+    ]
+    found = []
+    lower = text.lower()
+    for province in provinces:
+        if re.search(rf"\b{re.escape(province.lower())}\b", lower):
+            found.append(province)
+    return ", ".join(dict.fromkeys(found[:4]))
 
-    # JobSpy — keyword search across Indeed, LinkedIn, Glassdoor, etc.
-    search_config = profile.get("search", {})
-    if search_config.get("enabled", True):
-        try:
-            from utils.jobspy_source import discover_jobspy_jobs
-            print(f"\n🔍 Searching job boards via JobSpy...")
-            jobspy_jobs = discover_jobspy_jobs(profile)
-            all_jobs.extend(jobspy_jobs)
-        except Exception as e:
-            print(f"  ⚠ JobSpy search failed: {e}")
 
-    # RSS feeds — RemoteOK, etc.
-    try:
-        from utils.rss_source import discover_rss_jobs
-        print(f"\n📡 Checking RSS feeds...")
-        rss_jobs = discover_rss_jobs(profile)
-        all_jobs.extend(rss_jobs)
-    except Exception as e:
-        print(f"  ⚠ RSS feeds failed: {e}")
+def _guess_reliefweb_company(context: str) -> str:
+    patterns = [r"Organization\s*[:\-]\s*([^|]+)", r"Source\s*[:\-]\s*([^|]+)"]
+    for pattern in patterns:
+        match = re.search(pattern, context, flags=re.I)
+        if match:
+            return normalize_space(match.group(1))[:100]
+    return ""
 
-    # Adzuna API
-    try:
-        from utils.adzuna_source import discover_adzuna_jobs
-        print(f"\n📊 Searching Adzuna...")
-        adzuna_jobs = discover_adzuna_jobs(profile)
-        all_jobs.extend(adzuna_jobs)
-    except Exception as e:
-        print(f"  ⚠ Adzuna failed: {e}")
 
-    # HN Who is Hiring
-    try:
-        from utils.hn_source import discover_hn_jobs
-        print(f"\n📰 Checking HN Who is Hiring...")
-        hn_jobs = discover_hn_jobs(profile)
-        all_jobs.extend(hn_jobs)
-    except Exception as e:
-        print(f"  ⚠ HN Who is Hiring failed: {e}")
+def _extract_email(text: str) -> str:
+    match = re.search(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", text or "", flags=re.I)
+    return match.group(0) if match else ""
 
-    # Custom career pages
-    if profile.get("custom_career_pages"):
-        try:
-            from utils.career_page_source import discover_career_page_jobs
-            print(f"\n🌐 Scraping custom career pages...")
-            career_jobs = await discover_career_page_jobs(profile)
-            all_jobs.extend(career_jobs)
-        except Exception as e:
-            print(f"  ⚠ Career page scraping failed: {e}")
 
-    # Deduplicate across sources
-    before = len(all_jobs)
-    all_jobs = deduplicate_jobs(all_jobs)
-    if before != len(all_jobs):
-        print(f"\n🔄 Deduplicated: {before} -> {len(all_jobs)} unique jobs")
+def _extract_application_url(text: str) -> str:
+    for match in re.finditer(r"https?://[^\s)\]]+", text or ""):
+        url = match.group(0).rstrip(".,;)]")
+        if any(token in url.lower() for token in ["form", "apply", "jobs", "careers"]):
+            return url
+    return ""
 
-    print(f"\n📊 Total: {len(all_jobs)} matching jobs found")
-    return all_jobs
+
+def _extract_reference(text: str) -> str:
+    match = re.search(r"(?:Vacancy\s*(?:No\.?|Number)|Reference\s*(?:No\.?|Number))\s*[:#\-]?\s*([A-Z0-9_./\-]+)", text or "", flags=re.I)
+    return match.group(1) if match else ""
+
+
+def _extract_subject(text: str) -> str:
+    match = re.search(r"(?:subject line|email subject).*?(?:as|:)?\s*[\"“']?([^\n\"”']{4,120})", text or "", flags=re.I)
+    if not match:
+        return ""
+    subject = normalize_space(match.group(1))
+    return subject.rstrip(".")

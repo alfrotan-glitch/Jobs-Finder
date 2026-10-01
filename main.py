@@ -1,428 +1,231 @@
 #!/usr/bin/env python3
-"""
-MR.Jobs — AI-Powered Job Intelligence
-======================================
+"""Jobs-Finder — Afghanistan job finder and application package assistant."""
 
-Uses Claude Code CLI as the AI brain + Playwright for browser automation.
+from __future__ import annotations
 
-Usage:
-    # Discover & review matches (no applications sent)
-    python main.py discover
-
-    # Dry run — fill forms but don't submit
-    python main.py apply --dry-run
-
-    # Actually apply (use with caution!)
-    python main.py apply
-
-    # Apply to a single URL
-    python main.py single https://boards.greenhouse.io/company/jobs/12345
-
-    # View stats
-    python main.py stats
-"""
-
-import asyncio
 import argparse
-import random
+import asyncio
+import json
 import sys
-import yaml
+import webbrowser
 from pathlib import Path
+from typing import Any
 
-from playwright.async_api import async_playwright
+import yaml
 
-from utils.brain import ClaudeBrain
-from utils.discovery import discover_all_jobs
+from utils.discovery import PARTIAL_SCAN, SOURCES_UNAVAILABLE, run_discovery_scan
+from utils.documents import prepare_application_bundle
+from utils.master_cv import create_master_cv
+from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
+from utils.profile import save_profile
+from utils.profile_builder import build_profile_from_cv_file
+from utils.resume_parser import extract_resume_text
 from utils.tracker import (
-    is_already_seen, log_discovered, log_matched,
-    log_applied, log_skipped, get_today_count, print_stats,
-    reset_unscored, delete_all, get_unscored_jobs
+    delete_all,
+    get_job_by_id,
+    get_recommended_jobs,
+    list_jobs,
+    log_discovered,
+    log_medical_match,
+    mark_applied_manually,
+    print_stats,
+    update_tailored_resume,
 )
-from adapters.stagehand_adapter import apply_smart
+
+PROFILE_PATH = Path("profile.yaml")
 
 
-def load_profile(path: str = "profile.yaml") -> dict:
-    """Load and validate profile config."""
+def load_profile(path: str = "profile.yaml", *, required: bool = True) -> dict[str, Any]:
     p = Path(path)
     if not p.exists():
-        print(f"❌ Profile not found: {path}")
-        print(f"   Copy profile.yaml.example to profile.yaml and fill it out.")
+        if required:
+            print(f"Profile not found: {path}")
+            print("Copy profile.yaml.example to profile.yaml and enter verified facts first.")
+            sys.exit(1)
+        return {}
+    profile = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
+    missing = [field for field in ["first_name", "last_name", "email"] if not personal.get(field)]
+    if missing and required:
+        print(f"Missing required profile fields: {', '.join(missing)}")
         sys.exit(1)
-
-    with open(p) as f:
-        profile = yaml.safe_load(f)
-
-    # Validate required fields
-    personal = profile.get("personal", {})
-    required = ["first_name", "last_name", "email"]
-    missing = [f for f in required if not personal.get(f)]
-    if missing:
-        print(f"❌ Missing required fields in profile.yaml: {', '.join(missing)}")
-        sys.exit(1)
-
-    # Validate resume exists
-    resume = profile.get("resume_path", "")
-    if resume and not Path(resume).exists():
-        print(f"⚠ Resume not found at: {resume}")
-        print(f"  Applications requiring resume upload will fail.")
-
     return profile
 
 
-async def cmd_discover(profile: dict):
-    """Discover jobs and score them — no applications sent."""
-    brain = ClaudeBrain(verbose=True, profile=profile)
-    from utils.resume_parser import extract_resume_text
-    resume_text = extract_resume_text(profile.get("resume_path", ""))
+def _resume_text(profile: dict[str, Any]) -> str:
+    return extract_resume_text(profile.get("resume_path", ""))
 
-    print("\n🔍 Discovering jobs from configured boards...\n")
-    jobs = await discover_all_jobs(profile)
 
-    if not jobs:
-        print("\n😕 No matching jobs found. Try:")
-        print("   - Adding more companies to target_boards in profile.yaml")
-        print("   - Broadening role keywords in preferences.roles")
-        return
-
-    min_score = profile["preferences"].get("min_match_score", 65)
-    matches = []
-
-    print(f"\n🧠 Scoring {len(jobs)} jobs with Claude (min score: {min_score})...\n")
-
-    for i, job in enumerate(jobs):
-        # Skip already-seen jobs
-        if is_already_seen(job.id):
-            print(f"  [{i+1}/{len(jobs)}] ⏭ Already seen: {job.title} @ {job.company}")
-            continue
-
+async def cmd_scan(profile: dict[str, Any]) -> dict[str, Any]:
+    print("Finding Afghanistan health/medical vacancies...")
+    scan = await run_discovery_scan(profile)
+    resume_text = _resume_text(profile)
+    for job in scan.jobs:
         log_discovered(job)
-
-        print(f"  [{i+1}/{len(jobs)}] 🔍 {job.title} @ {job.company} ({job.location})")
-
-        try:
-            result = brain.match_job(job.description, profile, resume_text=resume_text)
-            score = result.get("score", 0)
-            should_apply = result.get("apply", False)
-            reasoning = result.get("reasoning", "")
-            cover_letter = result.get("cover_letter", "")
-
-            log_matched(job.id, score, reasoning, cover_letter)
-
-            emoji = "✅" if should_apply else "❌"
-            print(f"           {emoji} Score: {score} — {reasoning}")
-
-            if should_apply and score >= min_score:
-                matches.append((job, result))
-            else:
-                log_skipped(job.id, f"Score {score} < {min_score}: {reasoning}")
-
-        except Exception as e:
-            print(f"           ⚠ Scoring failed: {e}")
-
-    print(f"\n{'='*60}")
-    print(f"📊 Results: {len(matches)} jobs above threshold out of {len(jobs)} scanned")
-    print(f"{'='*60}")
-    for job, result in matches:
-        print(f"\n  🎯 {job.title} @ {job.company}")
-        print(f"     Location: {job.location}")
-        print(f"     Score: {result['score']}")
-        print(f"     URL: {job.apply_url}")
-        if result.get("skill_overlap"):
-            print(f"     Matching: {', '.join(result['skill_overlap'][:5])}")
-        if result.get("red_flags"):
-            print(f"     Flags: {', '.join(result['red_flags'])}")
-
-    print_stats()
+        report = match_job_against_profile(job.to_dict(), profile, resume_text=resume_text).to_dict()
+        log_medical_match(job.id, report)
+    print(scan.message)
+    if scan.status in {PARTIAL_SCAN, SOURCES_UNAVAILABLE}:
+        print("Source details:")
+        for report in scan.source_reports:
+            if report.error:
+                print(f"- {report.name}: {report.error}")
+    if scan.jobs:
+        print("\nRecommended vacancies:")
+        print_recommended()
+    return scan.to_dict()
 
 
-async def cmd_apply(profile: dict, dry_run: bool = True):
-    """Discover, score, and apply to matching jobs."""
-    brain = ClaudeBrain(verbose=True, profile=profile)
-    from utils.resume_parser import extract_resume_text
-    resume_text = extract_resume_text(profile.get("resume_path", ""))
-    rate_limits = profile.get("rate_limits", {})
-    max_per_day = rate_limits.get("max_applications_per_day", 25)
-    min_delay = rate_limits.get("min_delay_seconds", 60)
-    max_delay = rate_limits.get("max_delay_seconds", 180)
-
-    today_count = get_today_count()
-    if today_count >= max_per_day:
-        print(f"🛑 Daily limit reached ({today_count}/{max_per_day}). Try again tomorrow.")
-        return
-
-    # Discover
-    print("\n🔍 Discovering jobs...\n")
-    jobs = await discover_all_jobs(profile)
+def print_recommended(limit: int = 10) -> None:
+    jobs = get_recommended_jobs(limit=limit)
     if not jobs:
-        print("No matching jobs found.")
+        print("No recommended vacancies yet. Run: python main.py find")
         return
+    for index, job in enumerate(jobs, start=1):
+        match = job.get("match") or {}
+        metadata = job.get("metadata") or {}
+        print(f"{index}. {job['title']} — {job['company']} ({job.get('location') or 'Location not listed'})")
+        print(f"   ID: {job['id']}")
+        print(f"   Readiness: {job.get('readiness') or match.get('readiness_status') or 'Needs review'}")
+        if metadata.get("closing_date"):
+            print(f"   Deadline: {metadata['closing_date']}")
+        if match.get("explanation"):
+            print(f"   {match['explanation']}")
 
-    # Score
-    min_score = profile["preferences"].get("min_match_score", 65)
-    matches = []
 
-    print(f"\n🧠 Scoring {len(jobs)} jobs...\n")
-    for job in jobs:
-        if is_already_seen(job.id):
-            continue
-        log_discovered(job)
-        try:
-            result = brain.match_job(job.description, profile, resume_text=resume_text)
-            score = result.get("score", 0)
-            log_matched(job.id, score, result.get("reasoning", ""), result.get("cover_letter", ""))
-            if result.get("apply") and score >= min_score:
-                matches.append((job, result))
-                print(f"  ✅ {score}: {job.title} @ {job.company}")
-            else:
-                log_skipped(job.id, result.get("reasoning", "Low score"))
-                print(f"  ❌ {score}: {job.title} @ {job.company}")
-        except Exception as e:
-            print(f"  ⚠ {job.title} @ {job.company}: {e}")
+def cmd_prepare(profile: dict[str, Any], job_id: str) -> dict[str, Any] | None:
+    job = get_job_by_id(job_id)
+    if not job:
+        print(f"Vacancy not found: {job_id}")
+        return None
+    resume_text = _resume_text(profile)
+    report = match_job_against_profile(job, profile, resume_text=resume_text).to_dict()
+    log_medical_match(job_id, report)
+    if report.get("readiness_status") == NOT_ELIGIBLE_STATUS:
+        print("Not preparing a package: this vacancy is classified NOT_ELIGIBLE.")
+        print(report.get("explanation", ""))
+        return None
+    docs = prepare_application_bundle(job, profile, report, resume_text=resume_text)
+    update_tailored_resume(job_id, docs)
+    package = docs.get("application_package", {})
+    print(f"Prepared package: {job['title']} — {job['company']}")
+    print(f"Package status: {package.get('package_status')}")
+    print("Generated files:")
+    for label, value in (docs.get("generated_paths") or {}).items():
+        print(f"- {label}: {value}")
+    if package.get("missing_items"):
+        print("Review warnings / missing items:")
+        for item in package["missing_items"]:
+            print(f"- {item}")
+    return docs
 
-    if not matches:
-        print("\nNo jobs above the match threshold.")
-        print_stats()
+
+def cmd_open(job_id: str) -> None:
+    job = get_job_by_id(job_id)
+    if not job:
+        print(f"Vacancy not found: {job_id}")
         return
-
-    # Apply
-    mode = "DRY RUN" if dry_run else "LIVE"
-    print(f"\n{'='*60}")
-    print(f"🚀 Applying to {len(matches)} jobs [{mode}]")
-    print(f"{'='*60}\n")
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=False,  # Show browser so you can watch/intervene
-            slow_mo=100
-        )
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            )
-        )
-        page = await context.new_page()
-
-        for i, (job, result) in enumerate(matches):
-            if get_today_count() >= max_per_day:
-                print(f"\n🛑 Daily limit reached ({max_per_day}). Stopping.")
-                break
-
-            print(f"\n{'─'*50}")
-            print(f"[{i+1}/{len(matches)}] {job.title} @ {job.company}")
-            print(f"  URL: {job.apply_url}")
-            print(f"  Score: {result['score']} — {result.get('reasoning', '')}")
-
-            try:
-                cover_letter = result.get("cover_letter", "")
-
-                success = await apply_smart(
-                    page, job.apply_url, profile, brain,
-                    cover_letter=cover_letter, dry_run=dry_run,
-                    platform=job.platform,
-                    company=job.company, title=job.title,
-                    description=getattr(job, 'description', ''),
-                )
-
-                if not dry_run:
-                    log_applied(job.id, success)
-
-            except Exception as e:
-                print(f"  ❌ Application failed: {e}")
-                if not dry_run:
-                    log_applied(job.id, False)
-
-            # Rate limiting
-            if i < len(matches) - 1:
-                delay = random.randint(min_delay, max_delay)
-                print(f"  ⏳ Waiting {delay}s before next application...")
-                await asyncio.sleep(delay)
-
-        await browser.close()
-
-    print_stats()
-
-
-async def cmd_single(profile: dict, url: str, dry_run: bool = True):
-    """Apply to a single job URL."""
-    brain = ClaudeBrain(verbose=True, profile=profile)
-
-    print(f"\n🎯 Single application: {url}")
-    mode = "DRY RUN" if dry_run else "LIVE"
-    print(f"   Mode: {mode}\n")
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False, slow_mo=100)
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080}
-        )
-        page = await context.new_page()
-
-        await apply_smart(page, url, profile, brain, dry_run=dry_run)
-
-        if dry_run:
-            print("\n💡 Browser staying open for review. Press Ctrl+C to exit.")
-            try:
-                await asyncio.sleep(300)  # Keep browser open 5 min for review
-            except KeyboardInterrupt:
-                pass
-
-        await browser.close()
-
-
-def cmd_reset():
-    """Delete all tracked jobs for a fresh start."""
-    count = delete_all()
-    print(f"Deleted {count} jobs. Database is clean.")
-
-
-async def cmd_rescore(profile: dict):
-    """Re-score all unscored jobs."""
-    import httpx
-    import re as _re
-    brain = ClaudeBrain(verbose=True, profile=profile)
-    from utils.resume_parser import extract_resume_text
-    resume_text = extract_resume_text(profile.get("resume_path", ""))
-    unscored = get_unscored_jobs()
-
-    if not unscored:
-        print("No unscored jobs found.")
+    package = job.get("package") or {}
+    url = package.get("application_route") or job.get("apply_url") or job.get("url")
+    if not url:
+        print("No official application route is stored. Open the source vacancy URL manually.")
         return
-
-    min_score = profile["preferences"].get("min_match_score", 65)
-    print(f"\nRe-scoring {len(unscored)} unscored jobs...\n")
-
-    for i, job_row in enumerate(unscored):
-        print(f"  [{i+1}/{len(unscored)}] {job_row['title']} @ {job_row['company']}")
-        try:
-            desc = ""
-            if job_row['platform'] == 'greenhouse':
-                url = (
-                    f"https://boards-api.greenhouse.io/v1/boards/"
-                    f"{job_row['company']}/jobs/{job_row['id']}?content=true"
-                )
-                async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.get(url)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        raw = data.get("content", "")
-                        desc = _re.sub(r'<[^>]+>', ' ', raw)
-                        desc = _re.sub(r'\s+', ' ', desc).strip()[:5000]
-            elif job_row['platform'] == 'lever':
-                url = (
-                    f"https://api.lever.co/v0/postings/"
-                    f"{job_row['company']}/{job_row['id']}"
-                )
-                async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.get(url)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        desc = data.get("descriptionPlain", "")[:5000]
-
-            if not desc:
-                desc = (
-                    f"Job: {job_row['title']} at {job_row['company']}. "
-                    f"Location: {job_row['location']}"
-                )
-
-            result = brain.match_job(desc, profile, resume_text=resume_text)
-            score = result.get("score", 0)
-            reasoning = result.get("reasoning", "")
-            cover_letter = result.get("cover_letter", "")
-
-            log_matched(job_row['id'], score, reasoning, cover_letter)
-
-            emoji = "✅" if score >= min_score else "❌"
-            print(f"           {emoji} Score: {score} — {reasoning}")
-
-            if score < min_score:
-                log_skipped(job_row['id'], f"Score {score} < {min_score}: {reasoning}")
-
-        except Exception as e:
-            print(f"           ⚠ Scoring failed: {e}")
-
-    print_stats()
+    print(f"Opening official application route: {url}")
+    webbrowser.open(url)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="MR.Jobs — AI-Powered Job Intelligence",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python main.py discover                          # Find & score jobs
-  python main.py apply --dry-run                   # Fill forms, don't submit
-  python main.py apply                             # Actually submit applications
-  python main.py single https://boards.greenhouse.io/company/jobs/123
-  python main.py single https://jobs.lever.co/company/abc --live
-  python main.py stats                             # View application stats
-        """
-    )
+def cmd_mark_applied(job_id: str) -> None:
+    phrase = f"APPLIED {job_id}"
+    typed = input(f"If you manually submitted this application, type '{phrase}' to record it: ").strip()
+    if typed != phrase:
+        print("Not recorded.")
+        return
+    ok, message = mark_applied_manually(job_id)
+    print(message if ok else f"Could not record: {message}")
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # discover
-    subparsers.add_parser("discover", help="Discover and score jobs (no applications)")
+def cmd_import_cv(cv_path: str, profile_path: str) -> None:
+    profile = build_profile_from_cv_file(cv_path, resume_path=cv_path)
+    save_profile(profile, profile_path)
+    print(f"Structured profile written to {profile_path}")
+    print("Review it before scanning. Missing evidence remains Needs verification.")
 
-    # apply
-    apply_parser = subparsers.add_parser("apply", help="Discover, score, and apply")
-    apply_parser.add_argument("--dry-run", action="store_true", default=True,
-                              help="Fill forms but don't submit (default)")
-    apply_parser.add_argument("--live", action="store_true",
-                              help="Actually submit applications")
 
-    # single
-    single_parser = subparsers.add_parser("single", help="Apply to a single URL")
-    single_parser.add_argument("url", help="Job posting URL")
-    single_parser.add_argument("--live", action="store_true",
-                               help="Actually submit (default: dry run)")
+def cmd_create_master_cv(profile_path: str, out_dir: str) -> None:
+    bundle = create_master_cv(profile_path, out_dir=out_dir)
+    print("Master CV created:")
+    print(f"- Markdown: {bundle.markdown_path}")
+    print(f"- DOCX: {bundle.docx_path}")
+    print(f"- PDF: {bundle.pdf_path}")
+    print(f"- Review checklist: {bundle.review_path}")
 
-    # stats
-    subparsers.add_parser("stats", help="View application stats")
 
-    # reset
-    subparsers.add_parser("reset", help="Delete all jobs and start fresh")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Jobs-Finder — Afghanistan job finder and application package assistant")
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    # rescore
-    subparsers.add_parser("rescore", help="Re-score all unscored jobs")
+    sub.add_parser("find", help="Find, normalize, match, and store Afghanistan vacancies")
+    sub.add_parser("recommended", help="Show vacancies worth reviewing now")
+    sub.add_parser("jobs", help="Show all stored vacancies")
+    sub.add_parser("stats", help="Show simple stored-vacancy counts")
+    sub.add_parser("reset", help="Delete stored vacancies and packages from the local database")
 
-    # server
-    server_parser = subparsers.add_parser("server", help="Launch web dashboard")
-    server_parser.add_argument("--port", type=int, default=8080, help="Port (default: 8080)")
-    server_parser.add_argument("--host", default="0.0.0.0", help="Host (default: 0.0.0.0)")
+    prepare = sub.add_parser("prepare", help="Prepare a vacancy-specific CV, cover letter, and application package")
+    prepare.add_argument("job_id")
+
+    open_cmd = sub.add_parser("open", help="Open the official application route for a stored vacancy")
+    open_cmd.add_argument("job_id")
+
+    applied = sub.add_parser("mark-applied", help="Record a user-confirmed manual application")
+    applied.add_argument("job_id")
+
+    import_cv = sub.add_parser("import-cv", help="Build profile.yaml from a text/PDF CV for user review")
+    import_cv.add_argument("cv_path")
+    import_cv.add_argument("--profile", default="profile.yaml")
+
+    master_cv = sub.add_parser("create-master-cv", help="Export a master CV from verified profile facts")
+    master_cv.add_argument("--profile", default="profile.yaml")
+    master_cv.add_argument("--out-dir", default="documents/master_cv")
+
+    server = sub.add_parser("server", help="Launch the web dashboard")
+    server.add_argument("--host", default="0.0.0.0")
+    server.add_argument("--port", type=int, default=8080)
 
     args = parser.parse_args()
 
+    if args.command == "server":
+        from dashboard.server import run_server
+        run_server(host=args.host, port=args.port)
+        return
+    if args.command == "import-cv":
+        cmd_import_cv(args.cv_path, args.profile)
+        return
+    if args.command == "create-master-cv":
+        cmd_create_master_cv(args.profile, args.out_dir)
+        return
+    if args.command == "recommended":
+        print_recommended()
+        return
+    if args.command == "jobs":
+        for job in list_jobs():
+            print(f"{job['id']} | {job['status']} | {job['title']} — {job['company']}")
+        return
     if args.command == "stats":
         print_stats()
         return
-
     if args.command == "reset":
-        cmd_reset()
+        print(f"Deleted {delete_all()} stored vacancies.")
         return
 
     profile = load_profile()
-
-    if args.command == "discover":
-        asyncio.run(cmd_discover(profile))
-    elif args.command == "apply":
-        dry_run = not args.live
-        asyncio.run(cmd_apply(profile, dry_run=dry_run))
-    elif args.command == "single":
-        dry_run = not args.live
-        asyncio.run(cmd_single(profile, args.url, dry_run=dry_run))
-    elif args.command == "rescore":
-        asyncio.run(cmd_rescore(profile))
-    elif args.command == "server":
-        from dashboard.server import run_server
-        try:
-            from scheduler import setup_scheduler
-            setup_scheduler()  # Configures jobs; actual start happens in FastAPI lifespan
-        except Exception as e:
-            print(f"  Scheduler setup warning: {e}")
-        run_server(host=args.host, port=args.port)
+    if args.command == "find":
+        asyncio.run(cmd_scan(profile))
+    elif args.command == "prepare":
+        cmd_prepare(profile, args.job_id)
+    elif args.command == "open":
+        cmd_open(args.job_id)
+    elif args.command == "mark-applied":
+        cmd_mark_applied(args.job_id)
 
 
 if __name__ == "__main__":

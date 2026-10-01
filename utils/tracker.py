@@ -1,21 +1,33 @@
-"""
-Application Tracker — SQLite-backed log of all job discovery and applications.
-Prevents duplicate applications and provides stats.
-Extended with dashboard-ready queries, schema migration, and event broadcasting.
+"""Small SQLite store for the final Jobs-Finder workflow.
+
+The product tracks only what it needs: discovered vacancies, deterministic match
+results, generated package metadata, and whether the user says they applied
+manually. It is not an ATS and does not model interviews, offers, follow-ups, or
+submission automation.
 """
 
-import sqlite3
+from __future__ import annotations
+
 import json
-from datetime import datetime, date
+import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-DB_PATH = Path(__file__).parent.parent / "applications.db"
+DB_PATH = Path(__file__).resolve().parent.parent / "applications.db"
 
-# All valid statuses
-VALID_STATUSES = [
-    "discovered", "matched", "applied", "skipped", "failed",
-    "interviewing", "offer", "rejected", "withdrawn", "archived", "ignored"
-]
+FOUND = "FOUND"
+REVIEWED = "REVIEWED"
+PACKAGE_READY = "PACKAGE_READY"
+APPLIED_MANUALLY = "APPLIED_MANUALLY"
+NEEDS_VERIFICATION = "NEEDS_VERIFICATION"
+NOT_ELIGIBLE = "NOT_ELIGIBLE"
+
+VALID_STATUSES = {FOUND, REVIEWED, PACKAGE_READY, APPLIED_MANUALLY, NEEDS_VERIFICATION, NOT_ELIGIBLE}
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 def get_db() -> sqlite3.Connection:
@@ -23,592 +35,239 @@ def get_db() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS applications (
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS vacancies (
             id TEXT PRIMARY KEY,
-            title TEXT,
-            company TEXT,
-            platform TEXT,
-            url TEXT,
-            apply_url TEXT,
-            location TEXT,
-            match_score INTEGER,
-            reasoning TEXT,
-            cover_letter TEXT,
-            status TEXT DEFAULT 'discovered',
-            applied_at TIMESTAMP,
-            discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            metadata TEXT DEFAULT '{}'
+            title TEXT NOT NULL,
+            company TEXT NOT NULL,
+            location TEXT DEFAULT '',
+            source TEXT DEFAULT '',
+            url TEXT DEFAULT '',
+            apply_url TEXT DEFAULT '',
+            description TEXT DEFAULT '',
+            status TEXT DEFAULT 'FOUND',
+            readiness TEXT DEFAULT '',
+            metadata_json TEXT DEFAULT '{}',
+            match_json TEXT DEFAULT '',
+            package_json TEXT DEFAULT '',
+            documents_json TEXT DEFAULT '',
+            discovered_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT ''
         )
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_status ON applications(status)
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_company ON applications(company)
-    """)
-    # Ignore-list: hashes of jobs to skip on future discovery runs
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS ignored_hashes (
-            hash TEXT PRIMARY KEY,
-            title TEXT,
-            company TEXT,
-            ignored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    # Schema migration: add new columns if they don't exist
-    _migrate_schema(conn)
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_status ON vacancies(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_readiness ON vacancies(readiness)")
     conn.commit()
     return conn
 
 
-def _migrate_schema(conn: sqlite3.Connection):
-    """Add new columns for extended tracking (safe to run multiple times)."""
-    cursor = conn.execute("PRAGMA table_info(applications)")
-    existing_cols = {row[1] for row in cursor.fetchall()}
-
-    migrations = {
-        "salary_min": "INTEGER",
-        "salary_max": "INTEGER",
-        "date_posted": "TEXT",
-        "source": "TEXT DEFAULT ''",
-        "notes": "TEXT DEFAULT ''",
-        "tags": "TEXT DEFAULT ''",
-        "description": "TEXT DEFAULT ''",
-        "tailored_resume": "TEXT DEFAULT ''",
-        "follow_up_date": "TEXT",
-        "last_activity": "TEXT",
-        "follow_up_count": "INTEGER DEFAULT 0",
-    }
-
-    for col, col_type in migrations.items():
-        if col not in existing_cols:
-            try:
-                conn.execute(f"ALTER TABLE applications ADD COLUMN {col} {col_type}")
-            except sqlite3.OperationalError:
-                pass  # Column already exists
+def _to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    data = dict(row)
+    for column in ["metadata_json", "match_json", "package_json", "documents_json"]:
+        key = column.replace("_json", "")
+        raw = data.pop(column, "")
+        data[key] = _json(raw)
+    data["metadata_json"] = json.dumps(data.get("metadata") or {}, ensure_ascii=False)
+    data["match_json"] = json.dumps(data.get("match") or {}, ensure_ascii=False)
+    data["package_json"] = json.dumps(data.get("package") or {}, ensure_ascii=False)
+    data["documents_json"] = json.dumps(data.get("documents") or {}, ensure_ascii=False)
+    # Backward-compatible aliases used by document generation and older views.
+    data["platform"] = data.get("source", "")
+    data["company"] = data.get("company", "")
+    return data
 
 
-def is_already_seen(job_id: str) -> bool:
-    """Check if we've already seen this job."""
-    conn = get_db()
-    row = conn.execute("SELECT id FROM applications WHERE id = ?", (job_id,)).fetchone()
-    conn.close()
-    return row is not None
-
-
-def _emit(event_type: str, data=None):
-    """Emit event if EventBus is available."""
+def _json(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
     try:
-        from utils.events import EventBus
-        EventBus.emit(event_type, data)
-    except Exception:
-        pass
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
-def log_discovered(job) -> None:
-    """Log a newly discovered job. Skips if on the ignore list."""
-    # Check ignore list first (fast hash lookup)
-    if is_ignored(job.title, job.company):
-        return
+def _job_dict(job: Any) -> dict[str, Any]:
+    return job.to_dict() if hasattr(job, "to_dict") else dict(job)
 
+
+def readiness_to_status(readiness: str) -> str:
+    value = str(readiness or "").upper()
+    if value == "NOT_ELIGIBLE":
+        return NOT_ELIGIBLE
+    if value == "NEEDS_VERIFICATION":
+        return NEEDS_VERIFICATION
+    return REVIEWED
+
+
+def log_discovered(job: Any) -> None:
+    data = _job_dict(job)
+    metadata = data.get("metadata") or {}
+    timestamp = now_iso()
     conn = get_db()
     try:
-        metadata = json.dumps(job.metadata) if isinstance(job.metadata, dict) else job.metadata
-        conn.execute("""
-            INSERT OR IGNORE INTO applications
-            (id, title, company, platform, url, apply_url, location, description, source,
-             salary_min, salary_max, date_posted, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            job.id, job.title, job.company, job.platform, job.url, job.apply_url,
-            job.location, getattr(job, 'description', ''),
-            job.metadata.get('source', job.platform) if isinstance(job.metadata, dict) else job.platform,
-            job.metadata.get('salary_min') if isinstance(job.metadata, dict) else None,
-            job.metadata.get('salary_max') if isinstance(job.metadata, dict) else None,
-            job.metadata.get('date_posted', '') if isinstance(job.metadata, dict) else '',
-            metadata
-        ))
+        conn.execute(
+            """
+            INSERT INTO vacancies
+            (id, title, company, location, source, url, apply_url, description, status,
+             metadata_json, discovered_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              title=excluded.title,
+              company=excluded.company,
+              location=excluded.location,
+              source=excluded.source,
+              url=excluded.url,
+              apply_url=excluded.apply_url,
+              description=excluded.description,
+              metadata_json=excluded.metadata_json,
+              updated_at=excluded.updated_at
+            """,
+            (
+                data.get("id"),
+                data.get("title") or "Untitled vacancy",
+                data.get("company") or "Unknown employer",
+                data.get("location") or "",
+                data.get("platform") or metadata.get("source") or "",
+                data.get("url") or "",
+                data.get("apply_url") or data.get("url") or "",
+                data.get("description") or "",
+                FOUND,
+                json.dumps(metadata, ensure_ascii=False),
+                timestamp,
+                timestamp,
+            ),
+        )
         conn.commit()
     finally:
         conn.close()
-    _emit("job_discovered", {"id": job.id, "title": job.title, "company": job.company})
 
 
-def log_matched(job_id: str, score: int, reasoning: str, cover_letter: str) -> None:
-    """Update a job with its match results."""
+def log_medical_match(job_id: str, report: dict[str, Any]) -> None:
+    readiness = str(report.get("readiness_status") or "")
+    status = readiness_to_status(readiness)
     conn = get_db()
-    conn.execute("""
-        UPDATE applications
-        SET match_score = ?, reasoning = ?, cover_letter = ?, status = 'matched'
-        WHERE id = ?
-    """, (score, reasoning, cover_letter, job_id))
-    conn.commit()
-    conn.close()
-    _emit("job_matched", {"id": job_id, "score": score})
+    try:
+        conn.execute(
+            "UPDATE vacancies SET match_json=?, readiness=?, status=?, updated_at=? WHERE id=?",
+            (json.dumps(report, ensure_ascii=False), readiness, status, now_iso(), job_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
-def log_applied(job_id: str, success: bool) -> None:
-    """Mark a job as applied and set follow-up if successful."""
-    status = "applied" if success else "failed"
-    now = datetime.now().isoformat()
+def update_tailored_resume(job_id: str, documents: dict[str, Any]) -> None:
+    package = documents.get("application_package") or {}
     conn = get_db()
-    if success:
-        from datetime import timedelta
-        follow_up = (datetime.now() + timedelta(days=7)).isoformat()
-        conn.execute("""
-            UPDATE applications
-            SET status = ?, applied_at = ?, last_activity = ?, follow_up_date = ?
-            WHERE id = ?
-        """, (status, now, now, follow_up, job_id))
-    else:
-        conn.execute("""
-            UPDATE applications
-            SET status = ?, applied_at = ?
-            WHERE id = ?
-        """, (status, now, job_id))
-    conn.commit()
-    conn.close()
-    _emit("job_applied", {"id": job_id, "success": success})
+    try:
+        conn.execute(
+            "UPDATE vacancies SET documents_json=?, package_json=?, status=?, updated_at=? WHERE id=?",
+            (
+                json.dumps(documents, ensure_ascii=False),
+                json.dumps(package, ensure_ascii=False),
+                PACKAGE_READY,
+                now_iso(),
+                job_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
-def log_skipped(job_id: str, reason: str) -> None:
-    """Mark a job as skipped."""
+def get_tailored_resume(job_id: str) -> dict[str, Any]:
+    job = get_job_by_id(job_id)
+    return (job or {}).get("documents") or {}
+
+
+def mark_applied_manually(job_id: str) -> tuple[bool, str]:
+    job = get_job_by_id(job_id)
+    if not job:
+        return False, "Vacancy not found."
+    if job.get("readiness") == "NOT_ELIGIBLE":
+        return False, "Cannot mark a NOT_ELIGIBLE vacancy as applied."
     conn = get_db()
-    conn.execute("""
-        UPDATE applications
-        SET status = 'skipped', reasoning = ?
-        WHERE id = ?
-    """, (reason, job_id))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("UPDATE vacancies SET status=?, updated_at=? WHERE id=?", (APPLIED_MANUALLY, now_iso(), job_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return True, "Recorded as applied manually."
 
 
-def get_today_count() -> int:
-    """How many applications have been submitted today."""
+def get_job_by_id(job_id: str) -> dict[str, Any] | None:
     conn = get_db()
-    row = conn.execute("""
-        SELECT COUNT(*) as cnt FROM applications
-        WHERE status = 'applied' AND DATE(applied_at) = DATE('now')
-    """).fetchone()
-    conn.close()
-    return row["cnt"]
+    try:
+        row = conn.execute("SELECT * FROM vacancies WHERE id=?", (job_id,)).fetchone()
+        return _to_dict(row)
+    finally:
+        conn.close()
 
 
-def get_stats() -> dict:
-    """Get overall application stats."""
+def list_jobs(limit: int = 100) -> list[dict[str, Any]]:
     conn = get_db()
-    stats = {}
-    for status in VALID_STATUSES:
-        row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM applications WHERE status = ?", (status,)
-        ).fetchone()
-        stats[status] = row["cnt"]
-
-    stats["today"] = get_today_count()
-
-    # Average match score for applied jobs
-    row = conn.execute("""
-        SELECT AVG(match_score) as avg_score FROM applications
-        WHERE status = 'applied' AND match_score IS NOT NULL
-    """).fetchone()
-    stats["avg_match_score"] = round(row["avg_score"] or 0, 1)
-
-    conn.close()
-    return stats
+    try:
+        rows = conn.execute(
+            "SELECT * FROM vacancies ORDER BY discovered_at DESC, updated_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [_to_dict(row) for row in rows if row is not None]
+    finally:
+        conn.close()
 
 
-def print_stats():
-    """Pretty print stats."""
-    s = get_stats()
-    print(f"\n📊 Application Stats:")
-    print(f"   Discovered: {s['discovered']}")
-    print(f"   Matched:    {s['matched']}")
-    print(f"   Applied:    {s['applied']} (today: {s['today']})")
-    print(f"   Skipped:    {s['skipped']}")
-    print(f"   Failed:     {s['failed']}")
-    if s['avg_match_score']:
-        print(f"   Avg Score:  {s['avg_match_score']}")
-
-
-def reset_unscored() -> int:
-    """Reset jobs with NULL match_score back to 'discovered' for re-processing."""
-    conn = get_db()
-    cursor = conn.execute("""
-        UPDATE applications SET status = 'discovered'
-        WHERE match_score IS NULL AND status != 'applied'
-    """)
-    count = cursor.rowcount
-    conn.commit()
-    conn.close()
-    return count
+def get_recommended_jobs(limit: int = 20) -> list[dict[str, Any]]:
+    jobs = list_jobs(limit=500)
+    def rank(job: dict[str, Any]) -> tuple[int, str]:
+        readiness = job.get("readiness") or ""
+        metadata = job.get("metadata") or {}
+        closing = metadata.get("closing_date") or "9999-12-31"
+        if readiness == "READY_TO_APPLY":
+            bucket = 0
+        elif readiness == "NEEDS_VERIFICATION":
+            bucket = 1
+        else:
+            bucket = 3
+        if job.get("status") == NOT_ELIGIBLE or readiness == "NOT_ELIGIBLE":
+            bucket = 9
+        return (bucket, str(closing))
+    return [job for job in sorted(jobs, key=rank) if rank(job)[0] < 9][:limit]
 
 
 def delete_all() -> int:
-    """Delete all jobs for a fresh start."""
-    conn = get_db()
-    cursor = conn.execute("DELETE FROM applications")
-    count = cursor.rowcount
-    conn.commit()
-    conn.close()
-    return count
-
-
-def get_jobs_by_status(status: str) -> list:
-    """Get all jobs with a given status."""
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM applications WHERE status = ?", (status,)
-    ).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
-
-def get_unscored_jobs() -> list:
-    """Get all jobs that need scoring (discovered with no score)."""
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM applications WHERE match_score IS NULL AND status = 'discovered'"
-    ).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
-
-def get_all_jobs(
-    status: str = None,
-    company: str = None,
-    min_score: int = None,
-    search: str = None,
-    sort_by: str = "discovered_at",
-    sort_order: str = "desc",
-    limit: int = 100,
-    offset: int = 0
-) -> tuple:
-    """Get jobs with filtering, sorting, and pagination. Returns (jobs, total_count)."""
     conn = get_db()
     try:
-        conditions = []
-        params = []
-
-        if status:
-            conditions.append("status = ?")
-            params.append(status)
-        if company:
-            conditions.append("company LIKE ?")
-            params.append(f"%{company}%")
-        if min_score is not None:
-            conditions.append("match_score >= ?")
-            params.append(min_score)
-        if search:
-            conditions.append("(title LIKE ? OR company LIKE ? OR location LIKE ?)")
-            params.extend([f"%{search}%"] * 3)
-
-        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-        # Validate sort column
-        valid_sorts = ["discovered_at", "match_score", "company", "title", "status", "applied_at"]
-        if sort_by not in valid_sorts:
-            sort_by = "discovered_at"
-        if sort_order not in ("asc", "desc"):
-            sort_order = "desc"
-
-        # Get total count
-        count_row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM applications {where}", params
-        ).fetchone()
-        total = count_row["cnt"]
-
-        # Get paginated results
-        rows = conn.execute(
-            f"SELECT * FROM applications {where} ORDER BY {sort_by} {sort_order} LIMIT ? OFFSET ?",
-            params + [limit, offset]
-        ).fetchall()
-    finally:
-        conn.close()
-
-    return [dict(row) for row in rows], total
-
-
-def get_job_by_id(job_id: str) -> dict:
-    """Get a single job by ID."""
-    conn = get_db()
-    row = conn.execute("SELECT * FROM applications WHERE id = ?", (job_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def update_job_status(job_id: str, status: str) -> bool:
-    """Update a job's status."""
-    if status not in VALID_STATUSES:
-        return False
-    conn = get_db()
-    try:
-        conn.execute("UPDATE applications SET status = ? WHERE id = ?", (status, job_id))
+        count = conn.execute("SELECT COUNT(*) FROM vacancies").fetchone()[0]
+        conn.execute("DELETE FROM vacancies")
         conn.commit()
+        return int(count)
     finally:
         conn.close()
-    _emit("job_status_changed", {"id": job_id, "status": status})
-    return True
 
 
-def update_job_notes(job_id: str, notes: str) -> bool:
-    """Update notes for a job."""
+def stats() -> dict[str, int]:
     conn = get_db()
-    conn.execute("UPDATE applications SET notes = ? WHERE id = ?", (notes, job_id))
-    conn.commit()
-    conn.close()
-    return True
+    try:
+        rows = conn.execute("SELECT status, COUNT(*) FROM vacancies GROUP BY status").fetchall()
+        out = {str(row[0]): int(row[1]) for row in rows}
+        out["TOTAL"] = sum(out.values())
+        return out
+    finally:
+        conn.close()
 
 
-def update_apply_url(job_id: str, apply_url: str) -> bool:
-    """Update a job's apply_url (after URL resolution)."""
-    conn = get_db()
-    conn.execute("UPDATE applications SET apply_url = ? WHERE id = ?", (apply_url, job_id))
-    conn.commit()
-    conn.close()
-    return True
-
-
-def delete_job(job_id: str) -> bool:
-    """Delete a single job."""
-    conn = get_db()
-    cursor = conn.execute("DELETE FROM applications WHERE id = ?", (job_id,))
-    conn.commit()
-    conn.close()
-    return cursor.rowcount > 0
-
-
-def get_timeline_stats() -> list:
-    """Get application counts grouped by date for charts."""
-    conn = get_db()
-    rows = conn.execute("""
-        SELECT DATE(discovered_at) as date,
-               COUNT(*) as total,
-               SUM(CASE WHEN status = 'applied' THEN 1 ELSE 0 END) as applied,
-               SUM(CASE WHEN status = 'matched' THEN 1 ELSE 0 END) as matched
-        FROM applications
-        WHERE discovered_at IS NOT NULL
-        GROUP BY DATE(discovered_at)
-        ORDER BY date DESC
-        LIMIT 30
-    """).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
-
-def get_score_distribution() -> list:
-    """Get score distribution for charts."""
-    conn = get_db()
-    rows = conn.execute("""
-        SELECT
-            CASE
-                WHEN match_score >= 90 THEN '90-100'
-                WHEN match_score >= 80 THEN '80-89'
-                WHEN match_score >= 70 THEN '70-79'
-                WHEN match_score >= 60 THEN '60-69'
-                WHEN match_score >= 50 THEN '50-59'
-                WHEN match_score < 50 THEN '0-49'
-                ELSE 'Unscored'
-            END as bracket,
-            COUNT(*) as count
-        FROM applications
-        GROUP BY bracket
-        ORDER BY bracket DESC
-    """).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
-
-def get_companies() -> list:
-    """Get distinct company names for filter dropdown."""
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT DISTINCT company FROM applications ORDER BY company"
-    ).fetchall()
-    conn.close()
-    return [row["company"] for row in rows]
-
-
-def update_tailored_resume(job_id: str, tailored_data: dict) -> bool:
-    """Store tailored resume data for a job."""
-    conn = get_db()
-    conn.execute(
-        "UPDATE applications SET tailored_resume = ? WHERE id = ?",
-        (json.dumps(tailored_data), job_id)
-    )
-    conn.commit()
-    conn.close()
-    _emit("tailor_complete", {"id": job_id})
-    return True
-
-
-def get_tailored_resume(job_id: str) -> dict:
-    """Get tailored resume data for a job."""
-    conn = get_db()
-    row = conn.execute(
-        "SELECT tailored_resume FROM applications WHERE id = ?", (job_id,)
-    ).fetchone()
-    conn.close()
-    if row and row["tailored_resume"]:
-        try:
-            return json.loads(row["tailored_resume"])
-        except (json.JSONDecodeError, TypeError):
-            pass
-    return {}
-
-
-# ---------------------------------------------------------------------------
-# Follow-up reminders & ghost detection
-# ---------------------------------------------------------------------------
-
-
-def set_follow_up(job_id: str, days: int = 7) -> bool:
-    """Set a follow-up reminder date for a job."""
-    from datetime import timedelta
-    follow_up = (datetime.now() + timedelta(days=days)).isoformat()
-    conn = get_db()
-    conn.execute(
-        "UPDATE applications SET follow_up_date = ?, last_activity = ? WHERE id = ?",
-        (follow_up, datetime.now().isoformat(), job_id)
-    )
-    conn.commit()
-    conn.close()
-    _emit("follow_up_set", {"id": job_id, "date": follow_up})
-    return True
-
-
-def get_overdue_follow_ups() -> list:
-    """Get jobs past their follow-up date that are still active (applied/interviewing)."""
-    conn = get_db()
-    rows = conn.execute("""
-        SELECT * FROM applications
-        WHERE follow_up_date IS NOT NULL
-          AND follow_up_date <= datetime('now')
-          AND status IN ('applied', 'interviewing')
-        ORDER BY follow_up_date ASC
-    """).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
-
-def get_ghost_alerts(days: int = 14) -> list:
-    """Get jobs applied more than N days ago with no status change (potential ghosts)."""
-    conn = get_db()
-    rows = conn.execute("""
-        SELECT * FROM applications
-        WHERE status = 'applied'
-          AND applied_at IS NOT NULL
-          AND datetime(applied_at, '+' || ? || ' days') <= datetime('now')
-          AND (last_activity IS NULL OR datetime(last_activity, '+' || ? || ' days') <= datetime('now'))
-        ORDER BY applied_at ASC
-    """, (days, days)).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
-
-def increment_follow_up(job_id: str, days: int = 7) -> bool:
-    """Mark a follow-up as done and schedule the next one."""
-    from datetime import timedelta
-    conn = get_db()
-    conn.execute("""
-        UPDATE applications
-        SET follow_up_count = COALESCE(follow_up_count, 0) + 1,
-            follow_up_date = ?,
-            last_activity = ?
-        WHERE id = ?
-    """, (
-        (datetime.now() + timedelta(days=days)).isoformat(),
-        datetime.now().isoformat(),
-        job_id,
-    ))
-    conn.commit()
-    conn.close()
-    _emit("follow_up_done", {"id": job_id})
-    return True
-
-
-def dismiss_follow_up(job_id: str) -> bool:
-    """Clear follow-up for a job."""
-    conn = get_db()
-    conn.execute(
-        "UPDATE applications SET follow_up_date = NULL WHERE id = ?",
-        (job_id,)
-    )
-    conn.commit()
-    conn.close()
-    return True
-
-
-# ---------------------------------------------------------------------------
-# Ignore list — hash-based dedup across discovery runs
-# ---------------------------------------------------------------------------
-
-import hashlib
-
-def _job_hash(title: str, company: str) -> str:
-    """Generate a stable hash from normalized title + company."""
-    key = f"{title.lower().strip()}|{company.lower().strip()}"
-    return hashlib.md5(key.encode()).hexdigest()
-
-
-def is_ignored(title: str, company: str) -> bool:
-    """Check if a job (by title+company) is in the ignore list."""
-    conn = get_db()
-    h = _job_hash(title, company)
-    row = conn.execute("SELECT hash FROM ignored_hashes WHERE hash = ?", (h,)).fetchone()
-    conn.close()
-    return row is not None
-
-
-def ignore_jobs(job_ids: list) -> int:
-    """Mark jobs as ignored and add their hashes to the ignore list."""
-    conn = get_db()
-    count = 0
-    for jid in job_ids:
-        row = conn.execute("SELECT title, company FROM applications WHERE id = ?", (jid,)).fetchone()
-        if row:
-            h = _job_hash(row["title"], row["company"])
-            conn.execute(
-                "INSERT OR IGNORE INTO ignored_hashes (hash, title, company) VALUES (?, ?, ?)",
-                (h, row["title"], row["company"])
-            )
-            conn.execute("UPDATE applications SET status = 'ignored' WHERE id = ?", (jid,))
-            count += 1
-    conn.commit()
-    conn.close()
-    _emit("jobs_ignored", {"count": count})
-    return count
-
-
-def purge_all() -> dict:
-    """Nuke all discovery data but preserve the ignore list."""
-    conn = get_db()
-    job_count = conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
-    conn.execute("DELETE FROM applications")
-    conn.commit()
-    conn.close()
-    _emit("purged", {"jobs_deleted": job_count})
-    return {"jobs_deleted": job_count}
-
-
-def purge_everything() -> dict:
-    """Nuke ALL data including ignore list — full factory reset."""
-    conn = get_db()
-    job_count = conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
-    ignore_count = conn.execute("SELECT COUNT(*) FROM ignored_hashes").fetchone()[0]
-    conn.execute("DELETE FROM applications")
-    conn.execute("DELETE FROM ignored_hashes")
-    conn.commit()
-    conn.close()
-    _emit("purged", {"jobs_deleted": job_count, "ignores_cleared": ignore_count})
-    return {"jobs_deleted": job_count, "ignores_cleared": ignore_count}
-
-
-def get_ignored_count() -> int:
-    """Count of hashes in the ignore list."""
-    conn = get_db()
-    row = conn.execute("SELECT COUNT(*) FROM ignored_hashes").fetchone()
-    conn.close()
-    return row[0]
-
-
+def print_stats() -> None:
+    data = stats()
+    if not data.get("TOTAL"):
+        print("No vacancies stored yet.")
+        return
+    for key in [FOUND, REVIEWED, NEEDS_VERIFICATION, PACKAGE_READY, APPLIED_MANUALLY, NOT_ELIGIBLE, "TOTAL"]:
+        if key in data:
+            print(f"{key}: {data[key]}")

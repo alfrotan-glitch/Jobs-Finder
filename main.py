@@ -22,7 +22,7 @@ from utils.tracker import (
     delete_all,
     get_job_by_id,
     get_recommended_jobs,
-    list_jobs,
+    list_actionable_jobs,
     log_discovered,
     log_medical_match,
     mark_applied_manually,
@@ -82,11 +82,15 @@ def print_recommended(limit: int = 10) -> None:
     for index, job in enumerate(jobs, start=1):
         match = job.get("match") or {}
         metadata = job.get("metadata") or {}
+        route = metadata.get("apply_url") or metadata.get("vacancy_url") or job.get("apply_url") or job.get("url")
         print(f"{index}. {job['title']} — {job['company']} ({job.get('location') or 'Location not listed'})")
         print(f"   ID: {job['id']}")
+        print(f"   Source: {metadata.get('source_name') or job.get('source') or 'Source not listed'}")
         print(f"   Readiness: {job.get('readiness') or match.get('readiness_status') or 'Needs review'}")
         if metadata.get("closing_date"):
             print(f"   Deadline: {metadata['closing_date']}")
+        if route:
+            print(f"   Official route: {route}")
         if match.get("explanation"):
             print(f"   {match['explanation']}")
 
@@ -124,11 +128,19 @@ def cmd_open(job_id: str) -> None:
         print(f"Vacancy not found: {job_id}")
         return
     package = job.get("package") or {}
-    url = package.get("application_route") or job.get("apply_url") or job.get("url")
+    metadata = job.get("metadata") or {}
+    email = package.get("apply_email") or metadata.get("apply_email") or job.get("apply_email") or ""
+    web_url = package.get("apply_url") or metadata.get("apply_url") or job.get("apply_url") or ""
+    vacancy_url = package.get("official_vacancy_page") or metadata.get("vacancy_url") or job.get("url") or ""
+    if email:
+        print(f"Opening email application draft to: {email}")
+        webbrowser.open(f"mailto:{email}")
+        return
+    url = web_url or vacancy_url
     if not url:
         print("No official application route is stored. Open the source vacancy URL manually.")
         return
-    print(f"Opening official application route: {url}")
+    print(f"Opening official vacancy/application page: {url}")
     webbrowser.open(url)
 
 
@@ -191,7 +203,7 @@ def main() -> None:
         print_recommended()
         return
     if args.command == "jobs":
-        for job in list_jobs():
+        for job in list_actionable_jobs():
             print(f"{job['id']} | {job['status']} | {job['title']} — {job['company']}")
         return
     if args.command == "stats":

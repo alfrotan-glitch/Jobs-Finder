@@ -109,3 +109,65 @@ def test_design_fonts_are_always_renderable_on_this_platform():
 
     for name in _register_fonts():
         assert name in set(pdfmetrics.getRegisteredFontNames()) | set(standardFonts)
+
+
+def test_cv_and_cover_letter_contain_no_application_system_branding_or_metadata(tmp_path):
+    import pdfplumber
+
+    prof = profile()
+    job = make_job("Medical Officer", "MD required. Clinical care, HMIS reporting and supervision. Send CV to hr@example.org by 2026-12-31.")
+    report = match_job_against_profile(job, prof, today=date(2026, 10, 1)).to_dict()
+    bundle = prepare_application_bundle(job, prof, report, out_dir=tmp_path)
+    cv_paths = bundle["generated_paths"]["tailored_cv"]
+    cover_paths = bundle["generated_paths"]["cover_letter"]
+    rendered = [
+        Path(cv_paths["txt"]).read_text(encoding="utf-8"),
+        Path(cover_paths["txt"]).read_text(encoding="utf-8"),
+    ]
+    for paths in [cv_paths, cover_paths]:
+        with zipfile.ZipFile(paths["docx"]) as archive:
+            rendered.append(archive.read("word/document.xml").decode("utf-8", errors="replace"))
+        with pdfplumber.open(paths["pdf"]) as pdf:
+            rendered.append("\n".join(page.extract_text() or "" for page in pdf.pages))
+    forbidden = ["Jobs-Finder", "Created by", "Application generated", "matching score", "readiness", "internal job ID", "source metadata"]
+    for text in rendered:
+        for token in forbidden:
+            assert token.lower() not in text.lower()
+
+
+def test_cv_experience_is_reverse_chronological_and_substantive(tmp_path):
+    prof = profile()
+    prof["work_history"] = [
+        {"title": "Older Medical Doctor", "organization": "Old Clinic", "location": "Kabul", "start": "2019-01", "end": "2020-12", "description": "Provided clinical consultations. Managed referrals. Completed HMIS reports.", "verified": True},
+        {"title": "Current Health and Nutrition Supervisor", "organization": "Current NGO", "location": "Kabul", "start": "2021-01", "end": "Present", "description": "Supervised health and nutrition teams. Supported SAM and IMAM services. Reviewed HMIS data and monthly reports.", "verified": True},
+    ]
+    job = make_job("Health and Nutrition Supervisor", "MD required. Nutrition supervision, SAM/IMAM and HMIS reporting. Send CV to hr@example.org by 2026-12-31.")
+    report = match_job_against_profile(job, prof, today=date(2026, 10, 1)).to_dict()
+    bundle = prepare_application_bundle(job, prof, report, out_dir=tmp_path)
+    cv = Path(bundle["generated_paths"]["tailored_cv"]["txt"]).read_text(encoding="utf-8")
+    assert cv.index("Current NGO") < cv.index("Old Clinic")
+    current_section = cv.split("Current Health and Nutrition Supervisor", 1)[1].split("Older Medical Doctor", 1)[0]
+    assert current_section.count("\n-") >= 3
+    assert "forty" not in cv.lower()
+
+
+def test_tailored_cv_does_not_invent_non_md_qualifications(tmp_path):
+    prof = profile()
+    job = make_job("Pharmacist", "Medical Doctor or pharmacist accepted. Pharmacy license preferred. Send CV to hr@example.org by 2026-12-31.")
+    report = match_job_against_profile(job, prof, today=date(2026, 10, 1)).to_dict()
+    bundle = prepare_application_bundle(job, prof, report, out_dir=tmp_path)
+    cv = Path(bundle["generated_paths"]["tailored_cv"]["txt"]).read_text(encoding="utf-8")
+    assert "PharmD" not in cv
+    lower_cv = cv.lower()
+    assert "pharmacist" not in lower_cv.split("professional summary", 1)[1].split("\n\n", 1)[0]
+
+
+def test_cover_letter_contains_no_internal_metadata(tmp_path):
+    prof = profile()
+    job = make_job("Medical Officer", "MD required. Clinical care and HMIS reporting. Send CV to hr@example.org by 2026-12-31.")
+    report = match_job_against_profile(job, prof, today=date(2026, 10, 1)).to_dict()
+    bundle = prepare_application_bundle(job, prof, report, out_dir=tmp_path)
+    cover = Path(bundle["generated_paths"]["cover_letter"]["txt"]).read_text(encoding="utf-8")
+    forbidden = ["Jobs-Finder", "match", "readiness", "source URL", "job_id", "profile/CV evidence", "verification warnings"]
+    for token in forbidden:
+        assert token.lower() not in cover.lower()

@@ -149,7 +149,7 @@ def test_unverified_skills_never_become_confirmed_competencies():
 def test_verified_skills_appear_in_core_competencies():
     docs, _ = _docs(_mixed_profile())
     cv = docs["tailored_cv_text"]
-    assert "CORE COMPETENCIES" in cv
+    assert "CORE PROFESSIONAL COMPETENCIES" in cv
     assert "Clinical assessment and treatment" in cv
 
 
@@ -203,7 +203,8 @@ def test_summary_claims_medical_doctor_only_with_verified_md():
     docs, _ = _docs(_mixed_profile())
     summary = docs["tailored_cv_text"].split("PROFESSIONAL SUMMARY", 1)[1].split("\n\n", 1)[0]
     assert "Medical Doctor" in summary
-    assert "years of verified clinical experience" in summary
+    assert "years of clinical experience" in summary
+    assert "verified clinical" not in summary
 
 
 # ---------------------------------------------------------------------------

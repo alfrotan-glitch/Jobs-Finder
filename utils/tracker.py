@@ -32,6 +32,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from utils.medical_requirements import canonical_source_fields, has_actionable_source
+
 DB_PATH = Path(__file__).resolve().parent.parent / "applications.db"
 
 FOUND = "FOUND"
@@ -104,6 +106,9 @@ def _to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     # Backward-compatible aliases used by document generation and older views.
     data["platform"] = data.get("source", "")
     data["company"] = data.get("company", "")
+    metadata = data.get("metadata") or {}
+    data["apply_email"] = metadata.get("apply_email") or metadata.get("application_email") or ""
+    data["application_method"] = metadata.get("application_method") or "UNAVAILABLE"
     return data
 
 
@@ -135,6 +140,21 @@ def readiness_to_status(readiness: str) -> str:
 def log_discovered(job: Any) -> None:
     data = _job_dict(job)
     metadata = data.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        metadata = _json(metadata)
+    source = canonical_source_fields(data)
+    metadata.update(
+        {
+            "source_name": source.get("source_name") or metadata.get("source_name") or metadata.get("source") or data.get("platform") or "",
+            "source_url": source.get("source_url") or metadata.get("source_url") or "",
+            "vacancy_url": source.get("vacancy_url") or data.get("url") or "",
+            "apply_url": source.get("apply_url") or None,
+            "apply_email": source.get("apply_email") or metadata.get("apply_email") or metadata.get("application_email") or "",
+            "application_method": source.get("application_method") or metadata.get("application_method") or "UNAVAILABLE",
+            "source_valid": source.get("source_valid"),
+            "source_problems": source.get("problems") or [],
+        }
+    )
     timestamp = now_iso()
     conn = get_db()
     try:
@@ -160,9 +180,9 @@ def log_discovered(job: Any) -> None:
                 data.get("title") or "Untitled vacancy",
                 data.get("company") or "Unknown employer",
                 data.get("location") or "",
-                data.get("platform") or metadata.get("source") or "",
-                data.get("url") or "",
-                data.get("apply_url") or data.get("url") or "",
+                source.get("source_name") or data.get("platform") or metadata.get("source") or "",
+                source.get("vacancy_url") or data.get("url") or "",
+                source.get("apply_url") or "",
                 data.get("description") or "",
                 FOUND,
                 json.dumps(metadata, ensure_ascii=False),
@@ -256,8 +276,17 @@ def list_jobs(limit: int = 100) -> list[dict[str, Any]]:
         conn.close()
 
 
+def _is_actionable_market_job(job: dict[str, Any]) -> bool:
+    return has_actionable_source(job)
+
+
+def list_actionable_jobs(limit: int = 100) -> list[dict[str, Any]]:
+    return [job for job in list_jobs(limit=limit * 3) if _is_actionable_market_job(job)][:limit]
+
+
 def get_recommended_jobs(limit: int = 20) -> list[dict[str, Any]]:
-    jobs = list_jobs(limit=500)
+    jobs = list_actionable_jobs(limit=500)
+
     def rank(job: dict[str, Any]) -> tuple[int, str]:
         readiness = job.get("readiness") or ""
         metadata = job.get("metadata") or {}

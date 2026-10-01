@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import date
 from typing import Any
 
-from utils.medical_requirements import AFGHAN_PROVINCES, ExtractedRequirements, Requirement, extract_requirements_from_job, is_valid_application_url
+from utils.medical_requirements import AFGHAN_PROVINCES, ExtractedRequirements, Requirement, extract_requirements_from_job, is_valid_application_url, is_valid_email
 from utils.profile import ProfileEvidence, build_profile_evidence
 
 
@@ -98,6 +98,7 @@ DIRECT_EVIDENCE_KEYS = {
     "supervision_management": ["supervision_management", "management_experience_years"],
     "moph_coordination": ["moph_coordination", "afghanistan_experience"],
     "safeguarding_psea": ["safeguarding_psea"],
+    "quality_improvement": ["quality_improvement"],
     "emergency_response": ["emergency_response"],
     "supply_logistics": ["supply_logistics"],
     "language_english": ["language_english"],
@@ -140,7 +141,7 @@ def match_extracted_requirements(
     # Application URL/email are important operational requirements even if not in
     # the vacancy text's qualifications section.
     facts = dict(extracted.facts)
-    if facts.get("application_url") or facts.get("application_email"):
+    if facts.get("application_url") or facts.get("application_email") or facts.get("official_route") or facts.get("application_method"):
         matches.append(_match_application_destination(facts))
         if facts.get("application_subject_required"):
             matches.append(_match_application_subject(facts))
@@ -189,6 +190,10 @@ def match_extracted_requirements(
 
 def _match_requirement(requirement: Requirement, evidence: ProfileEvidence, *, today: date) -> RequirementMatch:
     key = requirement.key
+    if key == "source_validity":
+        return _source_validity_match(requirement)
+    if key == "role_family_compatibility":
+        return _role_family_match(requirement, evidence)
     if key in DIRECT_EVIDENCE_KEYS:
         return _direct_match(requirement, evidence, DIRECT_EVIDENCE_KEYS[key])
     if key.endswith("_experience_years") or key == "general_experience_years":
@@ -214,6 +219,65 @@ def _match_requirement(requirement: Requirement, evidence: ProfileEvidence, *, t
         value=requirement.value,
         criticality=requirement.criticality,
     )
+
+
+def _source_validity_match(requirement: Requirement) -> RequirementMatch:
+    value = requirement.value if isinstance(requirement.value, dict) else {}
+    problems = value.get("problems") or []
+    evidence = [item for item in requirement.evidence if item]
+    if value.get("source_valid") and value.get("is_actionable"):
+        return _met(requirement, evidence, "The vacancy has a named source, valid source URL, official vacancy/application route, employer, and title.")
+    explicit_unknown = str(value.get("source_name") or "").strip().upper() == "UNKNOWN"
+    status = NOT_MET if explicit_unknown or "malformed_application_route" in problems else NEEDS_VERIFICATION
+    explanation = "Source/application metadata is incomplete or invalid; this vacancy must not be treated as an actionable job until the official source and route are verified."
+    return RequirementMatch(
+        key=requirement.key,
+        label=requirement.label,
+        required=requirement.required,
+        status=status,
+        explanation=explanation + (f" Problems: {', '.join(problems)}." if problems else ""),
+        evidence=evidence,
+        required_evidence=requirement.evidence,
+        value=requirement.value,
+        criticality=requirement.criticality,
+    )
+
+
+def _role_family_match(requirement: Requirement, evidence: ProfileEvidence) -> RequirementMatch:
+    value = requirement.value if isinstance(requirement.value, dict) else {}
+    classification = str(value.get("classification") or "")
+    snippets = [str(value.get("evidence") or "").strip()] if value.get("evidence") else []
+    if classification == "incompatible_professional_role":
+        return _not_met(
+            requirement,
+            snippets,
+            value.get("explanation") or "This role requires a different professional license/qualification and does not state that MD/physician credentials are accepted.",
+        )
+    if classification == "md_physician_role":
+        if evidence.has_verified("md_degree"):
+            return _met(requirement, evidence.evidence_text("md_degree", verified_only=True)[:3] or snippets, "Verified profile evidence supports the MD/medical-doctor qualification required or accepted for this role.")
+        return _needs_verification(requirement, "The role accepts/requires an MD/physician qualification, but the MD degree is not verified in the profile.")
+    if classification == "health_public_health_compatible":
+        compatible_keys = [
+            "md_degree",
+            "clinical_experience_years",
+            "public_health_experience_years",
+            "ngo_experience_years",
+            "management_experience_years",
+            "hmis",
+            "nutrition",
+            "imam",
+            "supervision_management",
+        ]
+        matched_evidence: list[str] = []
+        for key in compatible_keys:
+            matched_evidence.extend(evidence.evidence_text(key, verified_only=True))
+        if matched_evidence or evidence.has_verified("md_degree"):
+            return _met(requirement, matched_evidence[:4] or evidence.evidence_text("md_degree", verified_only=True)[:3] or snippets, "The role family is compatible with verified medical/public-health/health-nutrition evidence in the profile.")
+        return _needs_verification(requirement, "The role appears health/public-health/nutrition compatible, but matching experience/qualification evidence is not yet verified in the profile.")
+    if classification == "ambiguous_health_words":
+        return _needs_verification(requirement, value.get("explanation") or "Health/medical/nutrition words alone are insufficient; verify actual role, qualification, credential, and duties before treating this as a match.")
+    return _not_met(requirement, snippets, value.get("explanation") or "The actual role family does not appear compatible with an MD/public-health profile.")
 
 
 def _direct_match(requirement: Requirement, evidence: ProfileEvidence, keys: list[str]) -> RequirementMatch:
@@ -309,9 +373,10 @@ def _gender_match(requirement: Requirement, evidence: ProfileEvidence) -> Requir
     required = str(requirement.value or "").lower()
     verified_genders = [str(v).lower() for v in evidence.verified_values("gender")]
     profile_gender = verified_genders[0] if verified_genders else ""
+    profile_gender_norm = "female" if profile_gender in {"female", "woman", "women", "f"} else "male" if profile_gender in {"male", "man", "men", "m"} else profile_gender
     if required.endswith("encouraged"):
         base = required.replace("_encouraged", "")
-        matches = bool(profile_gender and base in profile_gender)
+        matches = bool(profile_gender_norm and base == profile_gender_norm)
         return RequirementMatch(
             key=requirement.key,
             label=requirement.label,
@@ -329,7 +394,7 @@ def _gender_match(requirement: Requirement, evidence: ProfileEvidence) -> Requir
         )
     if not profile_gender:
         return _needs_verification(requirement, "The vacancy has a gender requirement, but gender is not verified in the profile.")
-    if required in profile_gender:
+    if required == profile_gender_norm:
         return _met(requirement, evidence.evidence_text("gender", verified_only=True), "Profile gender matches this requirement.")
     return _not_met(requirement, evidence.evidence_text("gender", verified_only=True), "Profile gender conflicts with this requirement.")
 
@@ -421,17 +486,19 @@ def _match_application_subject(facts: dict[str, Any]) -> RequirementMatch:
 
 
 def _match_application_destination(facts: dict[str, Any]) -> RequirementMatch:
-    email = facts.get("application_email")
-    url = facts.get("application_url")
+    email = facts.get("apply_email") or facts.get("application_email")
+    url = facts.get("apply_url") or facts.get("application_url")
+    method = str(facts.get("application_method") or "").upper()
+    official_route = facts.get("official_route") or facts.get("vacancy_url") or facts.get("source_url")
     if not email and isinstance(url, str) and url.lower().startswith("mailto:"):
         email = url.split(":", 1)[1].split("?", 1)[0].strip()
-    if email:
+    if email and is_valid_email(str(email)):
         return RequirementMatch(
             key="application_destination",
             label="Application email / destination",
             required="Required",
             status=MET,
-            explanation="An application email was found. Use the required subject if one is provided.",
+            explanation="A direct application email was found in the official vacancy/source data. Use the required subject if one is provided.",
             evidence=[email] + ([f"Subject: {facts.get('application_subject')}"] if facts.get("application_subject") else []),
             required_evidence=[],
             value=email,
@@ -443,21 +510,34 @@ def _match_application_destination(facts: dict[str, Any]) -> RequirementMatch:
             label="Application URL",
             required="Required",
             status=MET,
-            explanation="A valid application URL was found and retained from the source.",
+            explanation="A valid direct application URL/form was found and retained from the source.",
             evidence=[url],
             required_evidence=[],
             value=url,
             criticality="essential",
         )
+    if method == "UNAVAILABLE" and official_route:
+        return RequirementMatch(
+            key="application_destination",
+            label="Official vacancy page / application route verification",
+            required="Required",
+            status=NEEDS_VERIFICATION,
+            explanation="Only the official vacancy page is available; no direct application email/form was deterministically extracted. Open the official page and verify the application route before applying.",
+            evidence=[str(official_route)],
+            required_evidence=[],
+            value=official_route,
+            criticality="essential",
+        )
+    invalid_route = facts.get("apply_url") or url
     return RequirementMatch(
         key="application_destination",
-        label="Application URL",
+        label="Application route",
         required="Required",
-        status=NOT_MET if url else NEEDS_VERIFICATION,
-        explanation="The application URL is invalid or missing. Open the original source page and verify manually.",
-        evidence=[str(url)] if url else [],
+        status=NOT_MET if invalid_route else NEEDS_VERIFICATION,
+        explanation="No reliable application URL/email was found. This vacancy is not ready to apply until the official route is verified.",
+        evidence=[str(invalid_route)] if invalid_route else [],
         required_evidence=[],
-        value=url,
+        value=invalid_route,
         criticality="essential",
     )
 

@@ -80,13 +80,14 @@ def test_cover_letter_language_claim_is_neutral_when_not_verified():
     assert "verified language profile" not in cover.lower()
 
 
-def test_cover_letter_claims_verified_language_only_when_explicitly_verified():
+def test_cover_letter_claims_language_only_when_explicitly_verified_without_internal_metadata():
     job = _job("Fluent English required. Apply to hr@example.org by 2026-12-31.")
     profile = _unverified_profile()
     profile["languages"] = [{"name": "English", "level": "Fluent", "verified": True}]
     report = match_job_against_profile(job, profile, today=date(2026, 10, 1)).to_dict()
     docs = generate_tailored_documents(job, profile, report)
-    assert "verified language profile" in docs["cover_letter"].lower()
+    assert "language profile includes English" in docs["cover_letter"]
+    assert "verified language profile" not in docs["cover_letter"].lower()
 
 
 def test_generated_text_never_contains_raw_placeholder_tokens():

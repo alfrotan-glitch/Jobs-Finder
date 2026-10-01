@@ -15,7 +15,7 @@ from typing import Any
 import uvicorn
 import yaml
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -35,7 +35,7 @@ from utils.resume_parser import extract_resume_text
 from utils.tracker import (
     get_job_by_id,
     get_recommended_jobs,
-    list_jobs,
+    list_actionable_jobs,
     log_discovered,
     log_medical_match,
     mark_applied_manually,
@@ -62,15 +62,124 @@ def load_profile(required: bool = False) -> dict[str, Any]:
 
 def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
+    professional_title = personal.get("professional_title") or profile.get("professional_title") or "Medical Doctor"
     return {
         "name": " ".join(str(personal.get(key, "")).strip() for key in ["first_name", "last_name"]).strip(),
+        "title": professional_title if isinstance(professional_title, str) else "Medical Doctor",
         "email": personal.get("email", ""),
         "phone": personal.get("phone", ""),
         "location": personal.get("location", ""),
         "resume_path": profile.get("resume_path", ""),
         "roles": (profile.get("preferences") or {}).get("roles", []) if isinstance(profile.get("preferences"), dict) else [],
+        "locations": (profile.get("preferences") or {}).get("locations", []) if isinstance(profile.get("preferences"), dict) else [],
         "is_draft": str(profile.get("profile_status", "")).upper() == "DRAFT",
         "draft_note": profile.get("profile_status_note", ""),
+    }
+
+
+def _clean_value(value: Any) -> str:
+    text = str(value or "").strip()
+    return "" if is_unresolved_value(text) else text
+
+
+def _date_range(item: dict[str, Any]) -> str:
+    start = _clean_value(item.get("start") or item.get("start_date") or item.get("from"))
+    end = _clean_value(item.get("end") or item.get("end_date") or item.get("to"))
+    return f"{start} – {end}" if start and end else start or end
+
+
+def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
+    """Professional, read-only profile view for the UI.
+
+    This intentionally returns display fields only. It does not expose raw YAML,
+    internal verification flags, evidence IDs, or matching keys.
+    """
+    summary = profile_summary(profile)
+    professional_summary = profile.get("professional_summary") or profile.get("summary") or ""
+    if isinstance(professional_summary, dict):
+        professional_summary = professional_summary.get("text") or professional_summary.get("value") or ""
+
+    def named_items(value: Any) -> list[str]:
+        out: list[str] = []
+        if isinstance(value, dict):
+            name = _clean_value(value.get("name") or value.get("title"))
+            if name:
+                out.append(name)
+            for key, child in value.items():
+                if key not in {"name", "title", "verified"}:
+                    out.extend(named_items(child))
+        elif isinstance(value, list):
+            for child in value:
+                out.extend(named_items(child))
+        elif value not in (None, ""):
+            text = _clean_value(value)
+            if text:
+                out.append(text)
+        deduped: list[str] = []
+        for item in out:
+            if item not in deduped:
+                deduped.append(item)
+        return deduped
+
+    experience = []
+    for item in profile.get("work_history") or profile.get("experience") or []:
+        if not isinstance(item, dict):
+            continue
+        bullets = item.get("bullets") or item.get("responsibilities") or []
+        if isinstance(bullets, str):
+            bullets = [bullets]
+        experience.append(
+            {
+                "title": _clean_value(item.get("title") or item.get("role")),
+                "organization": _clean_value(item.get("organization") or item.get("employer")),
+                "location": _clean_value(item.get("location")),
+                "dates": _date_range(item),
+                "bullets": [_clean_value(bullet) for bullet in bullets if _clean_value(bullet)],
+            }
+        )
+
+    education = []
+    for item in (profile.get("medical_education") or []) + (profile.get("education") or []):
+        if isinstance(item, dict):
+            education.append(
+                {
+                    "degree": _clean_value(item.get("degree") or item.get("title") or item.get("name")),
+                    "institution": _clean_value(item.get("institution") or item.get("school") or item.get("university")),
+                    "location": _clean_value(item.get("country") or item.get("location")),
+                    "dates": _date_range(item),
+                }
+            )
+
+    registration = profile.get("license_registration") if isinstance(profile.get("license_registration"), dict) else {}
+    exit_exam = profile.get("medical_exit_exam") if isinstance(profile.get("medical_exit_exam"), dict) else {}
+    languages = []
+    for item in profile.get("languages") or []:
+        if isinstance(item, dict):
+            name = _clean_value(item.get("name") or item.get("language"))
+            level = _clean_value(item.get("level") or item.get("proficiency"))
+            if name:
+                languages.append({"name": name, "level": level})
+
+    skills = []
+    raw_skills = profile.get("skills") if isinstance(profile.get("skills"), dict) else {}
+    for group, values in raw_skills.items():
+        items = named_items(values)
+        if items:
+            skills.append({"group": str(group).replace("_", " ").title(), "items": items})
+
+    return {
+        "summary": summary,
+        "professional_summary": _clean_value(professional_summary),
+        "experience": experience,
+        "education": education,
+        "registration": {
+            "authority": _clean_value(registration.get("authority") or registration.get("council")),
+            "status": _clean_value(registration.get("status")),
+        },
+        "medical_exit_exam": {"status": _clean_value(exit_exam.get("status"))},
+        "training": named_items(profile.get("certificates") or profile.get("certifications") or profile.get("training") or []),
+        "skills": skills,
+        "languages": languages,
     }
 
 
@@ -161,6 +270,34 @@ def health():
 def api_profile():
     profile = load_profile(False)
     return {"exists": bool(profile), "summary": profile_summary(profile)}
+
+
+@app.get("/api/profile/details")
+def api_profile_details():
+    profile = load_profile(False)
+    if not profile:
+        return {"exists": False, "details": {}}
+    return {"exists": True, "details": _profile_details(profile)}
+
+
+@app.get("/api/generated-file")
+def api_generated_file(path: str):
+    """Open a generated package artifact for user review.
+
+    Only files under the local ignored documents/ directory are served. This is
+    a review/open action, not submission or sending.
+    """
+    raw_path = Path(path)
+    candidate = raw_path if raw_path.is_absolute() else ROOT / raw_path
+    resolved = candidate.resolve()
+    documents_root = (ROOT / "documents").resolve()
+    if documents_root not in [resolved, *resolved.parents]:
+        raise HTTPException(status_code=400, detail="Only generated application documents can be opened.")
+    if not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=404, detail="Generated file not found.")
+    if resolved.suffix.lower() not in {".txt", ".pdf", ".docx"}:
+        raise HTTPException(status_code=400, detail="Unsupported generated file type.")
+    return FileResponse(str(resolved), filename=resolved.name)
 
 
 @app.get("/api/profile/review")
@@ -295,7 +432,7 @@ def api_recommended(limit: int = 20):
 
 @app.get("/api/jobs")
 def api_jobs(limit: int = 200):
-    return {"jobs": list_jobs(limit=limit)}
+    return {"jobs": list_actionable_jobs(limit=limit)}
 
 
 @app.get("/api/stats")

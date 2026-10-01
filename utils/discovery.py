@@ -19,7 +19,7 @@ from urllib.parse import urljoin
 import httpx
 from bs4 import BeautifulSoup
 
-from utils.medical_requirements import extract_requirements_from_job, looks_medical, parse_closing_date, strip_html
+from utils.medical_requirements import analyze_professional_role, canonical_source_fields, extract_requirements_from_job, has_actionable_source, looks_medical, parse_closing_date, strip_html
 
 SCAN_COMPLETE = "SCAN_COMPLETE"
 NO_RELEVANT_JOBS_FOUND = "NO_RELEVANT_JOBS_FOUND"
@@ -61,11 +61,16 @@ class Job:
     company: str
     location: str
     url: str
-    apply_url: str
+    apply_url: str | None
     platform: str
     description: str = ""
     department: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    source_name: str = ""
+    source_url: str = ""
+    vacancy_url: str = ""
+    application_method: str = ""
+    apply_email: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -185,20 +190,40 @@ def deduplicate_jobs(jobs: list[Job], *, today: date | None = None) -> list[Job]
 def enrich_job(job: Job, *, today: date | None = None) -> Job:
     job.metadata = dict(job.metadata or {})
     job.metadata.setdefault("source", job.platform)
-    job.metadata.setdefault("source_url", job.url)
-    job.metadata.setdefault("source_urls", [url for url in [job.url, job.apply_url] if url])
+    job.metadata.setdefault("source_name", job.metadata.get("source") or job.platform)
+    job.metadata.setdefault("vacancy_url", job.url)
+    job.metadata.setdefault("source_urls", [url for url in [job.metadata.get("source_url"), job.url, job.apply_url] if url])
     if not job.metadata.get("closing_date"):
         parsed = parse_closing_date("\n".join([job.title, job.location, job.description, str(job.metadata)]))
         if parsed:
             job.metadata["closing_date"] = parsed
     requirements = extract_requirements_from_job(job.to_dict(), today=today)
-    job.metadata["requirements"] = requirements.to_dict()
     facts = requirements.facts
     for key in ["closing_date", "application_email", "application_url", "application_subject", "reference_number"]:
         if facts.get(key) and not job.metadata.get(key):
             job.metadata[key] = facts[key]
-    if not job.apply_url:
-        job.apply_url = job.metadata.get("application_email") or job.metadata.get("application_url") or job.url
+    source = canonical_source_fields(job.to_dict())
+    job.source_name = str(source.get("source_name") or "")
+    job.source_url = str(source.get("source_url") or "")
+    job.vacancy_url = str(source.get("vacancy_url") or job.url or "")
+    job.apply_url = str(source.get("apply_url")) if source.get("apply_url") else None
+    job.apply_email = str(source.get("apply_email") or "")
+    job.application_method = str(source.get("application_method") or "UNAVAILABLE")
+    if job.vacancy_url:
+        job.url = job.vacancy_url
+    job.metadata.update(
+        {
+            "source_name": job.source_name,
+            "source_url": job.source_url,
+            "vacancy_url": job.vacancy_url,
+            "apply_url": job.apply_url or None,
+            "apply_email": job.apply_email,
+            "application_method": job.application_method,
+            "source_valid": source.get("source_valid"),
+            "source_problems": source.get("problems") or [],
+            "requirements": requirements.to_dict(),
+        }
+    )
     return job
 
 
@@ -251,7 +276,10 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
         try:
             if not isinstance(job, Job) or not _job_is_relevant(job):
                 continue
-            normalized.append(enrich_job(job, today=today))
+            enriched = enrich_job(job, today=today)
+            if not has_actionable_source(enriched.to_dict()):
+                continue
+            normalized.append(enriched)
         except (AttributeError, TypeError, ValueError, KeyError):
             # A malformed item must not discard valid vacancies or crash the scan.
             continue
@@ -277,10 +305,27 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
 
 def _job_is_relevant(job: Job) -> bool:
     text = "\n".join([job.title, job.company, job.location, job.description])
-    if looks_medical(text):
+    role = analyze_professional_role(job.title, job.description)
+    if role.get("classification") in {"md_physician_role", "health_public_health_compatible", "incompatible_professional_role"}:
         return True
+    # A bare word such as "health", "nutrition", "medical", or "hospital" is
+    # not enough. Keep only strong medical/public-health terms that identify an
+    # actual role family or credential for downstream deterministic matching.
     lower = text.lower()
-    return any(term in lower for term in MEDICAL_SEARCH_TERMS)
+    strong_terms = [
+        "medical officer",
+        "medical doctor",
+        "physician",
+        "public health",
+        "health and nutrition",
+        "hmis",
+        "therapeutic feeding",
+        "tfu",
+        "imam",
+        "cmam",
+        "clinical supervisor",
+    ]
+    return any(term in lower for term in strong_terms) or looks_medical(job.title)
 
 
 async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = None) -> list[Job]:
@@ -367,13 +412,21 @@ def _parse_acbar_listing(html: str, base_url: str) -> list[Job]:
                 company=company,
                 location=location,
                 url=href,
-                apply_url=href,
+                apply_url=None,
                 platform="acbar",
                 description=context,
+                source_name="ACBAR",
+                source_url=base_url,
+                vacancy_url=href,
+                application_method="UNAVAILABLE",
                 metadata={
                     "source": "ACBAR",
+                    "source_name": "ACBAR",
                     "source_tier": "A",
-                    "source_url": href,
+                    "source_url": base_url,
+                    "vacancy_url": href,
+                    "apply_url": None,
+                    "application_method": "UNAVAILABLE",
                     "closing_date": closing,
                     "source_provenance": [{"source": "ACBAR listing", "url": base_url, "field": "listing card"}],
                 },
@@ -393,13 +446,22 @@ def _parse_acbar_detail(html: str, job: Job) -> Job:
     job.description = normalize_space(text)[:12000]
     email = _extract_email(text)
     if email:
-        job.apply_url = email
+        job.apply_email = email
+        job.apply_url = None
+        job.application_method = "EMAIL"
+        job.metadata["apply_email"] = email
         job.metadata["application_email"] = email
+        job.metadata["application_method"] = "EMAIL"
     app_url = _extract_application_url(text)
     if app_url:
         job.metadata["application_url"] = app_url
-        if not email:
+        job.metadata["apply_url"] = app_url
+        if email:
             job.apply_url = app_url
+        else:
+            job.apply_url = app_url
+            job.application_method = "WEB"
+            job.metadata["application_method"] = "WEB"
     closing = parse_closing_date(text)
     if closing:
         job.metadata["closing_date"] = closing
@@ -447,13 +509,21 @@ def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int) -> list[Jo
                 company=company,
                 location="Afghanistan",
                 url=href,
-                apply_url=href,
+                apply_url=None,
                 platform="reliefweb",
                 description=context,
+                source_name="ReliefWeb",
+                source_url=base_url,
+                vacancy_url=href,
+                application_method="UNAVAILABLE",
                 metadata={
                     "source": "ReliefWeb",
+                    "source_name": "ReliefWeb",
                     "source_tier": "B",
-                    "source_url": href,
+                    "source_url": base_url,
+                    "vacancy_url": href,
+                    "apply_url": None,
+                    "application_method": "UNAVAILABLE",
                     "closing_date": closing,
                     "source_provenance": [{"source": "ReliefWeb listing", "url": base_url, "field": "listing card"}],
                 },
@@ -468,11 +538,17 @@ def _guess_company_from_listing_context(context: str, title: str) -> str:
     text = context.replace(title, " ", 1)
     text = re.sub(r"\bNEW\b|\bFull Time\b|\bPart Time\b", " ", text, flags=re.I)
     text = re.sub(r"\b\d+\s+(?:minutes?|hours?|days?|weeks?)\s+ago\b", " ", text, flags=re.I)
-    text = re.sub(r"\b20\d{2}-\d{2}-\d{2}\b", " ", text)
-    parts = [normalize_space(p) for p in re.split(r"[•\n]+", text) if normalize_space(p)]
+    text = re.sub(r"\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b", " ", text)
+    text = re.sub(r"\b(?:close|closing|deadline|expire)[^•\n]{0,40}", " ", text, flags=re.I)
+    provinces = _guess_location(text)
+    if provinces:
+        for province in provinces.split(","):
+            text = re.sub(rf"\b{re.escape(province.strip())}\b", " ", text, flags=re.I)
+    parts = [normalize_space(p) for p in re.split(r"[•\n|]+", text) if normalize_space(p)]
     for part in parts:
-        if not _guess_location(part) and len(part) <= 100:
-            return part
+        cleaned = normalize_space(re.sub(r"\bAfghanistan\b|\bKabul\b", " ", part, flags=re.I))
+        if cleaned and len(cleaned) <= 100:
+            return cleaned
     return ""
 
 

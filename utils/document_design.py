@@ -134,6 +134,9 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
     lines = [ln.rstrip() for ln in (text or "").splitlines()]
     nonempty = [ln.strip() for ln in lines if ln.strip()]
     name = nonempty[0] if nonempty else "Applicant"
+    headline_from_text = ""
+    if len(nonempty) > 1 and ":" not in nonempty[1] and not nonempty[1].isupper():
+        headline_from_text = nonempty[1]
     email = phone = location = ""
     target_role = target_org = target_location = ""
     for line in nonempty[:20]:
@@ -152,7 +155,7 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
     reference = str(job_metadata.get("reference_number") or package.get("vacancy_reference") or "").strip()
     sections = _section_map(lines)
     profile = " ".join(sections.get("PROFESSIONAL SUMMARY", []) or sections.get("PROFESSIONAL PROFILE", []))
-    strengths = [_clean_bullet(x) for x in sections.get("CORE COMPETENCIES", [])]
+    strengths = [_clean_bullet(x) for x in (sections.get("CORE PROFESSIONAL COMPETENCIES", []) or sections.get("CORE MEDICAL / PUBLIC HEALTH COMPETENCIES", []) or sections.get("CORE COMPETENCIES", []))]
     expanded: list[str] = []
     for item in strengths:
         expanded.extend([p.strip() for p in item.split(",") if p.strip()])
@@ -172,12 +175,12 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
     if current:
         experience.append(current)
     education = [_clean_bullet(x) for x in sections.get("EDUCATION", [])]
-    registration = [_clean_bullet(x) for x in sections.get("LICENSE / REGISTRATION", [])]
-    exit_exam = [_clean_bullet(x) for x in sections.get("MEDICAL EXIT EXAM", [])]
-    certs = [_clean_bullet(x) for x in sections.get("CERTIFICATIONS & TRAINING", [])]
+    registration = [_clean_bullet(x) for x in (sections.get("PROFESSIONAL REGISTRATION", []) or sections.get("PROFESSIONAL REGISTRATION / LICENSE", []) or sections.get("LICENSE / REGISTRATION", []))]
+    exit_exam = [_clean_bullet(x) for x in (sections.get("MEDICAL EXIT EXAMINATION", []) or sections.get("MEDICAL EXIT EXAM", []))]
+    certs = [_clean_bullet(x) for x in (sections.get("RELEVANT TRAINING & CERTIFICATIONS", []) or sections.get("RELEVANT PROFESSIONAL TRAINING & CERTIFICATIONS", []) or sections.get("CERTIFICATIONS & TRAINING", []))]
     languages_raw = [_clean_bullet(x) for x in sections.get("LANGUAGES", [])]
     languages = _split_languages(languages_raw[0]) if languages_raw else []
-    headline = "Medical Doctor | Health & Nutrition Program Coordination"
+    headline = headline_from_text or "Medical Doctor"
     return {
         "design_system": DESIGN_SYSTEM_VERSION,
         "name": name,
@@ -228,7 +231,7 @@ def parse_cover_letter_text(text: str, metadata: dict[str, Any] | None = None) -
     return {
         "design_system": DESIGN_SYSTEM_VERSION,
         "name": name,
-        "headline": "Medical Doctor | Health & Nutrition Program Coordination",
+        "headline": "Application Letter",
         "contact": contact,
         "subject": subject or target_role,
         "target_role": target_role,
@@ -432,7 +435,7 @@ def _draw_footer(cnv, page: int, fonts: tuple[str, str, str, str], role: str) ->
     cnv.line(42, 38, w - 42, 38)
     cnv.setFont(sans, 6.6)
     cnv.setFillColor(_c(Theme.muted))
-    cnv.drawString(42, 25, "Jobs-Finder · Review copy")
+    cnv.drawString(42, 25, f"{role or 'CV'}")
     cnv.drawRightString(w - 42, 25, f"Page {page} / 2")
 
 
@@ -508,7 +511,7 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     width, height = A4
     cnv = canvas.Canvas(str(path), pagesize=A4)
     cnv.setTitle(f"{model.get('name')} — {model.get('target_role')} CV")
-    cnv.setAuthor("Jobs-Finder")
+    cnv.setAuthor(model.get("name") or "Applicant")
 
     # Page 1 header.
     cnv.setFillColor(_c("#FFFFFF"))
@@ -561,8 +564,8 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     cnv.line(main_x, 90, main_x + 54, 90)
     cnv.setFont(sans_bold, 6.8)
     cnv.setFillColor(_c(Theme.gold))
-    cnv.drawString(main_x, 76, "APPLICATION FOCUS")
-    _draw_wrapped(cnv, f"Tailored to {model.get('target_role')} using role-relevant clinical, HMIS, and coordination evidence from the reviewed profile/CV.", main_x + 93, 76, main_w - 93, font=sans, size=7.2, leading=9.2, color=Theme.muted)
+    cnv.drawString(main_x, 76, "RELEVANT EXPERIENCE")
+    _draw_wrapped(cnv, f"Experience selected for the {model.get('target_role')} role, with emphasis on clinical, health-data, supervision, and coordination duties where present.", main_x + 93, 76, main_w - 93, font=sans, size=7.2, leading=9.2, color=Theme.muted)
     _draw_footer(cnv, 1, fonts, model.get("target_role") or "")
     cnv.showPage()
 
@@ -592,8 +595,8 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     cnv.line(main_x, 86, main_x + 50, 86)
     cnv.setFont(sans_bold, 6.8)
     cnv.setFillColor(_c(Theme.gold))
-    cnv.drawString(main_x, 72, "DOCUMENT SCOPE")
-    _draw_wrapped(cnv, f"Prepared for {model.get('reference') or model.get('target_role')} using reviewed profile/CV evidence only.", main_x + 90, 72, main_w - 90, font=sans, size=7.2, leading=9.2, color=Theme.muted)
+    cnv.drawString(main_x, 72, "PROFESSIONAL CREDENTIALS")
+    _draw_wrapped(cnv, "Education, registration, examination, training, and language sections reflect the CV text supplied for this application.", main_x + 90, 72, main_w - 90, font=sans, size=7.2, leading=9.2, color=Theme.muted)
     _draw_footer(cnv, 2, fonts, model.get("target_role") or "")
     cnv.save()
 
@@ -825,7 +828,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
     width, height = A4
     cnv = canvas.Canvas(str(path), pagesize=A4)
     cnv.setTitle(f"{model.get('name')} — Cover Letter")
-    cnv.setAuthor("Jobs-Finder")
+    cnv.setAuthor(model.get("name") or "Applicant")
     cnv.setFillColor(_c("#FFFFFF"))
     cnv.rect(0, 0, width, height, stroke=0, fill=1)
     cnv.setFillColor(_c(Theme.deep))
@@ -887,7 +890,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
     cnv.line(42, 38, width - 42, 38)
     cnv.setFont(sans, 6.6)
     cnv.setFillColor(_c(Theme.muted))
-    cnv.drawString(42, 25, "Jobs-Finder review package · no submission performed")
+    cnv.drawString(42, 25, f"{model.get('name') or 'Applicant'} — Cover Letter")
     cnv.save()
 
 
@@ -952,7 +955,7 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
     for section in doc.sections:
         f = section.footer.paragraphs[0]
         f.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = f.add_run("Jobs-Finder review package · no submission performed")
+        run = f.add_run(f"{model.get('name') or 'Applicant'} — Cover Letter")
         run.font.size = Pt(7)
         run.font.color.rgb = RGBColor(102, 115, 122)
     doc.save(str(path))

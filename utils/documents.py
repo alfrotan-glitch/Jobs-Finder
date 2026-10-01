@@ -47,7 +47,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from utils.medical_matcher import MET, NEEDS_VERIFICATION, NOT_ELIGIBLE_STATUS, NOT_MET
-from utils.profile import build_profile_evidence, is_unresolved_value, is_verified_flag
+from utils.profile import build_profile_evidence, is_unresolved_value, is_verified_flag, parse_profile_date
 
 
 def _full_name(profile: dict[str, Any]) -> str:
@@ -100,12 +100,12 @@ def _language_lines(profile: dict[str, Any], *, verified_only: bool = False) -> 
         verified = is_verified_flag(item.get("verified")) and not is_unresolved_value(level)
         if not name or (verified_only and not verified):
             continue
-        label = "Dari/Persian" if name.lower() in {"dari", "persian", "dari / persian"} else name
+        label = "Dari / Persian" if name.lower() in {"dari", "persian", "dari / persian"} else name
         shown_level = level if level and not is_unresolved_value(level) else ""
         text = f"{label} — {shown_level}" if shown_level else label
         if text not in values:
             values.append(text)
-    order = {"dari/persian": 0, "dari": 0, "persian": 0, "english": 1, "pashto": 2}
+    order = {"dari / persian": 0, "dari/persian": 0, "dari": 0, "persian": 0, "english": 1, "pashto": 2}
     values.sort(key=lambda v: order.get(v.split("—", 1)[0].strip().lower(), 99))
     return values
 
@@ -217,6 +217,67 @@ def _experience_header(entry: dict[str, Any]) -> str:
     return header
 
 
+def _entry_sort_key(entry: dict[str, Any]) -> tuple[date, date, str]:
+    end_raw = entry.get("end") or entry.get("end_date") or entry.get("to") or "present"
+    start_raw = entry.get("start") or entry.get("start_date") or entry.get("from") or "1900-01"
+    end_date = parse_profile_date(end_raw, today=date.today()) or date.today()
+    start_date = parse_profile_date(start_raw, today=date.today()) or date(1900, 1, 1)
+    return (end_date, start_date, _resolved_entry_value(entry, "title", "role"))
+
+
+def _reverse_chronological_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(entries, key=_entry_sort_key, reverse=True)
+
+
+def _entry_text_values(entry: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in ["bullets", "responsibilities", "achievements", "duties"]:
+        value = entry.get(key)
+        if isinstance(value, list):
+            values.extend(str(item) for item in value if item and not is_unresolved_value(item))
+        elif value and not is_unresolved_value(value):
+            values.append(str(value))
+    description = entry.get("description")
+    if description and not is_unresolved_value(description):
+        values.append(str(description))
+    return values
+
+
+def _split_substantive_bullets(values: list[str]) -> list[str]:
+    bullets: list[str] = []
+    for value in values:
+        text = re.sub(r"\s+", " ", str(value or "")).strip(" -•;.")
+        if not text or is_unresolved_value(text):
+            continue
+        parts = [p.strip(" -•;.") for p in re.split(r"(?:\n+|;|\.\s+)", text) if p.strip(" -•;.")]
+        for part in parts or [text]:
+            part = re.sub(r"\s+", " ", part).strip(" -•;.")
+            if len(part) < 8 or is_unresolved_value(part):
+                continue
+            if not re.search(r"[A-Za-zآ-ی]", part):
+                continue
+            norm = _normalized_phrase(part)
+            if norm and all(norm != _normalized_phrase(existing) for existing in bullets):
+                bullets.append(part)
+    return bullets
+
+
+def _entry_bullets_for_job(entry: dict[str, Any], job: dict[str, Any], match_report: dict[str, Any], *, limit: int = 5) -> list[str]:
+    bullets = _split_substantive_bullets(_entry_text_values(entry))
+    if not bullets:
+        return []
+    ranked = _rank_strings_for_job(bullets, job, match_report, limit=max(limit, len(bullets)))
+    # Keep role-relevant bullets first, then preserve remaining verified duties
+    # so a real position is not reduced to one artificial sentence.
+    ordered: list[str] = []
+    for bullet in ranked + bullets:
+        if bullet not in ordered:
+            ordered.append(bullet)
+        if len(ordered) >= limit:
+            break
+    return ordered
+
+
 def _is_verified_entry(item: Any) -> bool:
     """True only for a dict entry explicitly confirmed with ``verified: true``."""
     return isinstance(item, dict) and is_verified_flag(item.get("verified"))
@@ -283,30 +344,6 @@ def _certificates_by_verification(profile: dict[str, Any]) -> tuple[list[str], l
     return verified, unverified
 
 
-def _rank_work_entries(entries: list[dict[str, Any]], job: dict[str, Any], matched_labels: list[str]) -> list[dict[str, Any]]:
-    focus_text = "\n".join([str(job.get("title", "")), str(job.get("description", "")), "\n".join(matched_labels)])
-    terms = _tokenize_focus(focus_text)
-
-    def score(entry: dict[str, Any]) -> tuple[int, int, int, str]:
-        title = str(entry.get("title") or entry.get("role") or "")
-        text = (_stringify_item(entry) + " " + " ".join(str(b) for b in (entry.get("bullets") or []))).strip()
-        hits = len(_focus_term_hits(text, terms))
-        title_lower = title.lower()
-        health_role_bonus = 0
-        if any(token in title_lower for token in ["medical doctor", "medical officer", "tfu medical", "physician"]):
-            health_role_bonus += 4
-        if any(token in title_lower for token in ["health and nutrition", "nutrition supervisor", "technical supervisor"]):
-            health_role_bonus += 4
-        if any(token in title_lower for token in ["supervisor", "team leader", "in-charge"]):
-            health_role_bonus += 2
-        # Administrative / communications roles stay available for coordination-heavy
-        # vacancies, but should not outrank direct clinical/health supervision evidence.
-        support_role_penalty = 2 if any(token in title_lower for token in ["administrative", "finance", "public relations", "communications advisor"]) else 0
-        recency = str(entry.get("end") or entry.get("end_date") or entry.get("start") or "")
-        return (hits + health_role_bonus - support_role_penalty, hits, health_role_bonus, recency)
-
-    return sorted(entries, key=score, reverse=True)
-
 def _verification_warnings(match_report: dict[str, Any]) -> list[str]:
     warnings = []
     for item in match_report.get("requirement_matches", []):
@@ -320,7 +357,7 @@ def _verification_warnings(match_report: dict[str, Any]) -> list[str]:
 def _package_verification_blockers(match_report: dict[str, Any]) -> list[dict[str, str]]:
     """Return unmet/unverified requirements that must stay visible in review packages."""
     blockers: list[dict[str, str]] = []
-    ignored_keys = {"closing_date", "application_destination", "application_subject"}
+    ignored_keys = {"closing_date", "application_subject"}
     for item in match_report.get("requirement_matches", []):
         if not isinstance(item, dict) or item.get("key") in ignored_keys:
             continue
@@ -434,11 +471,29 @@ def _verified_dict_items(items: list[Any]) -> list[Any]:
     return [item for item in items if isinstance(item, dict) and is_verified_flag(item.get("verified"))]
 
 
+def _education_lines(items: list[Any], *, limit: int = 6) -> list[str]:
+    lines: list[str] = []
+    for item in _verified_dict_items(items):
+        degree = _resolved_entry_value(item, "degree", "title", "name")
+        institution = _resolved_entry_value(item, "institution", "school", "university", "organization")
+        start = _resolved_entry_value(item, "start", "start_date", "from")
+        end = _resolved_entry_value(item, "end", "end_date", "to")
+        year = _resolved_entry_value(item, "year")
+        years = f"{start}–{end}" if start and end else year
+        parts = [part for part in [degree, institution, years] if part]
+        line = " — ".join(parts).strip()
+        if line and line not in lines:
+            lines.append(line)
+        if len(lines) >= limit:
+            break
+    return lines
+
+
 def _focus_labels(match_report: dict[str, Any], *, limit: int = 8) -> list[str]:
     labels: list[str] = []
     for item in _requirement_matches(match_report):
         key = item.get("key")
-        if key in {"closing_date", "application_destination", "application_subject", "location_requirement"}:
+        if key in {"source_validity", "role_family_compatibility", "closing_date", "application_destination", "application_subject", "location_requirement"}:
             continue
         if item.get("status") != MET:
             continue
@@ -520,6 +575,26 @@ def _vacancy_fit_highlights(profile: dict[str, Any], job: dict[str, Any], match_
     return _rank_strings_for_job(_profile_evidence_lines(profile), job, match_report, limit=limit)
 
 
+def _competencies_from_verified_experience(profile: dict[str, Any], job: dict[str, Any], match_report: dict[str, Any], *, limit: int = 10) -> list[str]:
+    lines = "\n".join(_profile_evidence_lines(profile)).lower()
+    candidates = [
+        ("Clinical consultations", ["clinical consultation", "clinical consultations"]),
+        ("Patient assessment", ["patient assessment"]),
+        ("Diagnosis and treatment", ["diagnosis", "treatment"]),
+        ("Referral coordination", ["referral"]),
+        ("HMIS reporting", ["hmis"]),
+        ("Nutrition screening", ["nutrition screening"]),
+        ("SAM/IMAM/CMAM services", ["sam", "imam", "cmam"]),
+        ("Therapeutic Feeding Unit", ["tfu", "therapeutic feeding"]),
+        ("Team supervision", ["supervision", "supervised", "supervise"]),
+        ("Team mentoring", ["mentoring", "mentor"]),
+        ("MoPH coordination", ["moph", "ministry of public health"]),
+        ("Safeguarding / PSEA", ["safeguarding", "psea"]),
+    ]
+    found = [label for label, needles in candidates if any(needle in lines for needle in needles)]
+    return _rank_strings_for_job(found, job, match_report, limit=limit) if found else []
+
+
 
 def _job_focus_phrases(job: dict[str, Any], match_report: dict[str, Any] | None = None, *, limit: int = 6) -> list[str]:
     """Human-readable vacancy focus phrases for professional documents."""
@@ -571,25 +646,118 @@ def _max_verified_years(evidence, key: str) -> float | None:
     return max(values) if values else None
 
 
-def _verified_summary_sentence(evidence, title: str, company: str) -> str:
-    """Build the professional-summary opener from verified evidence only.
+def _verified_profile_title(profile: dict[str, Any], evidence) -> str:
+    """Return a profile-owner-confirmed professional title, if available."""
+    personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
+    candidates: list[tuple[Any, bool]] = []
+    candidates.append((personal.get("professional_title"), is_verified_flag(personal.get("verified"))))
+    title = profile.get("professional_title")
+    if isinstance(title, dict):
+        candidates.append((title.get("text") or title.get("value") or title.get("title"), is_verified_flag(title.get("verified"))))
+    else:
+        # A top-level plain string has no sibling verification flag.  Only use
+        # it when the verified medical-degree evidence independently supports a
+        # medical professional headline.
+        candidates.append((title, evidence.has_verified("md_degree")))
+    for value, verified in candidates:
+        text = str(value or "").strip()
+        if verified and text and not is_unresolved_value(text):
+            return text
+    return ""
 
-    There is deliberately no hardcoded applicant description here: the
-    "Medical Doctor" headline requires a verified MD degree, and experience
-    qualifiers require verified years evidence. With nothing verified, the
-    summary is an honest, neutral application statement.
-    """
+
+def _signature_title(profile: dict[str, Any], evidence) -> str:
+    title = _verified_profile_title(profile, evidence)
+    if title:
+        return title.split("|", 1)[0].strip()
+    if evidence.has_verified("md_degree"):
+        return "Medical Doctor"
+    return ""
+
+
+def _professional_title(profile: dict[str, Any], evidence, job: dict[str, Any], match_report: dict[str, Any]) -> str:
+    profile_title = _verified_profile_title(profile, evidence)
+    if profile_title:
+        return profile_title
+    if not evidence.has_verified("md_degree"):
+        return "Applicant"
+    focus = " ".join(_focus_labels(match_report, limit=8) + _job_focus_phrases(job, match_report, limit=8)).lower()
+    has_public_health = any(
+        evidence.has_verified(key)
+        for key in ["public_health_experience_years", "ngo_experience_years", "management_experience_years", "nutrition", "imam", "hmis", "supervision_management"]
+    )
+    has_clinical = evidence.has_verified("clinical_experience_years")
+    if has_public_health and any(term in focus for term in ["nutrition", "imam", "cmam", "sam", "tfu", "hmis", "public health", "supervision", "coordination"]):
+        return "Medical Doctor | Public Health, Nutrition & Clinical Programs"
+    if has_clinical and any(term in focus for term in ["clinical", "patient", "treatment", "diagnosis", "opd"]):
+        return "Medical Doctor | Clinical Care & Primary Health"
+    return "Medical Doctor"
+
+
+def _verified_profile_summary(profile: dict[str, Any]) -> str:
+    summary = profile.get("professional_summary") or profile.get("summary")
+    if isinstance(summary, dict):
+        text = str(summary.get("text") or summary.get("value") or "").strip()
+        if is_verified_flag(summary.get("verified")) and text and not is_unresolved_value(text):
+            return text
+    return ""
+
+
+def _has_verified_md(profile: dict[str, Any]) -> bool:
+    raw_education_items = _profile_list(profile, "medical_education") + _profile_list(profile, "medical.education") + _profile_list(profile, "medical.degrees") + _profile_list(profile, "education")
+    return any("MD" in line or "Medical Doctor" in line or "Doctor of Medicine" in line for line in _education_lines(raw_education_items, limit=6))
+
+
+def _verified_work_haystack(profile: dict[str, Any]) -> str:
+    work_entries, _ = _split_work_entries(profile)
+    pieces: list[str] = []
+    for entry in work_entries:
+        pieces.append(_experience_header(entry))
+        pieces.extend(_entry_text_values(entry))
+    return "\n".join(piece for piece in pieces if piece).lower()
+
+
+def _professional_background_sentence(profile: dict[str, Any]) -> str:
+    """Concise background sentence grounded in verified profile entries."""
+    if not _has_verified_md(profile):
+        return ""
+    haystack = _verified_work_haystack(profile)
+    has_acf = "action against hunger" in haystack or "acf" in haystack
+    has_tfu = "tfu doctor" in haystack or "therapeutic feeding unit" in haystack
+    has_health_nutrition = "health & nutrition supervisor" in haystack or "health and nutrition supervisor" in haystack
+    if has_acf and has_tfu and has_health_nutrition:
+        return (
+            "I am a Medical Doctor with clinical, health and nutrition program experience in humanitarian and public-health settings in Afghanistan, "
+            "including experience as a TFU Doctor and Safeguarding/PSEA Focal Point and as a Health & Nutrition Supervisor with Action Against Hunger."
+        )
+    if any(term in haystack for term in ["clinical", "patient", "treatment", "diagnosis", "public health", "nutrition", "hmis"]):
+        return "I am a Medical Doctor with clinical, health-program and public-health experience in Afghanistan."
+    return ""
+
+
+def _verified_summary_sentence(profile: dict[str, Any], evidence, title: str, company: str, focus_phrases: list[str], highlights: list[str]) -> str:
+    """Build the professional-summary opener from verified evidence only."""
+    profile_summary = _verified_profile_summary(profile)
+    if profile_summary:
+        return profile_summary
     headline = "Medical Doctor" if evidence.has_verified("md_degree") else "Applicant"
     qualifiers: list[str] = []
     clinical_years = _max_verified_years(evidence, "clinical_experience_years")
     if clinical_years:
-        qualifiers.append(f"{clinical_years:g} years of verified clinical experience")
+        qualifiers.append(f"{clinical_years:g} years of clinical experience")
     ngo_years = _max_verified_years(evidence, "ngo_experience_years")
     if ngo_years:
-        qualifiers.append(f"{ngo_years:g} years of verified NGO/humanitarian experience")
+        qualifiers.append(f"{ngo_years:g} years of NGO/humanitarian experience")
+    public_years = _max_verified_years(evidence, "public_health_experience_years")
+    if public_years:
+        qualifiers.append(f"{public_years:g} years of public-health experience")
     if qualifiers:
-        return f"{headline} with {' and '.join(qualifiers)}, applying for the {title} role at {company}."
-    return f"{headline} applying for the {title} role at {company}."
+        sentence = f"{headline} with {' and '.join(qualifiers)}."
+    else:
+        sentence = f"{headline} applying for the {title} role at {company}."
+    if focus_phrases and highlights:
+        sentence += f" Relevant experience is strongest in {', '.join(focus_phrases[:3])}."
+    return sentence
 
 def generate_tailored_documents(
     job: dict[str, Any],
@@ -622,8 +790,8 @@ def generate_tailored_documents(
     # governs work history, skills, certificates/training, languages, and the
     # professional summary. Unverified items are collected into review
     # warnings instead of being printed as employer-facing facts.
-    raw_education_items = _profile_list(profile, "medical_education") + _profile_list(profile, "medical.education") + _profile_list(profile, "medical.degrees")
-    education = _safe_bullets(_verified_dict_items(raw_education_items), limit=4)
+    raw_education_items = _profile_list(profile, "medical_education") + _profile_list(profile, "medical.education") + _profile_list(profile, "medical.degrees") + _profile_list(profile, "education")
+    education = _education_lines(raw_education_items, limit=6)
     unverified_education = [item for item in raw_education_items if not _is_verified_entry(item)]
 
     work_entries, unverified_work = _split_work_entries(profile)
@@ -631,6 +799,10 @@ def generate_tailored_documents(
     certs_verified, unverified_certs = _certificates_by_verification(profile)
     certs = _safe_bullets(certs_verified, limit=8)
     skills_bullets = _rank_strings_for_job(verified_skills, job, match_report, limit=12)
+    for item in _competencies_from_verified_experience(profile, job, match_report, limit=12):
+        if item not in skills_bullets:
+            skills_bullets.append(item)
+    skills_bullets = skills_bullets[:12]
 
     # Languages: only explicitly verified languages (name + resolved level +
     # verified: true) may be listed as factual CV content. Unverified mentions
@@ -638,49 +810,38 @@ def generate_tailored_documents(
     languages = _language_lines(profile, verified_only=True)
     unverified_languages = [item for item in _language_lines(profile) if item not in languages]
 
-    summary_parts = [_verified_summary_sentence(evidence, title, company)]
-    if focus_labels:
-        summary_parts.append(f"Vacancy focus areas considered for tailoring include {matched_sentence}; the evidence below is limited to verified profile/CV facts.")
+    professional_title = _professional_title(profile, evidence, job, match_report)
+    signature_title = _signature_title(profile, evidence)
+    summary = _verified_summary_sentence(profile, evidence, title, company, focus_phrases, vacancy_highlights)
 
     cv_lines = [
         name.upper(),
+        professional_title,
         *contact,
         "",
-        f"TARGET ROLE: {title}",
-        f"TARGET ORGANIZATION: {company}",
-    ]
-    if location:
-        cv_lines.append(f"VACANCY LOCATION: {location}")
-    cv_lines.extend([
-        "",
         "PROFESSIONAL SUMMARY",
-        " ".join(summary_parts),
+        summary,
         "",
-    ])
-    if vacancy_highlights:
-        cv_lines.extend(["VACANCY-FIT HIGHLIGHTS", *[f"- {item}" for item in vacancy_highlights], ""])
+    ]
     if skills_bullets:
-        cv_lines.extend(["CORE COMPETENCIES", f"- {', '.join(map(str, skills_bullets))}", ""])
+        cv_lines.extend(["CORE PROFESSIONAL COMPETENCIES", *[f"- {item}" for item in skills_bullets], ""])
     if work_entries:
         cv_lines.append("PROFESSIONAL EXPERIENCE")
-        for entry in _rank_work_entries(work_entries, job, focus_labels)[:5]:
+        for entry in _reverse_chronological_entries(work_entries):
             line = _experience_header(entry)
             if line:
                 cv_lines.append(line)
-            ranked_entry_bullets = _rank_strings_for_job([str(b) for b in (entry.get("bullets") or []) if not is_unresolved_value(b)], job, match_report, limit=5)
-            for bullet in ranked_entry_bullets:
+            for bullet in _entry_bullets_for_job(entry, job, match_report, limit=12):
                 cv_lines.append(f"- {bullet}")
-            if not ranked_entry_bullets and entry.get("description") and not is_unresolved_value(entry.get("description")):
-                cv_lines.append(f"- {entry['description']}")
             cv_lines.append("")
     if education:
         cv_lines.extend(["EDUCATION", *[f"- {item}" for item in education], ""])
     if evidence.has_verified("license_registration"):
-        cv_lines.extend(["LICENSE / REGISTRATION", *[f"- {item}" for item in evidence.evidence_text("license_registration", verified_only=True)[:3]], ""])
+        cv_lines.extend(["PROFESSIONAL REGISTRATION", *[f"- {item}" for item in evidence.evidence_text("license_registration", verified_only=True)[:3]], ""])
     if evidence.has_verified("medical_exit_exam"):
-        cv_lines.extend(["MEDICAL EXIT EXAM", *[f"- {item}" for item in evidence.evidence_text("medical_exit_exam", verified_only=True)[:2]], ""])
+        cv_lines.extend(["MEDICAL EXIT EXAMINATION", *[f"- {item}" for item in evidence.evidence_text("medical_exit_exam", verified_only=True)[:2]], ""])
     if certs:
-        cv_lines.extend(["CERTIFICATIONS & TRAINING", *[f"- {item}" for item in certs], ""])
+        cv_lines.extend(["RELEVANT TRAINING & CERTIFICATIONS", *[f"- {item}" for item in certs], ""])
     if languages:
         cv_lines.extend(["LANGUAGES", f"- {', '.join(languages)}", ""])
 
@@ -720,36 +881,53 @@ def generate_tailored_documents(
         "",
         f"I am writing to apply for the {title} position{(' in ' + location) if location else ''} at {company}.",
     ]
-    if focus_labels:
-        cover_lines.append(f"I understand that the vacancy emphasizes {matched_sentence}.")
-    if vacancy_highlights:
-        cover_highlights = [item for item in vacancy_highlights if "(" in item and "|" in item]
-        cover_highlights.extend(item for item in vacancy_highlights if item not in cover_highlights)
-        cover_lines.extend(["My relevant experience includes:", *[f"- {item}" for item in cover_highlights[:4]]])
-    elif focus_labels:
-        cover_lines.append(f"My verified profile/CV evidence is relevant to {matched_sentence}.")
+    background_sentence = _professional_background_sentence(profile)
+    if background_sentence:
+        cover_lines.append(background_sentence)
     else:
-        cover_lines.append("I have reviewed the vacancy requirements and would like to be considered for the role.")
+        cover_lines.append("I am interested in this role because it aligns with my medical training and qualifications.")
+    if vacancy_highlights:
+        strongest = []
+        for item in vacancy_highlights[:3]:
+            text = str(item).strip()
+            header_start = text.rfind(". (")
+            if header_start != -1 and " | " in text[header_start:]:
+                text = text[: header_start + 1].strip()
+            strongest.append(text.rstrip("."))
+        cover_lines.append("Relevant experience includes:")
+        cover_lines.extend(f"- {str(item).rstrip('.')}" for item in strongest)
+    elif focus_phrases:
+        cover_lines.append(f"I understand that the vacancy emphasizes {', '.join(focus_phrases[:3])}.")
+    else:
+        cover_lines.append("I have reviewed the responsibilities and would welcome consideration for the role based on the qualifications presented in my CV.")
+    credential_sentences: list[str] = []
     if education:
-        cover_lines.append(f"My medical education includes {education[0]}.")
-    # Only claim these requirements are met when the authoritative matcher
-    # marked them MET (which itself only happens from verified evidence) --
-    # never reconstruct this claim from evidence presence alone.
+        credential_sentences.append(f"my medical education includes {education[0]}")
     if _requirement_met(match_report, "license_registration"):
-        cover_lines.append("I also meet the professional medical registration/license requirement stated for the role.")
+        credential_sentences.append("I meet the professional medical registration/license requirement stated for the role")
     if _requirement_met(match_report, "medical_exit_exam"):
-        cover_lines.append("My profile also includes verified completion of the required Medical Exit Exam.")
-    # Languages: only explicitly verified languages may be claimed. An
-    # unverified language is neither claimed nor hedged in the letter sent to
-    # the employer -- it stays in review warnings until the user verifies it.
+        credential_sentences.append("my Medical Exit Examination is included in my professional record")
     if languages:
-        cover_lines.append(f"My verified language profile is {', '.join(languages)}.")
+        credential_sentences.append(f"my language profile includes {', '.join(languages)}")
+    if credential_sentences:
+        cover_lines.append("Additionally, " + "; ".join(credential_sentences) + ".")
+    if any(value is True for value in evidence.verified_values("field_deployment")):
+        cover_lines.append("I am available for field deployment in line with the needs of the position.")
+    elif any(value is True for value in evidence.verified_values("willing_to_relocate")):
+        cover_lines.append("I am willing to relocate or deploy for the position if selected.")
     cover_lines.extend([
         "",
-        "I would welcome the opportunity to discuss how my experience can support your health program and the communities served by this position.",
+        "I would welcome the opportunity to discuss how my qualifications can support your health program and the communities served by this position. Thank you for considering my application.",
         "",
         "Sincerely,",
         name,
+    ])
+    if signature_title:
+        cover_lines.append(signature_title)
+    personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
+    cover_lines.extend([
+        f"Email: {_safe_contact_value(personal, 'email')}",
+        f"Phone: {_safe_contact_value(personal, 'phone')}",
     ])
 
     return {
@@ -956,31 +1134,83 @@ def _attachment_labels(required_documents: list[str], generated_paths: dict[str,
     return labels
 
 
+def _known_organization(value: str) -> str:
+    text = str(value or "").strip()
+    if text.lower() in {"", "unknown", "unknown employer", "unknown organization", "unknown org", "the employer"}:
+        return ""
+    return text
+
+
+def _email_subject(title: str, requested_subject: str = "", reference: str = "") -> str:
+    requested = str(requested_subject or "").strip()
+    if requested:
+        return requested
+    subject = f"Application – {title}" if title else "Application"
+    if reference:
+        subject += f" – Ref: {reference}"
+    return subject
+
+
+def _email_highlights(items: list[str], *, limit: int = 4) -> list[str]:
+    highlights: list[str] = []
+    for item in items:
+        text = re.sub(r"\s+", " ", str(item or "")).strip(" -•.")
+        if not text:
+            continue
+        header_start = text.rfind(". (")
+        if header_start != -1 and " | " in text[header_start:]:
+            text = text[: header_start + 1].strip()
+        if text not in highlights:
+            highlights.append(text)
+        if len(highlights) >= limit:
+            break
+    return highlights
+
+
 def _email_body(
     *,
     name: str,
     title: str,
     company: str,
-    source_url: str,
-    deadline: str,
-    attachment_list: list[str],
+    location: str,
+    personal: dict[str, Any],
+    highlights: list[str],
+    include_cover_letter: bool,
+    background_sentence: str = "",
+    signature_title: str = "",
 ) -> str:
-    attachment_text = "\n".join(f"- {item}" for item in attachment_list)
-    deadline_sentence = f" The vacancy deadline is {deadline}." if deadline else ""
-    source_sentence = f" I reviewed the vacancy at {source_url}." if source_url else ""
-    return "\n".join([
-        "Dear Hiring Committee,",
+    organization = _known_organization(company)
+    position = f"the {title} position" if title else "the advertised position"
+    where = f" in {location}" if location else ""
+    at_org = f" at {organization}" if organization else ""
+    intro = f"I am writing to apply for {position}{where}{at_org}."
+    lines = ["Dear Hiring Committee,", "", intro]
+    if background_sentence:
+        lines.extend(["", background_sentence])
+    if highlights:
+        lines.extend(["", "Relevant experience I would bring to this role includes:"])
+        lines.extend(f"- {item}" for item in highlights)
+    else:
+        lines.extend(["", "I would welcome consideration for this role based on the qualifications described in my CV."])
+    attachment_sentence = "I have prepared my CV for your review"
+    if include_cover_letter:
+        attachment_sentence += ", along with a separate cover letter"
+    attachment_sentence += "."
+    lines.extend([
         "",
-        f"Please find attached my application for the {title} position at {company}.{deadline_sentence}{source_sentence}",
-        "",
-        "Attached documents:",
-        attachment_text,
-        "",
-        "I would be grateful if you would consider my application. Please let me know if any additional information is required.",
+        attachment_sentence,
+        "Thank you for considering my application. I would welcome the opportunity to discuss my suitability for the position.",
         "",
         "Sincerely,",
         name,
-    ]).strip() + "\n"
+    ])
+    if signature_title:
+        lines.append(signature_title)
+    lines.extend([
+        f"Email: {_safe_contact_value(personal, 'email')}",
+        f"Phone: {_safe_contact_value(personal, 'phone')}",
+    ])
+    return "\n".join(lines).strip() + "\n"
 
 
 def render_application_package(package: dict[str, Any]) -> str:
@@ -1003,8 +1233,8 @@ def render_application_package(package: dict[str, Any]) -> str:
             "Body:",
             email.get("body", "").rstrip(),
             "",
-            "Attachment list:",
-            *[f"- {item}" for item in email.get("attachments", [])],
+            "Attachments to include before sending:",
+            *[f"- {item}" for item in (email.get("attachments_to_include") or email.get("attachments", []))],
             "",
         ])
     online = package.get("online_application") or {}
@@ -1068,16 +1298,30 @@ def generate_application_package(
     generated_paths = generated_paths or {}
     name = _full_name(profile)
     title = str(job.get("title") or docs.get("job_title") or "the advertised role")
-    company = str(job.get("company") or docs.get("company") or "the employer")
+    company = str(job.get("company") or docs.get("company") or "")
     source_url = facts.get("source_url") or metadata.get("source_url") or job.get("url") or ""
     deadline = facts.get("closing_date") or metadata.get("closing_date") or metadata.get("deadline") or ""
-    route_value_raw = facts.get("application_email") or facts.get("application_url") or job.get("apply_url") or job.get("url") or ""
-    route_value, route_notes = _normalize_application_url(str(route_value_raw))
-    email_to = _extract_email(facts.get("application_email") or route_value)
+    application_method = str(facts.get("application_method") or metadata.get("application_method") or "UNAVAILABLE").upper()
+    email_to = _extract_email(facts.get("apply_email") or facts.get("application_email") or metadata.get("apply_email") or metadata.get("application_email") or job.get("apply_email"))
+    web_route_raw = facts.get("apply_url") or facts.get("application_url") or metadata.get("apply_url") or metadata.get("application_url") or job.get("apply_url") or ""
+    route_value, route_notes = _normalize_application_url(str(web_route_raw))
     online_url = route_value if _is_http_url(route_value) else ""
-    route_type = "email" if email_to else "online_form" if online_url else "manual_review"
+    if application_method == "EMAIL" and email_to:
+        route_type = "email"
+    elif application_method == "WEB" and online_url:
+        route_type = "online_form"
+    elif email_to:
+        route_type = "email"
+        application_method = "EMAIL"
+    elif online_url:
+        route_type = "online_form"
+        application_method = "WEB"
+    else:
+        route_type = "manual_review"
+        application_method = "UNAVAILABLE"
     reference = facts.get("reference_number") or metadata.get("reference_number") or ""
-    subject = facts.get("application_subject") or metadata.get("application_subject") or docs.get("suggested_subject") or title
+    requested_subject = facts.get("application_subject") or metadata.get("application_subject") or ""
+    subject = _email_subject(title, requested_subject=requested_subject, reference=reference)
     required_documents = _infer_required_documents(job)
     special_instructions = _infer_special_instructions(job, facts, route_type)
     for note in route_notes:
@@ -1085,6 +1329,8 @@ def generate_application_package(
             special_instructions.append(note)
     form_fields = _infer_form_fields(job, profile)
     attachment_list = _attachment_labels(required_documents, generated_paths)
+    if (generated_paths.get("cover_letter") or docs.get("cover_letter")) and not any("cover" in str(item).lower() for item in attachment_list):
+        attachment_list.append(generated_paths.get("cover_letter") or "Tailored cover letter")
     blocking_user_inputs = _infer_blocking_user_inputs(job, route_type, required_documents)
 
     email_draft = None
@@ -1124,6 +1370,8 @@ def generate_application_package(
         if warning not in review_warnings:
             review_warnings.append(warning)
 
+    official_page = facts.get("vacancy_url") or metadata.get("vacancy_url") or job.get("url") or ""
+
     if route_type == "email":
         if not email_to:
             missing.append("application email")
@@ -1136,14 +1384,18 @@ def generate_application_package(
                 name=name,
                 title=title,
                 company=company,
-                source_url=source_url,
-                deadline=deadline,
-                attachment_list=attachment_list,
+                location=str(job.get("location") or ""),
+                personal=personal,
+                highlights=_email_highlights(docs.get("selected_vacancy_fit_evidence") or []),
+                include_cover_letter=bool(generated_paths.get("cover_letter") or docs.get("cover_letter")),
+                background_sentence=_professional_background_sentence(profile),
+                signature_title=_signature_title(profile, build_profile_evidence(profile)),
             ),
+            "attachments_to_include": attachment_list,
             "attachments": attachment_list,
         }
         user_actions.extend([
-            "Attach the final reviewed files listed in the attachment list",
+            "Attach the final reviewed CV and any cover letter listed in the attachment list before sending",
             "Send the email manually only after explicit user confirmation",
         ])
         package_status = "READY_FOR_REVIEW" if not missing else "NEEDS_USER_INPUT"
@@ -1158,8 +1410,8 @@ def generate_application_package(
         ])
         package_status = "READY_FOR_REVIEW" if online_url and not missing else "NEEDS_USER_INPUT"
     else:
-        missing.append("application route")
-        user_actions.append("Open the source URL and verify the application route manually")
+        missing.append("direct application route verified from the official vacancy page")
+        user_actions.append("Open the official vacancy/source page and verify the application route manually")
         package_status = "NEEDS_USER_INPUT"
 
     package = {
@@ -1167,11 +1419,15 @@ def generate_application_package(
         "job_title": title,
         "company": company,
         "route_type": route_type,
+        "application_method": application_method,
         "package_status": package_status,
         "source_url": source_url,
+        "official_vacancy_page": official_page,
         "deadline": deadline,
         "vacancy_reference": reference,
-        "application_route": email_to or online_url or route_value,
+        "application_route": email_to or online_url or official_page,
+        "apply_email": email_to,
+        "apply_url": online_url or None,
         "email_draft": email_draft,
         "online_application": online_application,
         "form_fields_checklist": form_fields,

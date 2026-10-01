@@ -86,6 +86,34 @@ async def test_malformed_source_item_does_not_crash_scan(monkeypatch):
     assert result.jobs == []
 
 
+@pytest.mark.asyncio
+async def test_unknown_source_is_excluded_from_actionable_scan(monkeypatch):
+    async def unknown(profile):
+        return [Job("j", "Medical Officer", "Org", "Kabul", "https://example.org/job", "hr@example.org", "UNKNOWN", "MD required. Apply to hr@example.org.", metadata={"source_name": "UNKNOWN", "source_url": ""})]
+
+    monkeypatch.setitem(discovery.SOURCE_REGISTRY, "unknown", {"name": "Unknown", "tier": "B", "fetcher": "unknown", "active": True})
+    monkeypatch.setattr(discovery, "unknown", unknown, raising=False)
+    result = await run_discovery_scan({"sources": {"enabled": ["unknown"]}})
+    assert result.status == NO_RELEVANT_JOBS_FOUND
+    assert result.jobs == []
+
+
+@pytest.mark.asyncio
+async def test_valid_source_and_route_are_retained(monkeypatch):
+    async def valid(profile):
+        return [Job("j", "Medical Officer", "Org", "Kabul", "https://example.org/job", "hr@example.org", "acbar", "MD required. Apply to hr@example.org.", metadata={"source_name": "ACBAR", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/job", "application_method": "email"})]
+
+    monkeypatch.setitem(discovery.SOURCE_REGISTRY, "valid", {"name": "Valid", "tier": "A", "fetcher": "valid", "active": True})
+    monkeypatch.setattr(discovery, "valid", valid, raising=False)
+    result = await run_discovery_scan({"sources": {"enabled": ["valid"]}})
+    assert result.status == discovery.SCAN_COMPLETE
+    assert len(result.jobs) == 1
+    assert result.jobs[0].source_name == "ACBAR"
+    assert result.jobs[0].application_method == "EMAIL"
+    assert result.jobs[0].apply_email == "hr@example.org"
+    assert result.jobs[0].apply_url is None
+
+
 class _FakeResponse:
     def __init__(self, text):
         self.text = text

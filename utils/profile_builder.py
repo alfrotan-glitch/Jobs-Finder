@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from utils.resume_parser import extract_resume_text
-from utils.source_registry import source_defaults
 
 
 def _email(text: str) -> str:
@@ -137,9 +136,16 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
             "field_deployment": "Needs verification",
         },
         "sources": {"enabled": [], "disabled": []},
+        # Never bake the registry's operational source defaults into the
+        # generated profile. Anything materialized here is read back later as
+        # an explicit user override — this is exactly how the old bounded
+        # ACBAR budget (max_pages: 6 / detail_limit: 30) kept capping real
+        # scans even after the registry default was removed. The empty blocks
+        # only document where deliberate overrides go; canonical defaults live
+        # solely in utils/source_registry.py.
         "job_sources": {
-            "acbar": source_defaults("acbar"),
-            "reliefweb": source_defaults("reliefweb"),
+            "acbar": {},
+            "reliefweb": {},
         },
         "source_cv_note": "Drafted from a supplied CV. Review every field before matching or applying; missing facts remain Needs verification.",
     }

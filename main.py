@@ -17,13 +17,14 @@ from utils.documents import prepare_application_bundle
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.profile import save_profile
 from utils.profile_builder import build_profile_from_cv_file
+from utils.recommendations import evaluate_scan_jobs
 from utils.resume_parser import extract_resume_text
+from utils.source_registry import normalize_profile_source_budgets
 from utils.tracker import (
     delete_all,
     get_job_by_id,
     get_recommended_jobs,
     list_actionable_jobs,
-    log_discovered,
     log_medical_match,
     log_scan_result,
     mark_applied_manually,
@@ -43,6 +44,13 @@ def load_profile(path: str = "profile.yaml", *, required: bool = True) -> dict[s
             sys.exit(1)
         return {}
     profile = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    # Remove untouched builder-era discovery budgets (see
+    # utils/source_registry.py). This is the load-time migration that stops a
+    # CV-import-era profile.yaml from silently capping real scans at 6 listing
+    # pages / 30 detail pages; anything the user actually edited is preserved.
+    _profile, budget_notes = normalize_profile_source_budgets(profile)
+    for note in budget_notes:
+        print(note)
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     missing = [field for field in ["first_name", "last_name", "email"] if not personal.get(field)]
     if missing and required:
@@ -99,6 +107,10 @@ def print_scan_accounting(scan: Any) -> None:
         print(f"{label}: {summary[key]}")
     print(f"Application routes: {summary['application_routes_found']} found / {summary['application_routes_unavailable']} unavailable")
     print(f"Recommended from this scan: {summary['recommended_from_scan']}")
+    actionable = summary["ready_to_apply_from_scan"] + summary["needs_verification_from_scan"]
+    gated = actionable - summary["recommended_from_scan"]
+    if gated > 0:
+        print(f"Note: {gated} retained vacancy(ies) stay in the jobs list for manual review but are not recommended: their professional role family is not positively MD/public-health compatible (e.g. generic programme/operations titles with health wording only).")
     print(f"Readiness: {summary['ready_to_apply_from_scan']} ready / {summary['needs_verification_from_scan']} needs verification / {summary['not_eligible_from_scan']} not eligible")
 
 
@@ -106,27 +118,33 @@ async def cmd_scan(profile: dict[str, Any]) -> dict[str, Any]:
     print("Finding Afghanistan health/medical vacancies...")
     scan = await run_discovery_scan(profile)
     resume_text = _resume_text(profile)
-    match_results = []
-    for job in scan.jobs:
-        log_discovered(job)
-        report = match_job_against_profile(job.to_dict(), profile, resume_text=resume_text).to_dict()
-        match_results.append(report)
-        log_medical_match(job.id, report)
-    scan.record_match_results(match_results)
+    # One shared orchestration (also used by the dashboard): store, match, and
+    # record — the recommendation collection is derived once, authoritatively.
+    evaluate_scan_jobs(scan, profile, resume_text)
     log_scan_result(scan.to_dict())
     print(scan.message)
     print_scan_accounting(scan)
-    if scan.jobs:
-        print("\nRecommended vacancies:")
-        print_recommended()
+    print_scan_recommendations(scan)
     return scan.to_dict()
 
 
-def print_recommended(limit: int = 10) -> None:
-    jobs = get_recommended_jobs(limit=limit)
-    if not jobs:
-        print("No recommended vacancies yet. Run: python main.py find")
+def print_scan_recommendations(scan: Any) -> None:
+    """Print exactly the scan's authoritative recommendation collection.
+
+    The number printed here is structurally identical to the
+    "Recommended from this scan" counter: both are derived from
+    ``scan.recommendations`` — never from a separate tracker re-query.
+    """
+    if not scan.jobs:
         return
+    print("\nRecommended vacancies:")
+    if not scan.recommendations:
+        print("None from this scan. Broad discovery results remain reviewable under: python main.py jobs")
+        return
+    _print_recommendation_entries(scan.recommendations)
+
+
+def _print_recommendation_entries(jobs: list[dict[str, Any]]) -> None:
     for index, job in enumerate(jobs, start=1):
         match = job.get("match") or {}
         metadata = job.get("metadata") or {}
@@ -141,6 +159,14 @@ def print_recommended(limit: int = 10) -> None:
             print(f"   Official route: {route}")
         if match.get("explanation"):
             print(f"   {match['explanation']}")
+
+
+def print_recommended(limit: int = 20) -> None:
+    jobs = get_recommended_jobs(limit=limit)
+    if not jobs:
+        print("No recommended vacancies yet. Run: python main.py find")
+        return
+    _print_recommendation_entries(jobs)
 
 
 def cmd_prepare(profile: dict[str, Any], job_id: str) -> dict[str, Any] | None:

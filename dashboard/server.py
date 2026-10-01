@@ -31,7 +31,8 @@ from utils.discovery import (
 from utils.documents import prepare_application_bundle
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.profile import PERSONAL_VERIFICATION_FIELDS, build_profile_evidence, is_unresolved_value, save_profile
-from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
+from utils.recommendations import evaluate_scan_jobs
+from utils.source_registry import SOURCE_REGISTRY, normalize_profile_source_budgets, source_registry_for_settings
 from utils.profile_builder import build_profile_from_cv_file
 from utils.resume_parser import extract_resume_text
 from utils.tracker import (
@@ -40,7 +41,6 @@ from utils.tracker import (
     get_recommended_jobs,
     list_actionable_jobs,
     list_recent_scans,
-    log_discovered,
     log_medical_match,
     log_scan_result,
     mark_applied_manually,
@@ -62,7 +62,12 @@ def load_profile(required: bool = False) -> dict[str, Any]:
         if required:
             raise HTTPException(status_code=400, detail="profile.yaml is missing. Copy profile.yaml.example and enter verified facts.")
         return {}
-    return yaml.safe_load(PROFILE_PATH.read_text(encoding="utf-8")) or {}
+    profile = yaml.safe_load(PROFILE_PATH.read_text(encoding="utf-8")) or {}
+    # Same load-time migration as the CLI: an untouched builder-era
+    # job_sources budget (max_pages: 6 / detail_limit: 30 copied in by an old
+    # CV import) is ignored; deliberate user configuration is preserved.
+    profile, _notes = normalize_profile_source_budgets(profile)
+    return profile
 
 
 def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
@@ -466,7 +471,27 @@ def api_settings():
 
 
 @app.get("/api/recommended")
-def api_recommended(limit: int = 20):
+def api_recommended(limit: int = 200):
+    """Serve the same recommendation collection the scan itself produced.
+
+    The authoritative per-scan collection is persisted inside the scan run by
+    the backend; this endpoint returns it verbatim (only overlaying current
+    package/progress state from the tracker for cards that have since had a
+    package generated). A legacy scan history without a stored collection
+    falls back to the stored-history view, which uses the same recommendation
+    gate via utils/recommendations.py.
+    """
+    latest = get_latest_scan() or {}
+    entries = latest.get("recommendations")
+    if isinstance(entries, list):
+        fresh = {str(job.get("id")): job for job in list_actionable_jobs(limit=500)}
+        merged = []
+        for entry in entries:
+            row = fresh.get(str(entry.get("id") or ""))
+            if row:
+                entry = {**entry, "status": row.get("status") or entry.get("status"), "package_status": row.get("package_status") or entry.get("package_status")}
+            merged.append(entry)
+        return {"jobs": merged[:limit]}
     return {"jobs": get_recommended_jobs(limit=limit)}
 
 
@@ -495,13 +520,10 @@ async def api_find():
     profile = load_profile(True)
     scan = await run_discovery_scan(profile)
     resume_text = extract_resume_text(profile.get("resume_path", ""))
-    match_results = []
-    for job in scan.jobs:
-        log_discovered(job)
-        report = match_job_against_profile(job.to_dict(), profile, resume_text=resume_text).to_dict()
-        match_results.append(report)
-        log_medical_match(job.id, report)
-    scan.record_match_results(match_results)
+    # One shared orchestration identical to the CLI (utils/recommendations.py):
+    # store, match, record — the recommendation collection in the response is
+    # the exact collection the summary counted.
+    evaluate_scan_jobs(scan, profile, resume_text)
     result = scan.to_dict()
     log_scan_result(result)
     return result

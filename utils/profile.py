@@ -19,6 +19,7 @@ from typing import Any
 import yaml
 
 from utils.medical_requirements import MONTHS, NUMBER_WORDS, normalize_text
+from utils.source_registry import normalize_profile_source_budgets
 
 
 @dataclass
@@ -248,6 +249,11 @@ def load_profile(path: str | Path = "profile.yaml") -> dict[str, Any]:
 
 def save_profile(profile: dict[str, Any], path: str | Path = "profile.yaml") -> None:
     path = Path(path)
+    # Self-healing write: if the profile still carries an untouched builder-era
+    # discovery budget (verbatim legacy CV-import copy), drop those keys so the
+    # file itself stops silently capping scans. Deliberately configured values
+    # are never touched (see utils/source_registry.normalize_source_overrides).
+    profile, _notes = normalize_profile_source_budgets(profile)
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(profile, f, sort_keys=False, allow_unicode=True)
 

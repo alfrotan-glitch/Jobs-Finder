@@ -238,13 +238,19 @@ MD_ROLE_TITLE_PATTERNS = [
     r"\bMBBS\b",
 ]
 
+# Health-domain role families: a regulated-health domain prefix combined with
+# a role-holder noun. The noun set deliberately includes genuine health-domain
+# practitioner/coordination nouns (mentor/trainer/focal point) so e.g.
+# "Nutrition Trainer" or "HMIS focal point" are recognized as the health roles
+# they are, instead of falling into "ambiguous health words". Generic
+# programme/operations titles with no health-domain noun in the TITLE
+# ("Project Manager", "CLIC Operator", ...) are intentionally NOT matched
+# here: they may stay in broad discovery, but they are never classified as a
+# compatible professional role for recommendation.
+_PUBLIC_HEALTH_ROLE_DOMAINS = r"(?:public\s+health|health(?:\s+and\s+nutrition)?|nutrition|HMIS|health\s+data|clinical)"
+_PUBLIC_HEALTH_ROLE_NOUNS = r"(?:officer|advisor|specialist|coordinator|manager|supervisor|mentor|trainer|focal\s+point)"
 PUBLIC_HEALTH_ROLE_PATTERNS = [
-    r"\bpublic\s+health\s+(?:officer|advisor|specialist|coordinator|manager|supervisor)\b",
-    r"\bhealth\s+(?:and\s+nutrition\s+)?(?:officer|advisor|specialist|coordinator|manager|supervisor)\b",
-    r"\bnutrition\s+(?:officer|advisor|specialist|coordinator|manager|supervisor)\b",
-    r"\bHMIS\s+(?:officer|manager|coordinator|specialist)\b",
-    r"\bhealth\s+data\s+(?:officer|manager|coordinator|specialist)\b",
-    r"\bclinical\s+(?:supervisor|coordinator|advisor|mentor)\b",
+    rf"\b{_PUBLIC_HEALTH_ROLE_DOMAINS}\s+{_PUBLIC_HEALTH_ROLE_NOUNS}\b",
 ]
 
 ROLE_DUTY_COMPATIBILITY_PATTERNS = [

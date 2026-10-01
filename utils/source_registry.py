@@ -39,11 +39,9 @@ SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         },
         "defaults": {
             "timeout_seconds": 25.0,
-            "detail_limit": 30,
-            "max_pages": 6,
             "max_detail_concurrency": 5,
         },
-        "settings_note": "Bounded pagination budget -- not a claim that the entire ACBAR archive is scanned on every run.",
+        "settings_note": "Discovery follows ACBAR pagination until the site returns its real end. A listing-page or detail-page limit is applied only when explicitly configured and makes the scan partial.",
     },
     "reliefweb": {
         "id": "reliefweb",

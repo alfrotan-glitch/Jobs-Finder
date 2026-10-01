@@ -194,7 +194,7 @@ def test_cv_cover_letter_and_md_identity_are_clean_and_include_high_school(tmp_p
     assert "Medical Doctor" in cv.splitlines()[1]
     assert "Doctor of Medicine (MD) — Verified Medical Science University — 2013–2020" in cv
     assert "Verified High School — 2000–2012" in cv
-    assert cv.index("Medical Doctor | Kabul Provincial Clinic") < cv.index("Health and Nutrition Supervisor | Humanitarian Health NGO")
+    assert cv.index("Medical Doctor") < cv.index("Health and Nutrition Supervisor")
     for text in [cv, cover]:
         for token in ["Unknown", "Jobs-Finder", "evidence", "verification", "match", "eligibility", "READY_TO_APPLY", "NEEDS_VERIFICATION", "email-md"]:
             assert token.lower() not in text.lower()

@@ -14,7 +14,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -30,13 +30,13 @@ SCAN_FAILED = "SCAN_FAILED"
 
 DEFAULT_USER_AGENT = "Jobs-Finder Afghanistan Job Assistant (+manual, non-automated applications)"
 
-# ACBAR pagination/concurrency budget. This is a deliberate, documented
-# performance/safety budget -- not a claim that every page on the source site
-# is scanned. See discover_acbar_jobs() and docs/source_registry.md.
+# ACBAR is discovered to the source's observable end by default. Limits are
+# opt-in operational safeguards, never normal completion criteria: when a user
+# configures one, the source report is explicitly PARTIAL.
 _ACBAR_DEFAULTS = source_defaults("acbar")
 _RELIEFWEB_DEFAULTS = source_defaults("reliefweb")
-ACBAR_DEFAULT_MAX_PAGES = int(_ACBAR_DEFAULTS.get("max_pages", 6))
-ACBAR_DEFAULT_DETAIL_LIMIT = int(_ACBAR_DEFAULTS.get("detail_limit", 30))
+ACBAR_DEFAULT_MAX_PAGES: int | None = None
+ACBAR_DEFAULT_DETAIL_LIMIT: int | None = None
 ACBAR_DEFAULT_DETAIL_CONCURRENCY = int(_ACBAR_DEFAULTS.get("max_detail_concurrency", 5))
 ACBAR_DEFAULT_TIMEOUT_SECONDS = float(_ACBAR_DEFAULTS.get("timeout_seconds", 25.0))
 RELIEFWEB_DEFAULT_LIMIT = int(_RELIEFWEB_DEFAULTS.get("limit", 20))
@@ -83,6 +83,11 @@ class SourceScanMetrics:
 
     source_url: str = ""
     official_source_id: str = ""
+    # The total published by the source (when present) is retained as a
+    # discovery-completeness cross-check, not used to fabricate listings.
+    source_listings_reported: int | None = None
+    configured_page_limit: int | None = None
+    configured_detail_limit: int | None = None
     status: str = SOURCE_STATUS_UNAVAILABLE
     pages_requested: int = 0
     pages_succeeded: int = 0
@@ -146,6 +151,11 @@ class SourceReport:
     finished_at: str = ""
     source_url: str = ""
     official_source_id: str = ""
+    # The total published by the source (when present) is retained as a
+    # discovery-completeness cross-check, not used to fabricate listings.
+    source_listings_reported: int | None = None
+    configured_page_limit: int | None = None
+    configured_detail_limit: int | None = None
     status: str = SOURCE_STATUS_UNAVAILABLE
     pages_requested: int = 0
     pages_succeeded: int = 0
@@ -491,10 +501,24 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
             key = _vacancy_identity(job.url or job.apply_url or "") or _canonical(f"{job.title} {job.company} {job.location}")
             if not key or key in seen:
                 report.duplicates_removed += 1
+                # An adapter may have earmarked an item for a detail budget,
+                # but cross-source canonical deduplication wins the lifecycle
+                # precedence; do not count one listing in two terminal buckets.
+                if (job.metadata or {}).get("deferred_due_to_budget"):
+                    report.not_processed_due_to_budget = max(0, report.not_processed_due_to_budget - 1)
                 continue
             seen.add(key)
             if is_expired(job, today=today):
                 report.expired_excluded += 1
+                # Expiry is a higher-priority terminal result than an adapter's
+                # planned detail deferral, so preserve one-outcome accounting.
+                if (job.metadata or {}).get("deferred_due_to_budget"):
+                    report.not_processed_due_to_budget = max(0, report.not_processed_due_to_budget - 1)
+                continue
+            if (job.metadata or {}).get("deferred_due_to_budget"):
+                # It was discovered and parsed, but an explicitly configured
+                # detail cap stopped verification. It is not treated as an
+                # irrelevant vacancy or a recommendation.
                 continue
             if not _job_is_relevant(job):
                 report.irrelevant_excluded += 1
@@ -524,9 +548,9 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
         # Legacy jobs_found historically meant post duplicate/expiry candidates.
         report.jobs_found = max(0, report.vacancies_parsed - report.duplicates_removed - report.expired_excluded)
         # Every parsed item must have exactly one semantic terminal outcome.
-        terminal = (report.duplicates_removed + report.expired_excluded + report.irrelevant_excluded
-                    + report.incompatible_role_classification_excluded + report.source_validation_excluded
-                    + report.relevant_retained)
+        terminal = (report.duplicates_removed + report.expired_excluded + report.not_processed_due_to_budget
+                    + report.irrelevant_excluded + report.incompatible_role_classification_excluded
+                    + report.source_validation_excluded + report.relevant_retained)
         if terminal != report.vacancies_parsed:
             report.errors.append(f"Accounting invariant failed: {report.vacancies_parsed} parsed != {terminal} terminal outcomes.")
             if "LISTING_PARSE_FAILURE" not in report.partial_reasons:
@@ -576,79 +600,245 @@ def _job_is_relevant(job: Job) -> bool:
     return any(term in lower for term in strong_terms) or looks_medical(job.title)
 
 
+def _configured_positive_limit(config: dict[str, Any], key: str) -> int | None:
+    """Read an opt-in operational limit without manufacturing a default.
+
+    ``None``/an omitted setting means *unbounded*. A zero or malformed explicit
+    value is a configuration error instead of being silently converted into a
+    small, misleading scan.
+    """
+    if key not in config or config.get(key) in (None, ""):
+        return None
+    try:
+        value = int(config[key])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"job_sources.acbar.{key} must be a positive integer or omitted") from exc
+    if value < 1:
+        raise ValueError(f"job_sources.acbar.{key} must be a positive integer or omitted")
+    return value
+
+
+def _acbar_page_url(base: str, page_number: int) -> str:
+    """Set (rather than append) ACBAR's page parameter while preserving filters."""
+    parsed = urlparse(base)
+    pairs = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key.lower() != "page"]
+    if page_number > 1:
+        pairs.append(("page", str(page_number)))
+    query = urlencode(pairs)
+    return urlunparse(parsed._replace(query=query))
+
+
+def _acbar_reported_listing_count(html: str) -> int | None:
+    """Read ACBAR's visible aggregate count, e.g. ``234 jobs found``."""
+    text = BeautifulSoup(html or "", "html.parser").get_text(" ", strip=True)
+    match = re.search(r"\b([\d,]+)\s+jobs?\s+found\b", text, flags=re.I)
+    if not match:
+        return None
+    try:
+        return int(match.group(1).replace(",", ""))
+    except ValueError:  # pragma: no cover - guarded by the regex
+        return None
+
+
+def _acbar_listing_anchors(soup: BeautifulSoup) -> list[Any]:
+    """One listing-title anchor per card; secondary 'More locations' links do not count."""
+    spec = SOURCE_REGISTRY.get("acbar", {})
+    selector = ", ".join(((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/en/jobs/details/"]', 'a[href^="/jobs/"]']))
+    path_pattern = ((spec.get("path_patterns") or {}).get("listing_path") or r"(?:/en/jobs/details/\d+(?:/[^/]+)?|/jobs/\d+/[^/]+\.jsp)$")
+    anchors: list[Any] = []
+    for anchor in soup.select(selector):
+        href = str(anchor.get("href") or "")
+        title = normalize_space(anchor.get_text(" ", strip=True))
+        if not href or not re.search(path_pattern, urlparse(href).path, flags=re.I):
+            continue
+        if title.lower() in {"more locations", "view all jobs"}:
+            continue
+        anchors.append(anchor)
+    return anchors
+
+
+def _acbar_listing_is_clearly_irrelevant(job: Job) -> bool:
+    """Avoid detail requests only for unambiguously non-health role families.
+
+    Unknown and programme/operations titles intentionally return ``False`` and
+    are enriched. This conservative policy costs requests, but prevents an
+    optimisation from hiding a medical/public-health vacancy behind a terse
+    listing card.
+    """
+    title = normalize_space(job.title).lower()
+    health_signals = (
+        "medical", "doctor", "physician", "nurse", "midwi", "health", "nutrition",
+        "clinical", "hospital", "pharma", "therap", "psych", "mental", "watsan",
+        "hygiene", "epidemi", "laboratory", "lab ", "surgeon", "dent", "disability",
+        "protection", "case worker", "community", "social worker",
+    )
+    if any(signal in title for signal in health_signals):
+        return False
+    non_health_terms = (
+        "account", "finance", "audit", "cashier", "bank", "it ", "information technology",
+        "software", "developer", "network", "system administrator", "help desk", "graphic",
+        "designer", "marketing", "sales", "business development", "driver", "guard", "security",
+        "cleaner", "storekeeper", "logistics", "procurement", "supply chain", "warehouse",
+        "engineer", "electric", "architect", "lawyer", "legal", "translator", "journalist",
+        "communications", "media", "teacher", "instructor", "lecturer", "professor",
+    )
+    return any(term in title for term in non_health_terms)
+
+
 async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = None) -> list[Job]:
-    """Fetch ACBAR with exact page/detail/budget accounting."""
+    """Discover all ACBAR listing pages, then enrich only plausible candidates.
+
+    Stage 1 has no normal page ceiling: it requests ``?page=N`` until ACBAR
+    returns a page with no listing cards. Stage 2 preserves every discovered
+    listing but opens detail pages only for titles that are not clearly outside
+    health/medical work. Optional page/detail limits are explicit configuration
+    and always make the source status ``PARTIAL``.
+    """
     spec = SOURCE_REGISTRY["acbar"]
     defaults = spec.get("defaults") or {}
     cfg = ((profile.get("job_sources") or {}).get("acbar") or {}) if isinstance(profile, dict) else {}
+    if not isinstance(cfg, dict):
+        raise ValueError("job_sources.acbar must be a mapping")
     explicit_urls = cfg.get("urls")
+    if explicit_urls is not None and (not isinstance(explicit_urls, list) or not all(isinstance(url, str) and url.strip() for url in explicit_urls)):
+        raise ValueError("job_sources.acbar.urls must be a list of non-empty URLs")
     timeout = float(cfg.get("timeout_seconds", defaults.get("timeout_seconds", ACBAR_DEFAULT_TIMEOUT_SECONDS)))
-    detail_limit = max(1, int(cfg.get("detail_limit", defaults.get("detail_limit", ACBAR_DEFAULT_DETAIL_LIMIT))))
-    max_pages = max(1, int(cfg.get("max_pages", defaults.get("max_pages", ACBAR_DEFAULT_MAX_PAGES))))
+    detail_limit = _configured_positive_limit(cfg, "detail_limit")
+    page_limit = _configured_positive_limit(cfg, "max_pages")
     concurrency = max(1, int(cfg.get("max_detail_concurrency", defaults.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY))))
     base = str(spec.get("listing_url") or spec.get("official_url") or "")
-    metrics = SourceScanMetrics(source_url=base, official_source_id=str(spec.get("official_name") or source_display_name(spec)))
+    metrics = SourceScanMetrics(
+        source_url=base,
+        official_source_id=str(spec.get("official_name") or source_display_name(spec)),
+        configured_page_limit=page_limit,
+        configured_detail_limit=detail_limit,
+    )
     summaries: list[Job] = []
-    seen_page_urls: set[str] = set()
+    seen_page_identities: set[str] = set()
 
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
-        urls = list(explicit_urls or [base if n == 1 else f"{base}?page={n}" for n in range(1, max_pages + 1)])
-        for index, url in enumerate(urls):
-            metrics.pages_requested += 1
-            try:
-                response = await client.get(url)
-                response.raise_for_status()
-                metrics.pages_succeeded += 1
-            except Exception as exc:
-                metrics.pages_failed += 1
-                metrics.pagination_stop_reason = "REQUEST_FAILED"
-                metrics.add_partial_reason("LISTING_PAGE_FAILURE", f"Listing page could not be read: {_concise_error(exc)}")
-                metrics.add_partial_reason("REQUEST_FAILURE")
-                break
-            selector = ", ".join(((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/en/jobs/details/"]', 'a[href^="/jobs/"]']))
-            raw_count = len(BeautifulSoup(response.text or "", "html.parser").select(selector))
-            page_jobs = _parse_acbar_listing(response.text, url)
-            metrics.listings_seen += raw_count
-            failures = max(0, raw_count - len(page_jobs))
-            metrics.listing_parse_failures += failures
-            if failures:
-                metrics.add_partial_reason("LISTING_PARSE_FAILURE")
-            if explicit_urls:
+        if explicit_urls:
+            listing_urls = [str(url).strip() for url in explicit_urls]
+            for url in listing_urls:
+                metrics.pages_requested += 1
+                try:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    metrics.pages_succeeded += 1
+                except Exception as exc:
+                    metrics.pages_failed += 1
+                    metrics.pagination_stop_reason = "REQUEST_FAILED"
+                    metrics.add_partial_reason("LISTING_PAGE_FAILURE", f"Listing page could not be read: {_concise_error(exc)}")
+                    metrics.add_partial_reason("REQUEST_FAILURE")
+                    break
+                reported = _acbar_reported_listing_count(response.text)
+                if reported is not None:
+                    metrics.source_listings_reported = reported
+                soup = BeautifulSoup(response.text or "", "html.parser")
+                raw_count = len(_acbar_listing_anchors(soup))
+                page_jobs = _parse_acbar_listing(response.text, url)
+                metrics.listings_seen += raw_count
+                metrics.listing_parse_failures += max(0, raw_count - len(page_jobs))
                 summaries.extend(page_jobs)
-                continue
-            if not page_jobs:
-                metrics.pagination_stop_reason = "END_REACHED"
-                break
-            new_jobs = [job for job in page_jobs if job.url not in seen_page_urls]
-            summaries.extend(page_jobs)  # every encountered valid card gets an outcome
-            if not new_jobs:
-                # A repeated non-empty page is not proof of source exhaustion.
-                metrics.pagination_stop_reason = "REPEATED_PAGE"
-                metrics.add_partial_reason("REPEATED_PAGE")
-                break
-            seen_page_urls.update(job.url for job in new_jobs)
-            if index == len(urls) - 1:
-                metrics.pagination_stop_reason = "PAGE_LIMIT_REACHED"
-                metrics.add_partial_reason("PAGE_LIMIT_REACHED")
-                metrics.add_partial_reason("PAGINATION_NOT_EXHAUSTED")
+            else:
+                metrics.pagination_stop_reason = "EXPLICIT_URL_SET_COMPLETE"
+                metrics.add_partial_reason("EXPLICIT_URL_SCOPE")
         else:
-            metrics.pagination_stop_reason = "EXPLICIT_URL_SET_COMPLETE" if explicit_urls else "PAGE_LIMIT_REACHED"
+            page_number = 1
+            while True:
+                if page_limit is not None and page_number > page_limit:
+                    metrics.pagination_stop_reason = "PAGE_LIMIT_REACHED"
+                    metrics.add_partial_reason("PAGE_LIMIT_REACHED")
+                    metrics.add_partial_reason("PAGINATION_NOT_EXHAUSTED")
+                    break
+                url = _acbar_page_url(base, page_number)
+                metrics.pages_requested += 1
+                try:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    metrics.pages_succeeded += 1
+                except Exception as exc:
+                    metrics.pages_failed += 1
+                    metrics.pagination_stop_reason = "REQUEST_FAILED"
+                    metrics.add_partial_reason("LISTING_PAGE_FAILURE", f"Listing page could not be read: {_concise_error(exc)}")
+                    metrics.add_partial_reason("REQUEST_FAILURE")
+                    break
+                reported = _acbar_reported_listing_count(response.text)
+                if reported is not None:
+                    if metrics.source_listings_reported not in (None, reported):
+                        metrics.add_partial_reason("SOURCE_COUNT_CHANGED_DURING_SCAN")
+                    metrics.source_listings_reported = reported
+                soup = BeautifulSoup(response.text or "", "html.parser")
+                raw_count = len(_acbar_listing_anchors(soup))
+                page_jobs = _parse_acbar_listing(response.text, url)
+                metrics.listings_seen += raw_count
+                parse_failures = max(0, raw_count - len(page_jobs))
+                metrics.listing_parse_failures += parse_failures
+                if parse_failures:
+                    metrics.add_partial_reason("LISTING_PARSE_FAILURE")
+                if raw_count == 0:
+                    metrics.pagination_stop_reason = "END_REACHED"
+                    break
+                if not page_jobs:
+                    metrics.pagination_stop_reason = "LISTING_PARSE_FAILURE"
+                    metrics.add_partial_reason("LISTING_PARSE_FAILURE")
+                    break
+                page_identities = {_vacancy_identity(job.url) for job in page_jobs if _vacancy_identity(job.url)}
+                summaries.extend(page_jobs)
+                if page_identities and page_identities.issubset(seen_page_identities):
+                    # A server ignoring page=N must never be mistaken for a
+                    # complete market. Stopping avoids an infinite duplicate loop.
+                    metrics.pagination_stop_reason = "REPEATED_PAGE"
+                    metrics.add_partial_reason("REPEATED_PAGE")
+                    break
+                seen_page_identities.update(page_identities)
+                page_number += 1
 
+        # Deduplicate the complete Stage-1 snapshot before detail enrichment.
         unique_summaries: list[Job] = []
         seen_identities: set[str] = set()
         for job in summaries:
             identity = _vacancy_identity(job.url)
             if not identity or identity in seen_identities:
                 metrics.duplicates_removed += 1
+                continue
+            seen_identities.add(identity)
+            unique_summaries.append(job)
+
+        if (
+            metrics.pagination_stop_reason == "END_REACHED"
+            and metrics.source_listings_reported is not None
+            and len(unique_summaries) != metrics.source_listings_reported
+        ):
+            metrics.add_partial_reason(
+                "SOURCE_LISTING_COUNT_MISMATCH",
+                "ACBAR reported "
+                f"{metrics.source_listings_reported} listings but parser discovered "
+                f"{len(unique_summaries)} unique vacancies.",
+            )
+
+        enrichment_candidates: list[Job] = []
+        for job in unique_summaries:
+            job.metadata = dict(job.metadata or {})
+            if is_expired(job, today=today):
+                # The lifecycle later records the expiry; no detail request is
+                # useful for a listing whose advertised deadline has passed.
+                job.metadata["listing_relevance"] = "expired_from_listing"
+            elif _acbar_listing_is_clearly_irrelevant(job):
+                job.metadata["listing_relevance"] = "clearly_irrelevant"
             else:
-                seen_identities.add(identity)
-                unique_summaries.append(job)
-        obvious = [job for job in unique_summaries if _job_is_relevant(job)]
-        other = [job for job in unique_summaries if job not in obvious]
-        processable = (obvious + other)[:detail_limit]
-        metrics.not_processed_due_to_budget = max(0, len(unique_summaries) - len(processable))
-        if metrics.not_processed_due_to_budget:
+                job.metadata["listing_relevance"] = "needs_detail_review"
+                enrichment_candidates.append(job)
+
+        processable = enrichment_candidates if detail_limit is None else enrichment_candidates[:detail_limit]
+        deferred = enrichment_candidates[len(processable):]
+        for job in deferred:
+            job.metadata["deferred_due_to_budget"] = True
+            job.metadata["detail_enrichment"] = "not_attempted_due_to_configured_budget"
+        metrics.not_processed_due_to_budget = len(deferred)
+        if deferred:
             metrics.add_partial_reason("DETAIL_LIMIT_REACHED")
+
         semaphore = asyncio.Semaphore(concurrency)
 
         async def detail(job: Job) -> Job:
@@ -658,22 +848,27 @@ async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = N
                     response = await client.get(job.url)
                     response.raise_for_status()
                     parsed = _parse_acbar_detail(response.text, job)
+                    parsed.metadata["detail_enrichment"] = "succeeded"
                     metrics.detail_pages_succeeded += 1
                     return parsed
-                except Exception:
+                except Exception as exc:
+                    job.metadata["detail_enrichment"] = "failed_listing_fallback"
+                    job.metadata["detail_error"] = _concise_error(exc)
                     metrics.detail_pages_failed += 1
                     metrics.listing_fallback_used += 1
                     return job
 
-        detailed = await asyncio.gather(*(detail(job) for job in processable))
+        await asyncio.gather(*(detail(job) for job in processable))
+
     if metrics.detail_pages_failed:
         metrics.add_partial_reason("DETAIL_FETCH_FAILURE", f"{metrics.detail_pages_failed} detail page(s) failed; valid listing fallback was used.")
-    metrics.vacancies_parsed = len(detailed) + metrics.duplicates_removed
+    metrics.vacancies_parsed = metrics.listings_seen - metrics.listing_parse_failures
     usable = metrics.pages_succeeded > 0
-    metrics.status = (SOURCE_STATUS_UNAVAILABLE if not usable else
-                      SOURCE_STATUS_PARTIAL if metrics.partial_reasons else SOURCE_STATUS_SCANNED)
-    return SourceJobs(detailed, parsed_count=len(detailed), metrics=metrics)
-
+    metrics.status = (
+        SOURCE_STATUS_UNAVAILABLE if not usable else
+        SOURCE_STATUS_PARTIAL if metrics.partial_reasons else SOURCE_STATUS_SCANNED
+    )
+    return SourceJobs(unique_summaries, parsed_count=metrics.vacancies_parsed, metrics=metrics)
 
 def _vacancy_identity(url: str) -> str:
     """Identify official vacancy paths across legitimate registered host aliases."""
@@ -714,19 +909,15 @@ def _deduplicate_source_vacancies(jobs: list[Job], *, today: date | None = None)
 def _parse_acbar_listing(html: str, base_url: str) -> list[Job]:
     spec = SOURCE_REGISTRY.get("acbar", {})
     source_name = source_display_name(spec) or "acbar"
-    selector_list = ((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/en/jobs/details/"]', 'a[href^="/jobs/"]'])
-    selector = ", ".join(selector_list)
-    path_pattern = ((spec.get("path_patterns") or {}).get("listing_path") or r"(?:/en/jobs/details/\d+(?:/[^/]+)?|/jobs/\d+/[^/]+\.jsp)$")
     provenance_label = (spec.get("provenance_labels") or {}).get("listing") or f"{source_name} listing"
     soup = BeautifulSoup(html or "", "html.parser")
     jobs: list[Job] = []
-    for anchor in soup.select(selector):
+    # Uses the same card-anchor definition as listings_seen, so a location
+    # expansion link never inflates source accounting.
+    for anchor in _acbar_listing_anchors(soup):
         title = normalize_space(anchor.get_text(" ", strip=True))
         href = urljoin(base_url, anchor.get("href", ""))
-        path = urlparse(href).path
-        if not re.search(path_pattern, path, flags=re.I):
-            continue
-        if not title or not href or title.lower() in {"more locations", "view all jobs"}:
+        if not title or not href:
             continue
         card = _listing_card(anchor)
         context = normalize_space(card.get_text(" ", strip=True) if card else anchor.get_text(" ", strip=True))
@@ -797,7 +988,7 @@ def _parse_acbar_detail(html: str, job: Job) -> Job:
         title = normalize_space(title_node.get_text(" ", strip=True)).replace("ACBAR:", "").strip()
         if title and title.lower() not in {"about the company", "job summary", "job requirements", "acbar"}:
             job.title = title
-    job.description = normalize_space(text)[:12000]
+    job.description = normalize_space(text)  # Preserve complete official detail text, including late application instructions.
     organization = _labeled_value(text, r"Organization")
     location = _labeled_value(text, r"(?:Job )?Location") or _labeled_value(text, r"Location")
     if organization:
@@ -978,7 +1169,7 @@ def _parse_reliefweb_detail(html: str, job: Job) -> Job:
         title = normalize_space(title_node.get_text(" ", strip=True))
         if title and title.lower() not in {"jobs", "reliefweb"}:
             job.title = title
-    job.description = normalize_space(text)[:12000]
+    job.description = normalize_space(text)  # Preserve complete official detail text, including late application instructions.
     company = _labeled_value(text, r"Organization") or _labeled_value(text, r"Source")
     if company:
         job.company = company

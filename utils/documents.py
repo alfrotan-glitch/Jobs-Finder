@@ -170,7 +170,7 @@ def _normalized_phrase(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(text).lower()).strip()
 
 
-def _safe_bullets(items: list[Any], limit: int = 6) -> list[str]:
+def _safe_bullets(items: list[Any], limit: int | None = None) -> list[str]:
     bullets = []
     normalized: list[str] = []
     for item in items:
@@ -191,7 +191,7 @@ def _safe_bullets(items: list[Any], limit: int = 6) -> list[str]:
             continue
         bullets.append(text)
         normalized.append(norm)
-        if len(bullets) >= limit:
+        if limit is not None and len(bullets) >= limit:
             break
     return bullets
 
@@ -481,7 +481,7 @@ def _verified_dict_items(items: list[Any]) -> list[Any]:
     return [item for item in items if isinstance(item, dict) and is_verified_flag(item.get("verified"))]
 
 
-def _education_lines(items: list[Any], *, limit: int = 6) -> list[str]:
+def _education_lines(items: list[Any], *, limit: int | None = None) -> list[str]:
     lines: list[str] = []
     for item in _verified_dict_items(items):
         degree = _resolved_entry_value(item, "degree", "title", "name")
@@ -494,7 +494,7 @@ def _education_lines(items: list[Any], *, limit: int = 6) -> list[str]:
         line = " — ".join(parts).strip()
         if line and line not in lines:
             lines.append(line)
-        if len(lines) >= limit:
+        if limit is not None and len(lines) >= limit:
             break
     return lines
 
@@ -547,7 +547,7 @@ def _profile_evidence_lines(profile: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _rank_strings_for_job(items: list[str], job: dict[str, Any], match_report: dict[str, Any], *, limit: int = 6) -> list[str]:
+def _rank_strings_for_job(items: list[str], job: dict[str, Any], match_report: dict[str, Any], *, limit: int | None = None) -> list[str]:
     focus_text = "\n".join([
         str(job.get("title", "")),
         str(job.get("description", "")),
@@ -613,11 +613,13 @@ def _tailored_work_sections(
     # A generic vacancy can have no useful overlap. Keep the latest role in the
     # leading section so the CV still has a natural first-page chronology.
     if not relevant and remaining:
-        relevant, remaining = remaining[:1], remaining[1:]
+        # Keep a natural lead role without imposing a cap: all other verified
+        # employment records remain in the same CV immediately afterwards.
+        relevant.append(remaining.pop(0))
     return relevant, remaining
 
 
-def _competencies_from_verified_experience(profile: dict[str, Any], job: dict[str, Any], match_report: dict[str, Any], *, limit: int = 10) -> list[str]:
+def _competencies_from_verified_experience(profile: dict[str, Any], job: dict[str, Any], match_report: dict[str, Any], *, limit: int | None = None) -> list[str]:
     lines = "\n".join(_profile_evidence_lines(profile)).lower()
     candidates = [
         ("Clinical consultations", ["clinical consultation", "clinical consultations"]),
@@ -747,7 +749,7 @@ def _verified_profile_summary(profile: dict[str, Any]) -> str:
 
 def _has_verified_md(profile: dict[str, Any]) -> bool:
     raw_education_items = _profile_list(profile, "medical_education") + _profile_list(profile, "medical.education") + _profile_list(profile, "medical.degrees") + _profile_list(profile, "education")
-    return any("MD" in line or "Medical Doctor" in line or "Doctor of Medicine" in line for line in _education_lines(raw_education_items, limit=6))
+    return any("MD" in line or "Medical Doctor" in line or "Doctor of Medicine" in line for line in _education_lines(raw_education_items))
 
 
 def _verified_work_haystack(profile: dict[str, Any]) -> str:
@@ -798,6 +800,59 @@ def _verified_summary_sentence(
         return f"{headline} with a record of professional experience across the roles listed below."
     return f"{headline} presenting verified qualifications for professional consideration."
 
+def _experience_dates(entry: dict[str, Any]) -> str:
+    start = _resolved_entry_value(entry, "start", "start_date", "from")
+    end = _resolved_entry_value(entry, "end", "end_date", "to")
+    return f"{start} – {end}" if start and end else start or end
+
+
+def _language_pairs(lines: list[str]) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for line in lines:
+        if "—" in line:
+            name, level = [part.strip() for part in line.split("—", 1)]
+        else:
+            name, level = line.strip(), ""
+        if name and (name, level) not in pairs:
+            pairs.append((name, level))
+    return pairs
+
+
+def _render_canonical_cv_text(model: dict[str, Any]) -> str:
+    """Serialize the one tailored CV model used by TXT, PDF and DOCX."""
+    lines = [str(model.get("name") or "Applicant"), str(model.get("headline") or "Professional")]
+    lines.extend(str(item) for item in model.get("contact_lines") or [] if str(item).strip())
+    lines.extend(["", "PROFESSIONAL SUMMARY", str(model.get("profile") or ""), ""])
+    if model.get("strengths"):
+        lines.extend(["CORE PROFESSIONAL COMPETENCIES", *[f"- {item}" for item in model["strengths"]], ""])
+    # Medical credentials appear before the detailed employment chronology so
+    # a multi-page clinical CV stays balanced rather than leaving a sparse
+    # credentials-only final page. The same order is used in every export.
+    for title, values in [
+        ("EDUCATION", model.get("education") or []),
+        ("PROFESSIONAL REGISTRATION", model.get("registration") or []),
+        ("MEDICAL EXIT EXAMINATION", model.get("exit_exam") or []),
+    ]:
+        if values:
+            lines.extend([title, *[f"- {value}" for value in values], ""])
+    if model.get("experience"):
+        lines.append("PROFESSIONAL EXPERIENCE")
+        for item in model["experience"]:
+            if item.get("role"):
+                lines.append(str(item["role"]))
+            metadata = " | ".join(str(value) for value in [item.get("org"), item.get("loc"), item.get("dates")] if value)
+            if metadata:
+                lines.append(metadata)
+            lines.extend(f"- {bullet}" for bullet in item.get("bullets") or [])
+            lines.append("")
+    if model.get("certifications"):
+        lines.extend(["TRAINING & CERTIFICATIONS", *[f"- {value}" for value in model["certifications"]], ""])
+    if model.get("languages"):
+        language_line = "  |  ".join(f"{name}{(' — ' + level) if level else ''}" for name, level in model["languages"])
+        lines.extend(["LANGUAGES", f"- {language_line}", ""])
+    return "\n".join(lines).strip() + "\n"
+
+
 def generate_tailored_documents(
     job: dict[str, Any],
     profile: dict[str, Any],
@@ -830,18 +885,36 @@ def generate_tailored_documents(
     # professional summary. Unverified items are collected into review
     # warnings instead of being printed as employer-facing facts.
     raw_education_items = _profile_list(profile, "medical_education") + _profile_list(profile, "medical.education") + _profile_list(profile, "medical.degrees") + _profile_list(profile, "education")
-    education = _education_lines(raw_education_items, limit=6)
+    education = _education_lines(raw_education_items)
     unverified_education = [item for item in raw_education_items if not _is_verified_entry(item)]
 
     work_entries, unverified_work = _split_work_entries(profile)
     verified_skills, unverified_skills = _skills_by_verification(profile)
     certs_verified, unverified_certs = _certificates_by_verification(profile)
-    certs = _safe_bullets(certs_verified, limit=8)
-    skills_bullets = _rank_strings_for_job(verified_skills, job, match_report, limit=12)
-    for item in _competencies_from_verified_experience(profile, job, match_report, limit=12):
-        if item not in skills_bullets:
+    # A professional CV may be three or four pages when verified evidence
+    # warrants it. Core competencies are ordered for the vacancy, never cut to
+    # a fixed count.
+    certs = _safe_bullets(certs_verified)
+    skills_bullets = _rank_strings_for_job(verified_skills, job, match_report)
+
+    def already_covered(candidate: str) -> bool:
+        # Do not turn the core-competencies section into a second copy of the
+        # experience bullets. A specific verified skill such as "HMIS and
+        # health data management" already covers the shorter derived label
+        # "HMIS reporting"; the underlying responsibility remains in its role.
+        candidate_terms = set(_normalized_phrase(candidate).split())
+        for existing in skills_bullets:
+            existing_terms = set(_normalized_phrase(existing).split())
+            if candidate_terms and (candidate_terms.issubset(existing_terms) or existing_terms.issubset(candidate_terms)):
+                return True
+            shared_domains = {"hmis", "referral", "supervision", "clinical", "quality", "nutrition", "safeguarding"}
+            if any(domain in candidate_terms and domain in existing_terms for domain in shared_domains):
+                return True
+        return False
+
+    for item in _competencies_from_verified_experience(profile, job, match_report):
+        if not already_covered(item):
             skills_bullets.append(item)
-    skills_bullets = skills_bullets[:12]
 
     # Languages: only explicitly verified languages (name + resolved level +
     # verified: true) may be listed as factual CV content. Unverified mentions
@@ -853,50 +926,37 @@ def generate_tailored_documents(
     signature_title = _signature_title(profile, evidence)
     summary = _verified_summary_sentence(profile, evidence, job, match_report)
 
-    cv_lines = [
-        name.upper(),
-        professional_title,
-        *contact,
-        "",
-        "PROFESSIONAL SUMMARY",
-        summary,
-        "",
-    ]
-    if skills_bullets:
-        cv_lines.extend(["CORE PROFESSIONAL COMPETENCIES", *[f"- {item}" for item in skills_bullets], ""])
+    ordered_work: list[dict[str, Any]] = []
     if work_entries:
         most_relevant, remaining = _tailored_work_sections(work_entries, job, match_report)
-        if most_relevant:
-            cv_lines.append("MOST RELEVANT PROFESSIONAL EXPERIENCE")
-            for entry in most_relevant:
-                line = _experience_header(entry)
-                if line:
-                    cv_lines.append(line)
-                # Relevant positions retain all substantive verified duties;
-                # tailoring changes their order, not their factual content.
-                for bullet in _entry_bullets_for_job(entry, job, match_report):
-                    cv_lines.append(f"- {bullet}")
-                cv_lines.append("")
-        if remaining:
-            cv_lines.append("REMAINING PROFESSIONAL EXPERIENCE")
-            for entry in remaining:
-                line = _experience_header(entry)
-                if line:
-                    cv_lines.append(line)
-                # Less relevant history remains visible but concise.
-                for bullet in _entry_bullets_for_job(entry, job, match_report, limit=3):
-                    cv_lines.append(f"- {bullet}")
-                cv_lines.append("")
-    if education:
-        cv_lines.extend(["EDUCATION", *[f"- {item}" for item in education], ""])
-    if evidence.has_verified("license_registration"):
-        cv_lines.extend(["PROFESSIONAL REGISTRATION", *[f"- {item}" for item in evidence.evidence_text("license_registration", verified_only=True)[:3]], ""])
-    if evidence.has_verified("medical_exit_exam"):
-        cv_lines.extend(["MEDICAL EXIT EXAMINATION", *[f"- {item}" for item in evidence.evidence_text("medical_exit_exam", verified_only=True)[:2]], ""])
-    if certs:
-        cv_lines.extend(["RELEVANT TRAINING & CERTIFICATIONS", *[f"- {item}" for item in certs], ""])
-    if languages:
-        cv_lines.extend(["LANGUAGES", f"- {', '.join(languages)}", ""])
+        # Tailoring is ordering only. Every verified role and every substantive
+        # responsibility is retained, including roles that are less relevant to
+        # the vacancy at hand.
+        for entry in most_relevant + remaining:
+            ordered_work.append(
+                {
+                    "role": _resolved_entry_value(entry, "title", "role"),
+                    "org": _resolved_entry_value(entry, "organization", "employer"),
+                    "loc": _resolved_entry_value(entry, "location"),
+                    "dates": _experience_dates(entry),
+                    "bullets": _entry_bullets_for_job(entry, job, match_report),
+                }
+            )
+
+    canonical_cv_model = {
+        "name": name,
+        "headline": professional_title,
+        "contact_lines": contact,
+        "profile": summary,
+        "strengths": skills_bullets,
+        "experience": ordered_work,
+        "education": education,
+        "registration": evidence.evidence_text("license_registration", verified_only=True) if evidence.has_verified("license_registration") else [],
+        "exit_exam": evidence.evidence_text("medical_exit_exam", verified_only=True) if evidence.has_verified("medical_exit_exam") else [],
+        "certifications": certs,
+        "languages": _language_pairs(languages),
+    }
+    cv_text = _render_canonical_cv_text(canonical_cv_model)
 
     warnings = _verification_warnings(match_report)
     # Unverified profile items excluded by the document evidence gate stay
@@ -988,7 +1048,8 @@ def generate_tailored_documents(
         "job_id": job.get("id"),
         "job_title": title,
         "company": company,
-        "tailored_cv_text": "\n".join(cv_lines).strip() + "\n",
+        "tailored_cv_text": cv_text,
+        "tailored_cv_model": canonical_cv_model,
         "cover_letter": "\n".join(cover_lines).strip() + "\n",
         "suggested_subject": suggested_subject,
         "matched_requirements_used": focus_labels,
@@ -1515,6 +1576,7 @@ def _write_text_docx_pdf(
     *,
     document_type: str = "cv",
     metadata: dict[str, Any] | None = None,
+    canonical_cv_model: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     """Write TXT plus globally designed DOCX/PDF exports.
 
@@ -1533,6 +1595,7 @@ def _write_text_docx_pdf(
             base,
             document_type=document_type,
             metadata=metadata or {},
+            canonical_cv_model=canonical_cv_model,
         )
     except Exception as exc:  # pragma: no cover - environment/export dependency safety
         base.parent.mkdir(parents=True, exist_ok=True)
@@ -1589,6 +1652,7 @@ def write_application_bundle_files(
         bases["tailored_cv"],
         document_type="cv",
         metadata=design_metadata,
+        canonical_cv_model=tailored_documents.get("tailored_cv_model"),
     )
     cover_paths = _write_text_docx_pdf(
         tailored_documents.get("cover_letter", ""),

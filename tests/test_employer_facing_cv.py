@@ -126,7 +126,7 @@ def test_cv_has_no_internal_labels_or_fabricated_year_totals():
     assert "conducted randomized trials" not in cv.lower()
 
 
-def test_pdf_docx_render_complete_content_without_two_page_truncation(tmp_path):
+def test_pdf_docx_render_complete_content_without_page_limit_truncation(tmp_path):
     profile = six_role_profile()
     job = clinical_mentor_job()
     docs, report = docs_for(profile, job)
@@ -135,9 +135,13 @@ def test_pdf_docx_render_complete_content_without_two_page_truncation(tmp_path):
     assert zipfile.is_zipfile(paths["docx"])
     with zipfile.ZipFile(paths["docx"]) as archive:
         docx_xml = archive.read("word/document.xml").decode("utf-8", errors="replace")
+    # DOCX uses natural Word flow; it does not hard-code a break before a
+    # "remaining" section and cannot strand content on an artificial page.
+    assert 'w:type="page"' not in docx_xml
     with pdfplumber.open(paths["pdf"]) as pdf:
         pdf_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-        assert len(pdf.pages) >= 2
+        # The renderer flows naturally: short complete CVs may be one page;
+        # there is no fixed two-page layout or content cutoff.
     for rendered in [Path(paths["txt"]).read_text(encoding="utf-8"), docx_xml, pdf_text]:
         assert "Medical Doctor &amp; Safeguarding/PSEA Focal Point" in rendered or "Medical Doctor & Safeguarding/PSEA Focal Point" in rendered
         assert "Public Awareness Officer / Public Awareness Promoter" in rendered
@@ -164,3 +168,39 @@ def test_long_verified_history_flows_beyond_two_pages_without_content_loss(tmp_p
         docx_xml = archive.read("word/document.xml").decode("utf-8", errors="replace")
     assert extra[-1] in pdf_text.replace("\n", " ")
     assert extra[-1] in docx_xml
+
+def test_all_verified_responsibilities_survive_for_less_relevant_roles_and_all_exports(tmp_path):
+    """Tailoring may reorder a role but must never impose a 2/3-bullet cut-off."""
+    profile = six_role_profile()
+    nonclinical = next(item for item in profile["work_history"] if item["organization"] == "Trend for a Better Tomorrow NGO")
+    nonclinical["bullets"] = [
+        "Maintained administrative records and coordinated office support",
+        "Prepared finance documentation for programme operations",
+        "Monitored supplies and supported stock reconciliation",
+        "Coordinated internal reporting with programme colleagues",
+        "Supported staff coaching on office procedures",
+    ]
+    job = clinical_mentor_job()
+    docs, report = docs_for(profile, job)
+    cv = docs["tailored_cv_text"]
+
+    # Every verified employment record and every substantive responsibility is
+    # present, even where the role is less relevant than clinical mentoring.
+    assert len(docs["tailored_cv_model"]["experience"]) == len(profile["work_history"])
+    for record in profile["work_history"]:
+        assert record["title"] in cv
+        for responsibility in record["bullets"]:
+            assert responsibility in cv
+    assert len(next(item for item in docs["tailored_cv_model"]["experience"] if item["org"] == "Trend for a Better Tomorrow NGO")["bullets"]) == 5
+
+    bundle = prepare_application_bundle(job, profile, report, out_dir=tmp_path)
+    cv_paths = bundle["generated_paths"]["tailored_cv"]
+    with zipfile.ZipFile(cv_paths["docx"]) as archive:
+        docx_xml = archive.read("word/document.xml").decode("utf-8", errors="replace")
+    with pdfplumber.open(cv_paths["pdf"]) as pdf:
+        pdf_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+    for responsibility in nonclinical["bullets"]:
+        assert responsibility in docx_xml
+        assert responsibility in pdf_text.replace("\n", " ")
+    assert "TARGET" not in cv
+    assert "APPLICATION FOCUS" not in cv

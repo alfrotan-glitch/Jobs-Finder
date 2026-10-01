@@ -454,7 +454,7 @@ def api_settings():
             "detail_limit": acbar_cfg.get("detail_limit", ACBAR_DEFAULT_DETAIL_LIMIT),
             "max_detail_concurrency": acbar_cfg.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY),
             "timeout_seconds": acbar_cfg.get("timeout_seconds", ACBAR_DEFAULT_TIMEOUT_SECONDS),
-            "note": (SOURCE_REGISTRY.get("acbar", {}).get("settings_note") or "Bounded scan budget -- not a claim that the entire source archive is scanned on every run."),
+            "note": (SOURCE_REGISTRY.get("acbar", {}).get("settings_note") or "ACBAR pagination is followed to the real end unless an explicit limit is configured; a limit makes the scan partial."),
         },
         "reliefweb": {
             "limit": reliefweb_cfg.get("limit", RELIEFWEB_DEFAULT_LIMIT),

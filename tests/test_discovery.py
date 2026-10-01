@@ -228,16 +228,17 @@ async def test_acbar_relevant_vacancy_after_detail_limit_is_discovered(monkeypat
         "job_sources": {"acbar": {"max_pages": 4, "detail_limit": 10}}
     })
 
-    # Listing relevance prioritizes the two obvious medical cards, while the
-    # remaining bounded budget enriches terse cards before making a final
-    # relevance decision. The fake detail page is medical for every URL.
-    assert len(jobs) == 10
+    # Stage 1 preserves all 37 listing cards. Stage 2 spends no detail budget
+    # on titles that are unmistakably finance work, so the two medical cards on
+    # page four are still enriched even though they appear after 35 others.
+    assert len(jobs) == 37
     assert {
         "https://www.acbar.org/en/jobs/details/1001/medical-officer-1",
         "https://www.acbar.org/en/jobs/details/1002/medical-officer-2",
     }.issubset({j.url for j in jobs})
+    assert jobs.metrics.not_processed_due_to_budget == 0
     detail_calls = [c for c in fake_client.get_calls if c not in pages]
-    assert len(detail_calls) == 10
+    assert len(detail_calls) == 2
 
 
 @pytest.mark.asyncio
@@ -257,7 +258,12 @@ async def test_acbar_detail_fetches_are_bounded_by_detail_limit(monkeypatch):
         "job_sources": {"acbar": {"max_pages": 2, "detail_limit": 5}}
     })
 
-    assert len(jobs) == 5
+    # A configured cap only limits enrichment; discovery retains every parsed
+    # listing and marks the omitted candidate detail reviews explicitly.
+    assert len(jobs) == 20
+    assert jobs.metrics.vacancies_parsed == 20
+    assert jobs.metrics.not_processed_due_to_budget == 15
+    assert jobs.metrics.status == "PARTIAL"
     detail_calls = [c for c in fake_client.get_calls if c not in pages]
     assert len(detail_calls) == 5
 
@@ -331,3 +337,44 @@ async def test_acbar_explicit_urls_override_auto_pagination(monkeypatch):
     listing_calls = [c for c in fake_client.get_calls if c in pages]
     assert listing_calls == [pinned_url]
     assert len(jobs) == 2
+
+@pytest.mark.asyncio
+async def test_acbar_default_discovery_follows_real_end_and_matches_reported_total(monkeypatch):
+    """Regression for the six-page production failure.
+
+    ACBAR currently publishes a count and twenty cards per full page. The
+    adapter must not stop at a legacy default budget: a 234-card source takes
+    twelve non-empty pages plus the authoritative empty end page.
+    """
+    reported_total = 234
+    pages = {}
+    medical_indexes = {0, 77, 155, 233}
+    for page in range(1, 13):
+        first = (page - 1) * 20
+        last = min(first + 20, reported_total)
+        cards = "".join(
+            _acbar_card(index) if index in medical_indexes else _non_medical_acbar_card(index)
+            for index in range(first, last)
+        )
+        url = "https://www.acbar.org/en/jobs" if page == 1 else f"https://www.acbar.org/en/jobs?page={page}"
+        pages[url] = f"<p>{reported_total} jobs found</p>{cards}"
+    pages["https://www.acbar.org/en/jobs?page=13"] = f"<p>{reported_total} jobs found</p><p>No jobs found</p>"
+    fake_client = _FakeAcbarClient(pages)
+    monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    jobs = await discovery.discover_acbar_jobs({})
+
+    assert len(jobs) == reported_total
+    assert jobs.metrics.source_listings_reported == reported_total
+    assert jobs.metrics.listings_seen == reported_total
+    assert jobs.metrics.listing_parse_failures == 0
+    assert jobs.metrics.vacancies_parsed == reported_total
+    assert jobs.metrics.pages_requested == 13
+    assert jobs.metrics.pages_succeeded == 13
+    assert jobs.metrics.pagination_stop_reason == "END_REACHED"
+    assert jobs.metrics.status == "SCANNED"
+    assert jobs.metrics.not_processed_due_to_budget == 0
+    # Stage 2 only opens plausible medical cards; Stage 1 nevertheless retains
+    # every listing in the source snapshot.
+    detail_calls = [call for call in fake_client.get_calls if call not in pages]
+    assert len(detail_calls) == len(medical_indexes)

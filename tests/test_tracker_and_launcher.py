@@ -14,7 +14,7 @@ def test_tracker_simple_status_flow(tmp_path, monkeypatch):
     stored = tracker.get_job_by_id("j1")
     assert stored["status"] == tracker.PACKAGE_READY
     assert stored["package"]["application_route"] == "hr@example.org"
-    ok, message = tracker.mark_applied_manually("j1")
+    ok, message = tracker.mark_applied_manually("j1", confirmation="APPLIED j1")
     assert ok, message
     assert tracker.get_job_by_id("j1")["status"] == tracker.APPLIED_MANUALLY
 

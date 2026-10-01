@@ -7,11 +7,10 @@ from typing import Any
 
 import uvicorn
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from starlette.requests import Request
 
 from utils.discovery import run_discovery_scan
 from utils.documents import prepare_application_bundle
@@ -124,12 +123,17 @@ def api_prepare(job_id: str):
 
 
 @app.post("/api/jobs/{job_id}/mark-applied")
-def api_mark_applied(job_id: str):
-    ok, message = mark_applied_manually(job_id)
+async def api_mark_applied(job_id: str, request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    confirmation = payload.get("confirmation", "") if isinstance(payload, dict) else ""
+    ok, message = mark_applied_manually(job_id, confirmation=confirmation)
     if not ok:
         raise HTTPException(status_code=409, detail=message)
     return {"ok": True, "message": message}
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8080) -> None:
+def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
     uvicorn.run("dashboard.server:app", host=host, port=port, reload=False)

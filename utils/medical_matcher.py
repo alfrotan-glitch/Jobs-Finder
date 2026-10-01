@@ -219,7 +219,7 @@ def _match_requirement(requirement: Requirement, evidence: ProfileEvidence, *, t
 def _direct_match(requirement: Requirement, evidence: ProfileEvidence, keys: list[str]) -> RequirementMatch:
     snippets: list[str] = []
     for key in keys:
-        snippets.extend(evidence.evidence_text(key))
+        snippets.extend(evidence.evidence_text(key, verified_only=True))
     if snippets:
         return RequirementMatch(
             key=requirement.key,
@@ -256,12 +256,12 @@ def _years_match(requirement: Requirement, evidence: ProfileEvidence) -> Require
     known_values: list[float] = []
     snippets: list[str] = []
     for key in candidate_keys:
-        for value in evidence.values(key):
+        for value in evidence.verified_values(key):
             try:
                 known_values.append(float(value))
             except (TypeError, ValueError):
                 pass
-        snippets.extend(evidence.evidence_text(key))
+        snippets.extend(evidence.evidence_text(key, verified_only=True))
 
     if not known_values:
         return RequirementMatch(
@@ -580,19 +580,3 @@ def _summary(priority: str, matches: list[RequirementMatch], facts: dict[str, An
     not_met = sum(1 for m in matches if m.status == NOT_MET)
     medical_note = "medical vacancy" if facts.get("is_medical") else "not clearly a medical vacancy"
     return f"{priority}: {met} met, {needs} need verification, {not_met} not met; source appears to be a {medical_note}."
-
-
-def important_requirement_table(report: MatchReport | dict[str, Any]) -> list[dict[str, Any]]:
-    """Return the UI-friendly Required → Status table."""
-    data = report.to_dict() if isinstance(report, MatchReport) else report
-    return [
-        {
-            "required": item.get("label"),
-            "level": item.get("required"),
-            "status": item.get("status"),
-            "explanation": item.get("explanation"),
-            "evidence": item.get("evidence", []),
-            "vacancy_evidence": item.get("required_evidence", []),
-        }
-        for item in data.get("requirement_matches", [])
-    ]

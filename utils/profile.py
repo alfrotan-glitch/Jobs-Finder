@@ -57,8 +57,11 @@ class ProfileEvidence:
         values = self.values(key)
         return values[0] if values else default
 
-    def evidence_text(self, key: str) -> list[str]:
-        return [item.quote for item in self.items.get(key, []) if item.quote]
+    def evidence_text(self, key: str, *, verified_only: bool = False) -> list[str]:
+        return [item.quote for item in self.items.get(key, []) if item.quote and (not verified_only or item.verified)]
+
+    def verified_values(self, key: str) -> list[Any]:
+        return [item.value for item in self.items.get(key, []) if item.verified]
 
     def to_dict(self) -> dict[str, Any]:
         return {key: [item.to_dict() for item in items] for key, items in self.items.items()}
@@ -95,58 +98,6 @@ LANGUAGE_ALIASES = {
     "dari": ["dari"],
     "pashto": ["pashto", "pushto"],
 }
-
-OWNER_CONFIRMED_DR_FROTAN_CREDENTIAL_DATE = "2026-09-30"
-
-
-def is_dr_frotan_profile(profile: dict[str, Any]) -> bool:
-    personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
-    full_name = f"{personal.get('first_name', '')} {personal.get('last_name', '')}".strip().lower()
-    return full_name == "allah yar frotan"
-
-
-def apply_owner_confirmed_dr_frotan_credentials(profile: dict[str, Any]) -> dict[str, Any]:
-    """Apply Dr. Frotan's owner-confirmed medical credentials in-place.
-
-    This verifies completion/validity only. It deliberately does not add or
-    fabricate license number, registration number, issue date, expiry date,
-    certificate number, or document fields. Existing explicit number/document
-    values are preserved if the user later adds them to the profile.
-    """
-    if not is_dr_frotan_profile(profile):
-        return profile
-
-    existing_license = profile.get("license_registration") if isinstance(profile.get("license_registration"), dict) else {}
-    license_data = dict(existing_license or {})
-    license_data["authority"] = license_data.get("authority") or "Afghan Medical Council / medical professional registration"
-    license_data.setdefault("number", "")
-    license_data["status"] = "Verified — holds valid medical professional registration/license"
-    license_data["verified"] = True
-    license_data["source"] = license_data.get("source") or f"owner-confirmed on {OWNER_CONFIRMED_DR_FROTAN_CREDENTIAL_DATE}"
-    profile["license_registration"] = license_data
-
-    existing_exam = profile.get("medical_exit_exam") if isinstance(profile.get("medical_exit_exam"), dict) else {}
-    exam_data = dict(existing_exam or {})
-    exam_data["status"] = "Verified — completed the required Medical Exit Exam"
-    exam_data["verified"] = True
-    exam_data["source"] = exam_data.get("source") or f"owner-confirmed on {OWNER_CONFIRMED_DR_FROTAN_CREDENTIAL_DATE}"
-    profile["medical_exit_exam"] = exam_data
-
-    note = profile.get("source_cv_note") or "Structured from the user-supplied CV."
-    confirmation_note = (
-        "Owner-confirmed Medical Exit Exam and valid medical professional registration/license added on "
-        f"{OWNER_CONFIRMED_DR_FROTAN_CREDENTIAL_DATE}. No license/registration number, issue date, expiry date, "
-        "certificate number, or document was provided."
-    )
-    if confirmation_note not in str(note):
-        profile["source_cv_note"] = f"{note.rstrip()} {confirmation_note}"
-    return profile
-
-
-def profile_with_owner_confirmed_credentials(profile: dict[str, Any]) -> dict[str, Any]:
-    updated = deepcopy(profile)
-    return apply_owner_confirmed_dr_frotan_credentials(updated)
-
 
 # ---------------------------------------------------------------------------
 # Profile I/O
@@ -399,7 +350,7 @@ def _add_languages(evidence: ProfileEvidence, profile: dict[str, Any], texts: li
         for name, level in languages.items():
             canonical = _canonical_language(name)
             if canonical:
-                evidence.add(f"language_{canonical}", level or True, "profile.languages", f"{name}: {level}", verified=True)
+                evidence.add(f"language_{canonical}", level or True, "profile.languages", f"{name}: {level}", verified=str(level).strip().lower() not in {"needs verification", "unknown", "unconfirmed"})
     elif isinstance(languages, list):
         for item in languages:
             if isinstance(item, dict):
@@ -409,12 +360,12 @@ def _add_languages(evidence: ProfileEvidence, profile: dict[str, Any], texts: li
                 name, level = str(item), True
             canonical = _canonical_language(name)
             if canonical:
-                evidence.add(f"language_{canonical}", level, "profile.languages", f"{name}: {level}", verified=True)
+                evidence.add(f"language_{canonical}", level, "profile.languages", f"{name}: {level}", verified=str(level).strip().lower() not in {"needs verification", "unknown", "unconfirmed"})
 
     for source, text in texts:
         for canonical, aliases in LANGUAGE_ALIASES.items():
             if any(re.search(rf"\b{re.escape(alias)}\b", text, flags=re.I) for alias in aliases):
-                evidence.add(f"language_{canonical}", True, source, _quote_for_alias(text, aliases), verified=(source == "profile"))
+                evidence.add(f"language_{canonical}", True, source, _quote_for_alias(text, aliases), verified=False)
 
 
 def _canonical_language(name: str) -> str | None:
@@ -440,7 +391,7 @@ def _add_terms(evidence: ProfileEvidence, texts: list[tuple[str, str]]) -> None:
                 match = re.search(pattern, text, flags=re.I)
                 if match:
                     quote = normalize_text(text[max(0, match.start() - 50): match.end() + 50])
-                    evidence.add(key, True, source, quote, verified=(source == "profile"))
+                    evidence.add(key, True, source, quote, verified=False)
                     break
 
 
@@ -502,10 +453,10 @@ def _add_experience_years(evidence: ProfileEvidence, profile: dict[str, Any], re
     if resume_text:
         clinical_text_years = _extract_years_from_text(resume_text, ["clinical", "medical", "hospital", "clinic", "patient"])
         if clinical_text_years:
-            evidence.add("clinical_experience_years", clinical_text_years, "cv", f"{clinical_text_years:g} years clinical experience mentioned in CV", verified=True)
+            evidence.add("clinical_experience_years", clinical_text_years, "cv", f"{clinical_text_years:g} years clinical experience mentioned in CV", verified=False)
         ngo_text_years = _extract_years_from_text(resume_text, ["ngo", "humanitarian", "emergency", "donor"])
         if ngo_text_years:
-            evidence.add("ngo_experience_years", ngo_text_years, "cv", f"{ngo_text_years:g} years NGO/humanitarian experience mentioned in CV", verified=True)
+            evidence.add("ngo_experience_years", ngo_text_years, "cv", f"{ngo_text_years:g} years NGO/humanitarian experience mentioned in CV", verified=False)
 
 
 def _add_personal(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
@@ -534,7 +485,7 @@ def _add_skills_and_certificates(evidence: ProfileEvidence, profile: dict[str, A
 
 def build_profile_evidence(profile: dict[str, Any], resume_text: str = "", today: date | None = None) -> ProfileEvidence:
     """Build structured evidence without modifying the caller's profile object."""
-    profile = profile_with_owner_confirmed_credentials(profile)
+    profile = deepcopy(profile)
     evidence = ProfileEvidence(raw_profile=profile)
     ptext = _profile_text(profile)
     texts = [("profile", ptext)]
@@ -553,17 +504,10 @@ def build_profile_evidence(profile: dict[str, Any], resume_text: str = "", today
     # CV-only medical degree evidence.
     if resume_text and re.search(r"\b(M\.?D\.?|MBBS|Medical Doctor|Doctor of Medicine|Physician)\b", resume_text, flags=re.I):
         quote = _quote_for_alias(resume_text, ["MD", "MBBS", "Medical Doctor", "Doctor of Medicine", "Physician"])
-        evidence.add("md_degree", True, "cv", quote or "Medical degree mentioned in CV", verified=True)
+        evidence.add("md_degree", True, "cv", quote or "Medical degree mentioned in CV", verified=False)
 
     if resume_text and re.search(r"\b(licen[cs]e|registration|registered)\b", resume_text, flags=re.I):
         quote = _quote_for_alias(resume_text, ["license", "licence", "registration", "registered"])
-        evidence.add("license_registration", True, "cv", quote or "License/registration mentioned in CV", verified=True)
+        evidence.add("license_registration", True, "cv", quote or "License/registration mentioned in CV", verified=False)
 
     return evidence
-
-
-def summarize_evidence(evidence: ProfileEvidence, keys: list[str]) -> list[str]:
-    snippets: list[str] = []
-    for key in keys:
-        snippets.extend(evidence.evidence_text(key))
-    return snippets

@@ -58,12 +58,15 @@ Python support is intentionally conservative. The code was validated in this env
 
 ## Manual setup
 
+The dashboard binds to `127.0.0.1` by default and is not exposed to the LAN. Choose a different host explicitly only when you understand the privacy implications.
+
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp profile.yaml.example profile.yaml
-python main.py server --host 0.0.0.0 --port 8080
+python main.py server --host 127.0.0.1 --port 8080
 ```
 
 Open <http://localhost:8080>.

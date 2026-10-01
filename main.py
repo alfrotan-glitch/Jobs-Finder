@@ -15,7 +15,6 @@ import yaml
 
 from utils.discovery import PARTIAL_SCAN, SOURCES_UNAVAILABLE, run_discovery_scan
 from utils.documents import prepare_application_bundle
-from utils.master_cv import create_master_cv
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.profile import save_profile
 from utils.profile_builder import build_profile_from_cv_file
@@ -140,7 +139,7 @@ def cmd_mark_applied(job_id: str) -> None:
     if typed != phrase:
         print("Not recorded.")
         return
-    ok, message = mark_applied_manually(job_id)
+    ok, message = mark_applied_manually(job_id, confirmation=typed)
     print(message if ok else f"Could not record: {message}")
 
 
@@ -149,15 +148,6 @@ def cmd_import_cv(cv_path: str, profile_path: str) -> None:
     save_profile(profile, profile_path)
     print(f"Structured profile written to {profile_path}")
     print("Review it before scanning. Missing evidence remains Needs verification.")
-
-
-def cmd_create_master_cv(profile_path: str, out_dir: str) -> None:
-    bundle = create_master_cv(profile_path, out_dir=out_dir)
-    print("Master CV created:")
-    print(f"- Markdown: {bundle.markdown_path}")
-    print(f"- DOCX: {bundle.docx_path}")
-    print(f"- PDF: {bundle.pdf_path}")
-    print(f"- Review checklist: {bundle.review_path}")
 
 
 def main() -> None:
@@ -183,12 +173,10 @@ def main() -> None:
     import_cv.add_argument("cv_path")
     import_cv.add_argument("--profile", default="profile.yaml")
 
-    master_cv = sub.add_parser("create-master-cv", help="Export a master CV from verified profile facts")
-    master_cv.add_argument("--profile", default="profile.yaml")
-    master_cv.add_argument("--out-dir", default="documents/master_cv")
+
 
     server = sub.add_parser("server", help="Launch the web dashboard")
-    server.add_argument("--host", default="0.0.0.0")
+    server.add_argument("--host", default="127.0.0.1")
     server.add_argument("--port", type=int, default=8080)
 
     args = parser.parse_args()
@@ -199,9 +187,6 @@ def main() -> None:
         return
     if args.command == "import-cv":
         cmd_import_cv(args.cv_path, args.profile)
-        return
-    if args.command == "create-master-cv":
-        cmd_create_master_cv(args.profile, args.out_dir)
         return
     if args.command == "recommended":
         print_recommended()

@@ -328,7 +328,7 @@ TERM_REQUIREMENTS: dict[str, dict[str, Any]] = {
     },
     "afghanistan_experience": {
         "label": "Afghanistan health-sector experience",
-        "patterns": [r"\bAfghanistan\b", r"\bAfghan\b", r"\bMoPH\b", r"\bMinistry of Public Health\b"],
+        "patterns": [r"(?:experience|work|worked|based|within).{0,40}\bAfghanistan\b", r"\bAfghanistan\b.{0,40}(?:experience|work|based)", r"\bMoPH\b", r"\bMinistry of Public Health\b"],
         "criticality": "important",
     },
     "bphs": {"label": "BPHS", "patterns": [r"\bBPHS\b", r"Basic Package of Health Services"], "criticality": "important"},

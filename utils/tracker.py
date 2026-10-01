@@ -23,8 +23,6 @@ APPLIED_MANUALLY = "APPLIED_MANUALLY"
 NEEDS_VERIFICATION = "NEEDS_VERIFICATION"
 NOT_ELIGIBLE = "NOT_ELIGIBLE"
 
-VALID_STATUSES = {FOUND, REVIEWED, PACKAGE_READY, APPLIED_MANUALLY, NEEDS_VERIFICATION, NOT_ELIGIBLE}
-
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -182,15 +180,12 @@ def update_tailored_resume(job_id: str, documents: dict[str, Any]) -> None:
         conn.close()
 
 
-def get_tailored_resume(job_id: str) -> dict[str, Any]:
-    job = get_job_by_id(job_id)
-    return (job or {}).get("documents") or {}
-
-
-def mark_applied_manually(job_id: str) -> tuple[bool, str]:
+def mark_applied_manually(job_id: str, *, confirmation: str = "") -> tuple[bool, str]:
     job = get_job_by_id(job_id)
     if not job:
         return False, "Vacancy not found."
+    if confirmation != f"APPLIED {job_id}":
+        return False, f"Explicit confirmation required: type APPLIED {job_id}."
     if job.get("readiness") == "NOT_ELIGIBLE":
         return False, "Cannot mark a NOT_ELIGIBLE vacancy as applied."
     conn = get_db()

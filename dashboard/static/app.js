@@ -43,6 +43,7 @@ function jobCard(job) {
       <div class="actions">
         ${canPrepare ? `<button onclick="prepareJob('${escapeHtml(job.id)}')">Prepare package</button>` : ""}
         ${route ? `<a class="button secondary" href="${escapeHtml(route)}" target="_blank" rel="noopener">Open official route</a>` : ""}
+        ${job.status === "PACKAGE_READY" ? `<button class="secondary" onclick="markApplied('${escapeHtml(job.id)}')">Mark applied manually</button>` : ""}
       </div>
     </article>`;
 }
@@ -104,6 +105,19 @@ async function prepareJob(id) {
   }
 }
 window.prepareJob = prepareJob;
+
+async function markApplied(id) {
+  const confirmation = window.prompt(`If you manually submitted this application, type APPLIED ${id}`) || "";
+  try {
+    const response = await fetch(`/api/jobs/${encodeURIComponent(id)}/mark-applied`, {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({confirmation})
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Application was not recorded");
+    setStatus(data.message, "ok"); await refresh();
+  } catch (error) { setStatus(error.message, "error"); }
+}
+window.markApplied = markApplied;
 
 for (const button of document.querySelectorAll(".tabs button")) {
   button.addEventListener("click", () => {

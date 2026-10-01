@@ -256,10 +256,6 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
     return ScanResult(status=status, jobs=deduped, source_reports=source_reports, started_at=started, finished_at=utc_now(), message=message)
 
 
-async def discover_all_jobs(profile: dict[str, Any] | None = None) -> list[Job]:
-    """Compatibility wrapper for older CLI/tests: returns jobs only."""
-    return (await run_discovery_scan(profile)).jobs
-
 
 def run_discovery_scan_sync(profile: dict[str, Any] | None = None, *, today: date | None = None) -> ScanResult:
     return asyncio.run(run_discovery_scan(profile, today=today))

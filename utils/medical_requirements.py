@@ -186,6 +186,46 @@ MD_ACCEPTANCE_PATTERNS = [
     r"\bDoctor\s*\(\s*MD\s*\)\b",
 ]
 
+# An MD/physician mention in the vacancy BODY only counts as an accepted
+# qualification when it appears in a credential/qualification context.  Real
+# vacancies for other professions routinely mention doctors in their duties
+# ("Work closely with the medical doctor...", "Contact the physician for
+# inaccuracy in prescription order...") and such coordination wording must
+# never convert a nurse/pharmacist vacancy into an MD-compatible role.
+MD_QUALIFICATION_CONTEXT_CUES = [
+    r"degree",
+    r"diploma",
+    r"certificat",
+    r"qualif",
+    r"graduat",
+    r"educat",
+    r"faculty",
+    r"universit",
+    r"licen[cs]",
+    r"regist",
+    r"council",
+    r"\brequired\b",
+    r"\brequirements?\b",
+    r"must\s+(?:be|hold|have)",
+    r"\bpreferred\b",
+    r"\bbackground\b",
+    r"\bcandidates?\b",
+    r"\bapplicants?\b",
+    r"\bholder\b",
+    r"or\s+equivalent",
+    r"\bspecialist\b",
+    r"exit\s+exam",
+]
+
+# Coordination/referral phrases that immediately precede a mention of a
+# doctor/physician describe ANOTHER staff member's involvement in the duties,
+# never the qualification accepted for the advertised role.
+MD_DUTY_MENTION_PREFIXES = [
+    r"(?:work(?:s|ing)?\s+(?:closely\s+)?|in\s+(?:close\s+)?(?:coordination|collaboration|liaison)\s+|coordinat\w*\s+|collaborat\w*\s+|liais\w*\s+|communicat\w*\s+|consult\w*\s+)with\s+(?:the|a|an|other|all)?\s*$",
+    r"(?:contact(?:ing)?|call|inform|notify)\s+(?:the|a|an)?\s*$",
+    r"(?:under\s+(?:the\s+)?(?:direct\s+)?supervision\s+of|supervised\s+by|referred?\s+(?:by|to)|report(?:s|ing)?\s+to|prescribed\s+by|accompan\w+)\s+(?:the|a|an)?\s*$",
+]
+
 MD_ROLE_TITLE_PATTERNS = [
     r"\bmedical\s+doctor\b",
     r"\bmedical\s+officer\b",
@@ -281,6 +321,28 @@ INCOMPATIBLE_PROFESSIONAL_ROLES: list[dict[str, Any]] = [
         "label": "vaccinator / EPI-certificate role",
         "title_patterns": [r"\bvaccinator\b", r"\bEPI\s+vaccinator\b"],
         "qualification_patterns": [r"\bvaccin(?:ation|ator)\s+certificate\b", r"\bEPI\s+(?:certificate|certification)\b"],
+    },
+    {
+        # Psychology/psychosocial counselling is its own professional
+        # credential track (e.g. "Bachelor's degree or above in psychology,
+        # and counselling / MoPH approved 2 years diploma in psychosocial
+        # counselling"); an MD is not eligible unless the vacancy explicitly
+        # accepts MD/physician credentials.
+        "key": "psychology_counselling",
+        "label": "psychology / psychosocial-counselling-specific role",
+        "title_patterns": [
+            r"\bcounsel?lor\b",
+            r"\bpsychologist\b",
+            r"\bpsychosocial\s+(?:counsel?lor|worker)\b",
+            r"\bmental\s+health\s+promot(?:er|or)\b",
+            r"\bMHPSS\s+(?:counsel?lor|assistant|promot(?:er|or)|worker)\b",
+        ],
+        "qualification_patterns": [
+            r"\b(?:degree|diploma|bachelor(?:'s)?|master(?:'s)?)\s+(?:or\s+above\s+)?in\s+(?:clinical\s+)?psycholog(?:y|ical)\b",
+            r"\bdiploma\s+in\s+psychosocial\s+counsel?ling\b",
+            r"\bpsychosocial\s+counsel?ling\s+(?:diploma|certificate|degree)\b",
+            r"\bregistered\s+psychologist\b",
+        ],
     },
 ]
 
@@ -857,16 +919,44 @@ def _pattern_hit(patterns: Iterable[str], text: str) -> tuple[str, int, int] | N
     return None
 
 
-def _md_is_accepted(text: str) -> bool:
-    return _pattern_hit(MD_ACCEPTANCE_PATTERNS, text) is not None
+def _md_qualification_acceptance_hit(text: str) -> tuple[str, int, int] | None:
+    """Find an MD/physician mention that is genuinely an accepted qualification.
+
+    A mention only counts when (a) its surrounding window contains a
+    credential/qualification cue (degree, diploma, licence, required, ...)
+    and (b) it is not immediately preceded by a coordination/referral phrase
+    such as "work closely with the" or "contact the", which describe duties
+    involving another staff member rather than the accepted credential.
+    """
+    for pattern in MD_ACCEPTANCE_PATTERNS:
+        for match in re.finditer(pattern, text or "", flags=re.I):
+            window = text[max(0, match.start() - 90): match.end() + 90]
+            if not any(re.search(cue, window, flags=re.I) for cue in MD_QUALIFICATION_CONTEXT_CUES):
+                continue
+            prefix = text[max(0, match.start() - 45): match.start()]
+            if any(re.search(duty, prefix, flags=re.I) for duty in MD_DUTY_MENTION_PREFIXES):
+                continue
+            return match.group(0), match.start(), match.end()
+    return None
+
+
+def _md_is_accepted(title: str, scoped_text: str) -> bool:
+    """True when the role title or qualifications accept MD/physician credentials.
+
+    Title mentions (e.g. "Medical Doctor (MD)") always count.  Body mentions
+    count only in a qualification context -- an incidental duty mention of a
+    doctor/physician never makes a different professional role MD-compatible.
+    """
+    if _pattern_hit(MD_ACCEPTANCE_PATTERNS, title or "") is not None:
+        return True
+    return _md_qualification_acceptance_hit(scoped_text or "") is not None
 
 
 def analyze_professional_role(title: str, text: str) -> dict[str, Any]:
     clean_title = normalize_text(title)
     scoped = requirement_relevant_text(normalize_text(text))
-    combined = "\n".join(part for part in [clean_title, scoped] if part)
-    role_text = combined or clean_title
-    md_accepted = _md_is_accepted(role_text)
+    role_text = "\n".join(part for part in [clean_title, scoped] if part) or clean_title
+    md_accepted = _md_is_accepted(clean_title, scoped)
     md_title = _pattern_hit(MD_ROLE_TITLE_PATTERNS, clean_title)
 
     blocker: dict[str, Any] | None = None
@@ -893,8 +983,8 @@ def analyze_professional_role(title: str, text: str) -> dict[str, Any]:
         }
 
     if md_title or md_accepted:
-        hit = md_title or _pattern_hit(MD_ACCEPTANCE_PATTERNS, role_text) or ("", 0, 0)
-        quote_text = clean_title if md_title else role_text
+        hit = md_title or _pattern_hit(MD_ACCEPTANCE_PATTERNS, clean_title) or _md_qualification_acceptance_hit(scoped) or ("", 0, 0)
+        quote_text = clean_title if md_title or _pattern_hit(MD_ACCEPTANCE_PATTERNS, clean_title) else scoped
         _, start, end = hit
         return {
             "classification": "md_physician_role",
@@ -1232,11 +1322,36 @@ def extract_locations(text: str, explicit_location: str = "") -> list[str]:
     return found
 
 
+_GENDER_UNRESTRICTED_PATTERN = r"\b(?:male\s*/\s*female|female\s*/\s*male|male\s+and\s+female|female\s+and\s+male|all\s+genders|any\s+gender|gender\s*[:\-]?\s*any)\b"
+
+
+def extract_labeled_gender_requirement(text: str) -> str | None:
+    """Detect a structured source gender field such as ACBAR's quick-summary row.
+
+    ACBAR detail pages carry a hard "Gender" field whose label and value are
+    separate elements, so the extracted page text reads "Gender Female"
+    without a colon.  This is source-structured data, not free prose: the
+    narrow label-value adjacency below only matches that form (or the
+    colon/dash form) and never generic wording such as "non-discrimination
+    based on race, gender, age".
+    """
+    lower = normalize_text(text).lower()
+    if not lower:
+        return None
+    if re.search(_GENDER_UNRESTRICTED_PATTERN, lower):
+        return None
+    if re.search(r"\bgender\s*[:\-]?\s*(?:female|women)\b", lower):
+        return "female"
+    if re.search(r"\bgender\s*[:\-]?\s*(?:male|men)\b", lower):
+        return "male"
+    return None
+
+
 def extract_gender_requirement(text: str) -> str | None:
     lower = normalize_text(text).lower()
     if not lower:
         return None
-    if re.search(r"\b(?:male\s*/\s*female|female\s*/\s*male|male\s+and\s+female|female\s+and\s+male|all\s+genders|any\s+gender)\b", lower):
+    if re.search(_GENDER_UNRESTRICTED_PATTERN, lower):
         return None
 
     # Preferences/encouragement are not hard eligibility constraints.
@@ -1249,10 +1364,14 @@ def extract_gender_requirement(text: str) -> str | None:
         return "male_encouraged"
 
     hard_patterns = [
-        ("female", r"\bgender\s*[:\-]\s*female\b"),
-        ("male", r"\bgender\s*[:\-]\s*male\b"),
+        ("female", r"\bgender\s*[:\-]?\s*(?:female|women)\b"),
+        ("male", r"\bgender\s*[:\-]?\s*(?:male|men)\b"),
         ("female", r"\b(?:sex|gender)\s*[:\-]\s*(?:woman|women)\b"),
         ("male", r"\b(?:sex|gender)\s*[:\-]\s*(?:man|men)\b"),
+        ("female", r"\(\s*(?:female|women)(?:\s+only)?\s*\)"),
+        ("male", r"\(\s*(?:male|men)(?:\s+only)?\s*\)"),
+        ("female", r"\b(?:interested\s+and\s+)?qualified\s+(?:female|women)\s+candidates\s+(?:can|may|should|are\s+(?:invited|requested)\s+to)\s+(?:apply|submit)"),
+        ("male", r"\b(?:interested\s+and\s+)?qualified\s+(?:male|men)\s+candidates\s+(?:can|may|should|are\s+(?:invited|requested)\s+to)\s+(?:apply|submit)"),
         ("female", r"\b(?:female|women)\s+only\b"),
         ("male", r"\b(?:male|men)\s+only\b"),
         ("female", r"\bonly\s+(?:female|women)\b"),
@@ -1394,14 +1513,21 @@ def extract_requirements_from_text(
         )
 
     gender = extract_gender_requirement(combined)
+    gender_quote_text = combined
+    if not gender:
+        # ACBAR-style structured "Gender: Female" / "Gender Female" fields sit
+        # in the quick-summary block ABOVE the Job Summary marker, outside the
+        # requirement-scoped text, so they must be read from the full page text.
+        gender = extract_labeled_gender_requirement(fact_combined)
+        gender_quote_text = fact_combined
     if gender:
-        idx = combined.lower().find("female" if "female" in gender else "male")
+        idx = gender_quote_text.lower().find("female" if "female" in gender else "male")
         _add_requirement(
             requirements,
             provenance,
             "gender_requirement",
             "Gender requirement",
-            combined,
+            gender_quote_text,
             max(0, idx),
             max(0, idx) + 6,
             value=gender,

@@ -58,7 +58,7 @@ if not exist "%VENV_PYTHON%" (
     call :find_bootstrap_python
     if errorlevel 1 (
         echo Startup status: FAILED
-        echo Python 3.11, 3.12, or 3.13 was not found. Install Python, then run this file again.
+        echo Python 3.11 or 3.12 was not found. Install Python 3.11 or 3.12, then run this file again.
         popd >nul 2>&1
         pause
         exit /b 1
@@ -144,7 +144,7 @@ exit /b %EXIT_CODE%
 
 :dependency_failed
 echo Startup status: FAILED
-echo Dependency installation failed. If you are using Python 3.13 and a package has no wheel yet, install Python 3.12 or 3.11, delete .venv, and run this file again.
+echo Dependency installation failed. Install Python 3.12 or 3.11, delete .venv, and run this file again.
 popd >nul 2>&1
 pause
 exit /b 1
@@ -153,22 +153,17 @@ exit /b 1
 set "BOOTSTRAP_PY="
 where py >nul 2>&1
 if not errorlevel 1 (
-    py -3.12 -c "import sys; raise SystemExit(not ((3, 11) <= sys.version_info[:2] < (3, 14)))" >nul 2>&1
+    py -3.12 -c "import sys; raise SystemExit(not ((3, 11) <= sys.version_info[:2] < (3, 13)))" >nul 2>&1
     if not errorlevel 1 (
         set "BOOTSTRAP_PY=py -3.12"
         exit /b 0
     )
-    py -3.11 -c "import sys; raise SystemExit(not ((3, 11) <= sys.version_info[:2] < (3, 14)))" >nul 2>&1
+    py -3.11 -c "import sys; raise SystemExit(not ((3, 11) <= sys.version_info[:2] < (3, 13)))" >nul 2>&1
     if not errorlevel 1 (
         set "BOOTSTRAP_PY=py -3.11"
         exit /b 0
     )
-    py -3.13 -c "import sys; raise SystemExit(not ((3, 11) <= sys.version_info[:2] < (3, 14)))" >nul 2>&1
-    if not errorlevel 1 (
-        set "BOOTSTRAP_PY=py -3.13"
-        exit /b 0
-    )
-    py -3 -c "import sys; raise SystemExit(not ((3, 11) <= sys.version_info[:2] < (3, 14)))" >nul 2>&1
+    py -3 -c "import sys; raise SystemExit(not ((3, 11) <= sys.version_info[:2] < (3, 13)))" >nul 2>&1
     if not errorlevel 1 (
         set "BOOTSTRAP_PY=py -3"
         exit /b 0
@@ -176,7 +171,7 @@ if not errorlevel 1 (
 )
 where python >nul 2>&1
 if not errorlevel 1 (
-    python -c "import sys; raise SystemExit(not ((3, 11) <= sys.version_info[:2] < (3, 14)))" >nul 2>&1
+    python -c "import sys; raise SystemExit(not ((3, 11) <= sys.version_info[:2] < (3, 13)))" >nul 2>&1
     if not errorlevel 1 (
         set "BOOTSTRAP_PY=python"
         exit /b 0

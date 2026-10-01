@@ -263,20 +263,29 @@ def _split_substantive_bullets(values: list[str]) -> list[str]:
     return bullets
 
 
-def _entry_bullets_for_job(entry: dict[str, Any], job: dict[str, Any], match_report: dict[str, Any], *, limit: int = 5) -> list[str]:
+def _entry_bullets_for_job(
+    entry: dict[str, Any],
+    job: dict[str, Any],
+    match_report: dict[str, Any],
+    *,
+    limit: int | None = None,
+) -> list[str]:
+    """Reorder real duties for a vacancy without rewriting or inventing them.
+
+    A relevant position keeps every substantive verified responsibility. Less
+    relevant positions may pass a small ``limit`` so they remain present but
+    concise. The source strings are returned verbatim apart from whitespace and
+    sentence-boundary normalization performed by ``_split_substantive_bullets``.
+    """
     bullets = _split_substantive_bullets(_entry_text_values(entry))
     if not bullets:
         return []
-    ranked = _rank_strings_for_job(bullets, job, match_report, limit=max(limit, len(bullets)))
-    # Keep role-relevant bullets first, then preserve remaining verified duties
-    # so a real position is not reduced to one artificial sentence.
+    ranked = _rank_strings_for_job(bullets, job, match_report, limit=len(bullets))
     ordered: list[str] = []
     for bullet in ranked + bullets:
         if bullet not in ordered:
             ordered.append(bullet)
-        if len(ordered) >= limit:
-            break
-    return ordered
+    return ordered if limit is None else ordered[:limit]
 
 
 def _is_verified_entry(item: Any) -> bool:
@@ -576,6 +585,38 @@ def _vacancy_fit_highlights(profile: dict[str, Any], job: dict[str, Any], match_
     return _rank_strings_for_job(_profile_evidence_lines(profile), job, match_report, limit=limit)
 
 
+def _work_entry_relevance(entry: dict[str, Any], job: dict[str, Any], match_report: dict[str, Any]) -> int:
+    """Deterministically score only textual overlap; never create a new fact."""
+    focus = _tokenize_focus("\n".join([
+        str(job.get("title") or ""), str(job.get("description") or ""),
+        " ".join(_focus_labels(match_report, limit=20)),
+    ]))
+    text = "\n".join([_experience_header(entry), *_entry_text_values(entry)])
+    hits = len(_focus_term_hits(text, focus))
+    lower = text.lower()
+    # Direct clinical/health roles should remain prominent for clinical health
+    # vacancies even when a terse vacancy omits detailed keywords.
+    if any(term in lower for term in ["medical doctor", "clinical", "health & nutrition", "health and nutrition", "public health", "rapid response"]):
+        hits += 2
+    return hits
+
+
+def _tailored_work_sections(
+    entries: list[dict[str, Any]], job: dict[str, Any], match_report: dict[str, Any]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return (most relevant, remaining) while retaining every verified role."""
+    chronological = _reverse_chronological_entries(entries)
+    scored = [(entry, _work_entry_relevance(entry, job, match_report)) for entry in chronological]
+    relevant = [entry for entry, score in sorted(scored, key=lambda pair: pair[1], reverse=True) if score > 0]
+    relevant_ids = {id(entry) for entry in relevant}
+    remaining = [entry for entry in chronological if id(entry) not in relevant_ids]
+    # A generic vacancy can have no useful overlap. Keep the latest role in the
+    # leading section so the CV still has a natural first-page chronology.
+    if not relevant and remaining:
+        relevant, remaining = remaining[:1], remaining[1:]
+    return relevant, remaining
+
+
 def _competencies_from_verified_experience(profile: dict[str, Any], job: dict[str, Any], match_report: dict[str, Any], *, limit: int = 10) -> list[str]:
     lines = "\n".join(_profile_evidence_lines(profile)).lower()
     candidates = [
@@ -736,29 +777,26 @@ def _professional_background_sentence(profile: dict[str, Any]) -> str:
     return ""
 
 
-def _verified_summary_sentence(profile: dict[str, Any], evidence, title: str, company: str, focus_phrases: list[str], highlights: list[str]) -> str:
-    """Build the professional-summary opener from verified evidence only."""
+def _verified_summary_sentence(
+    profile: dict[str, Any], evidence, job: dict[str, Any], match_report: dict[str, Any]
+) -> str:
+    """Build a natural summary from verified facts, never inferred year totals."""
     profile_summary = _verified_profile_summary(profile)
     if profile_summary:
         return profile_summary
-    headline = "Medical Doctor" if evidence.has_verified("md_degree") else "Applicant"
-    qualifiers: list[str] = []
-    clinical_years = _max_verified_years(evidence, "clinical_experience_years")
-    if clinical_years:
-        qualifiers.append(f"{clinical_years:g} years of clinical experience")
-    ngo_years = _max_verified_years(evidence, "ngo_experience_years")
-    if ngo_years:
-        qualifiers.append(f"{ngo_years:g} years of NGO/humanitarian experience")
-    public_years = _max_verified_years(evidence, "public_health_experience_years")
-    if public_years:
-        qualifiers.append(f"{public_years:g} years of public-health experience")
-    if qualifiers:
-        sentence = f"{headline} with {' and '.join(qualifiers)}."
-    else:
-        sentence = f"{headline} applying for the {title} role at {company}."
-    if focus_phrases and highlights:
-        sentence += f" Relevant experience is strongest in {', '.join(focus_phrases[:3])}."
-    return sentence
+    headline = _verified_profile_title(profile, evidence) or ("Medical Doctor" if evidence.has_verified("md_degree") else "Professional")
+    competencies = _competencies_from_verified_experience(profile, job, match_report, limit=6)
+    work_entries, _ = _split_work_entries(profile)
+    if competencies:
+        readable = [item.lower() if item != "HMIS reporting" else item for item in competencies[:5]]
+        if len(readable) > 1:
+            focus = ", ".join(readable[:-1]) + f", and {readable[-1]}"
+        else:
+            focus = readable[0]
+        return f"{headline} with experience in {focus}."
+    if work_entries:
+        return f"{headline} with a record of professional experience across the roles listed below."
+    return f"{headline} presenting verified qualifications for professional consideration."
 
 def generate_tailored_documents(
     job: dict[str, Any],
@@ -813,7 +851,7 @@ def generate_tailored_documents(
 
     professional_title = _professional_title(profile, evidence, job, match_report)
     signature_title = _signature_title(profile, evidence)
-    summary = _verified_summary_sentence(profile, evidence, title, company, focus_phrases, vacancy_highlights)
+    summary = _verified_summary_sentence(profile, evidence, job, match_report)
 
     cv_lines = [
         name.upper(),
@@ -827,14 +865,28 @@ def generate_tailored_documents(
     if skills_bullets:
         cv_lines.extend(["CORE PROFESSIONAL COMPETENCIES", *[f"- {item}" for item in skills_bullets], ""])
     if work_entries:
-        cv_lines.append("PROFESSIONAL EXPERIENCE")
-        for entry in _reverse_chronological_entries(work_entries):
-            line = _experience_header(entry)
-            if line:
-                cv_lines.append(line)
-            for bullet in _entry_bullets_for_job(entry, job, match_report, limit=12):
-                cv_lines.append(f"- {bullet}")
-            cv_lines.append("")
+        most_relevant, remaining = _tailored_work_sections(work_entries, job, match_report)
+        if most_relevant:
+            cv_lines.append("MOST RELEVANT PROFESSIONAL EXPERIENCE")
+            for entry in most_relevant:
+                line = _experience_header(entry)
+                if line:
+                    cv_lines.append(line)
+                # Relevant positions retain all substantive verified duties;
+                # tailoring changes their order, not their factual content.
+                for bullet in _entry_bullets_for_job(entry, job, match_report):
+                    cv_lines.append(f"- {bullet}")
+                cv_lines.append("")
+        if remaining:
+            cv_lines.append("REMAINING PROFESSIONAL EXPERIENCE")
+            for entry in remaining:
+                line = _experience_header(entry)
+                if line:
+                    cv_lines.append(line)
+                # Less relevant history remains visible but concise.
+                for bullet in _entry_bullets_for_job(entry, job, match_report, limit=3):
+                    cv_lines.append(f"- {bullet}")
+                cv_lines.append("")
     if education:
         cv_lines.extend(["EDUCATION", *[f"- {item}" for item in education], ""])
     if evidence.has_verified("license_registration"):

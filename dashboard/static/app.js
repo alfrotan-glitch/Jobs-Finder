@@ -401,7 +401,8 @@ function renderAdvanced() {
       <div class="sourceRow">
         <strong>${escapeHtml(source.name)}</strong>
         <span class="statusBadge ${source.ok ? "ready_to_apply" : "not_eligible"}">${source.ok ? "Reachable" : "Failed"}</span>
-        ${source.error ? `<p>${escapeHtml(source.error)}</p>` : `<p>${escapeHtml(source.jobs_found || 0)} jobs found before filtering.</p>`}
+        ${source.error ? `<p>${escapeHtml(source.error)}</p>` : `<p>${escapeHtml(source.jobs_found || 0)} parsed · ${escapeHtml(source.relevant_candidates || 0)} relevant · ${escapeHtml(source.final_retained || 0)} retained</p>`}
+        ${source.timestamp ? `<p class="sectionHelp">Checked ${escapeHtml(source.timestamp)}</p>` : ""}
       </div>`).join("") || `<p class="sectionHelp">No source report available.</p>`;
     const returnedJobs = scan.job_count ?? scan.jobs?.length ?? 0;
     $("advancedScan").innerHTML = `

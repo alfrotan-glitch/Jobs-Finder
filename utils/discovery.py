@@ -14,7 +14,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, Awaitable, Callable
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -84,7 +84,10 @@ class SourceReport:
     attempted: bool = False
     ok: bool = False
     jobs_found: int = 0
+    relevant_candidates: int = 0
+    final_retained: int = 0
     error: str = ""
+    timestamp: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -119,6 +122,14 @@ class ScanResult:
             "failed_sources": self.failed_sources,
             "job_count": len(self.jobs),
         }
+
+
+class SourceJobs(list[Job]):
+    """Fetcher result retaining the number parsed before relevance filtering."""
+
+    def __init__(self, jobs: list[Job], *, parsed_count: int | None = None):
+        super().__init__(jobs)
+        self.parsed_count = len(jobs) if parsed_count is None else parsed_count
 
 
 SourceFetcher = Callable[[dict[str, Any]], Awaitable[list[Job]]]
@@ -257,7 +268,7 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
 
     for source_id in enabled:
         spec = SOURCE_REGISTRY[source_id]
-        report = SourceReport(id=source_id, name=spec["name"], tier=spec["tier"], attempted=True)
+        report = SourceReport(id=source_id, name=spec["name"], tier=spec["tier"], attempted=True, timestamp=utc_now())
         try:
             fetcher = globals()[spec["fetcher"]]
             try:
@@ -265,7 +276,9 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
             except TypeError:
                 found = await fetcher(profile)
             report.ok = True
-            report.jobs_found = len(found)
+            # SourceJobs lets a source report every valid listing item parsed,
+            # even though only relevant enriched vacancies leave the fetcher.
+            report.jobs_found = int(getattr(found, "parsed_count", len(found)))
             jobs.extend(found)
         except Exception as exc:  # source isolation is mandatory
             report.error = str(exc)
@@ -284,6 +297,9 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
             # A malformed item must not discard valid vacancies or crash the scan.
             continue
     deduped = deduplicate_jobs(normalized, today=today)
+    for report in source_reports:
+        report.relevant_candidates = sum(1 for job in normalized if job.platform.lower() == report.id.lower())
+        report.final_retained = sum(1 for job in deduped if job.platform.lower() == report.id.lower())
 
     successful = sum(1 for report in source_reports if report.ok)
     failed = sum(1 for report in source_reports if report.attempted and not report.ok)
@@ -373,9 +389,13 @@ async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = N
                 seen_urls.update(job.url for job in new_jobs)
                 summaries.extend(new_jobs)
 
-        deduped = deduplicate_jobs(summaries, today=today)
-        relevant = [job for job in deduped if _job_is_relevant(job)]
-        candidates = relevant[:detail_limit]
+        deduped = _deduplicate_source_vacancies(summaries, today=today)
+        # Obvious medical titles are fetched first, but relevance is decided
+        # only after detail enrichment. Remaining budget is spent on cards
+        # whose short listing text may omit the professional requirements.
+        obvious = [job for job in deduped if _job_is_relevant(job)]
+        other = [job for job in deduped if job not in obvious]
+        candidates = (obvious + other)[:detail_limit]
 
         semaphore = asyncio.Semaphore(max_detail_concurrency)
 
@@ -389,18 +409,49 @@ async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = N
                     return job
 
         detailed = await asyncio.gather(*(fetch_detail(job) for job in candidates))
-        return list(detailed)
+        relevant = [job for job in detailed if _job_is_relevant(job)]
+        return SourceJobs(relevant, parsed_count=len(deduped))
+
+
+def _vacancy_identity(url: str) -> str:
+    """Identify official vacancy paths across legitimate ACBAR host aliases."""
+    parsed = urlparse(url)
+    path = re.sub(r"/+$", "", parsed.path.lower())
+    acbar_hosts = {"acbar.org", "www.acbar.org", "server.acbar.org"}
+    host = parsed.netloc.lower().split(":", 1)[0]
+    if host in acbar_hosts:
+        match = re.search(r"/(?:en/)?jobs/(?:details/)?(\d+)(?:/|$)", path)
+        if match:
+            return f"acbar:{match.group(1)}"
+    return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, "", "", ""))
+
+
+def _deduplicate_source_vacancies(jobs: list[Job], *, today: date | None = None) -> list[Job]:
+    seen: set[str] = set()
+    result: list[Job] = []
+    for job in jobs:
+        if is_expired(job, today=today):
+            continue
+        key = _vacancy_identity(job.url)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(job)
+    return result
 
 
 def _parse_acbar_listing(html: str, base_url: str) -> list[Job]:
     soup = BeautifulSoup(html or "", "html.parser")
     jobs: list[Job] = []
-    for anchor in soup.select('a[href*="/en/jobs/details/"]'):
+    for anchor in soup.select('a[href*="/en/jobs/details/"], a[href^="/jobs/"]'):
         title = normalize_space(anchor.get_text(" ", strip=True))
         href = urljoin(base_url, anchor.get("href", ""))
+        path = urlparse(href).path
+        if not re.search(r"(?:/en/jobs/details/\d+(?:/[^/]+)?|/jobs/\d+/[^/]+\.jsp)$", path, flags=re.I):
+            continue
         if not title or not href or title.lower() in {"more locations", "view all jobs"}:
             continue
-        card = anchor.find_parent(["div", "article", "li", "section"]) or anchor.parent
+        card = _listing_card(anchor)
         context = normalize_space(card.get_text(" ", strip=True) if card else anchor.get_text(" ", strip=True))
         company = _guess_company_from_listing_context(context, title) or "Unknown"
         closing = parse_closing_date(context) or ""
@@ -435,15 +486,49 @@ def _parse_acbar_listing(html: str, base_url: str) -> list[Job]:
     return jobs
 
 
+def _listing_card(anchor: Any) -> Any:
+    """Return the smallest container that has ACBAR card metadata."""
+    fallback = anchor.parent
+    for parent in anchor.parents:
+        if getattr(parent, "name", None) not in {"div", "article", "li", "section"}:
+            continue
+        fallback = parent
+        text = normalize_space(parent.get_text(" ", strip=True))
+        if re.search(r"20\d{2}-\d{2}-\d{2}", text):
+            return parent
+        if len(text) > 1200:
+            break
+    return fallback
+
+
+def _labeled_value(text: str, label: str) -> str:
+    match = re.search(rf"(?:^|\n)\s*{label}\s*:?\s*([^\n]+)", text, flags=re.I)
+    return normalize_space(match.group(1)) if match else ""
+
+
 def _parse_acbar_detail(html: str, job: Job) -> Job:
     soup = BeautifulSoup(html or "", "html.parser")
     text = strip_html(soup.get_text("\n", strip=True))
-    title_node = soup.find(["h1", "h2"])
+    # Generic h2 headings are section labels ("About the Company", "Job
+    # Summary") on the current site, not the vacancy title. Preserve the
+    # authoritative listing title unless a title-specific element exists.
+    title_node = soup.select_one("h1.job-title, h1.vacancy-title, [data-vacancy-title], h1")
     if title_node:
         title = normalize_space(title_node.get_text(" ", strip=True)).replace("ACBAR:", "").strip()
-        if title:
+        if title and title.lower() not in {"about the company", "job summary", "job requirements", "acbar"}:
             job.title = title
     job.description = normalize_space(text)[:12000]
+    organization = _labeled_value(text, r"Organization")
+    location = _labeled_value(text, r"(?:Job )?Location") or _labeled_value(text, r"Location")
+    if organization:
+        job.company = organization
+        job.metadata["organization"] = organization
+    if location:
+        job.location = location
+        job.metadata["location"] = location
+    gender = _labeled_value(text, r"Gender")
+    if gender:
+        job.metadata["gender"] = gender
     email = _extract_email(text)
     if email:
         job.apply_email = email
@@ -452,7 +537,8 @@ def _parse_acbar_detail(html: str, job: Job) -> Job:
         job.metadata["apply_email"] = email
         job.metadata["application_email"] = email
         job.metadata["application_method"] = "EMAIL"
-    app_url = _extract_application_url(text)
+    linked_urls = [urljoin(job.url, str(anchor.get("href") or "")) for anchor in soup.select("a[href]")]
+    app_url = _extract_application_url("\n".join([text, *linked_urls]))
     if app_url:
         job.metadata["application_url"] = app_url
         job.metadata["apply_url"] = app_url
@@ -475,15 +561,28 @@ def _parse_acbar_detail(html: str, job: Job) -> Job:
     return job
 
 
-async def discover_reliefweb_jobs(profile: dict[str, Any]) -> list[Job]:
+async def discover_reliefweb_jobs(profile: dict[str, Any], *, today: date | None = None) -> list[Job]:
+    """Discover ReliefWeb cards and enrich them before medical relevance."""
     cfg = ((profile.get("job_sources") or {}).get("reliefweb") or {}) if isinstance(profile, dict) else {}
     timeout = float(cfg.get("timeout_seconds", 25))
-    limit = int(cfg.get("limit", 20))
+    limit = max(1, int(cfg.get("limit", 20)))
     url = cfg.get("url") or "https://reliefweb.int/jobs?search=Afghanistan%20health%20medical%20nutrition"
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
         response = await client.get(url)
         response.raise_for_status()
-    return _parse_reliefweb_listing(response.text, url, limit=limit)
+        summaries = _parse_reliefweb_listing(response.text, url, limit=limit)
+
+        async def fetch_detail(job: Job) -> Job:
+            try:
+                detail = await client.get(job.url)
+                detail.raise_for_status()
+                return _parse_reliefweb_detail(detail.text, job)
+            except Exception:
+                return job
+
+        detailed = await asyncio.gather(*(fetch_detail(job) for job in summaries))
+    relevant = [job for job in detailed if _job_is_relevant(job)]
+    return SourceJobs(deduplicate_jobs(relevant, today=today), parsed_count=len(summaries))
 
 
 def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int) -> list[Job]:
@@ -497,8 +596,6 @@ def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int) -> list[Jo
         card = anchor.find_parent(["article", "li", "div"]) or anchor.parent
         context = normalize_space(card.get_text(" ", strip=True) if card else title)
         if "afghanistan" not in context.lower() and "afghanistan" not in title.lower():
-            continue
-        if not _job_is_relevant(Job("", title, "", "", href, href, "reliefweb", context)):
             continue
         company = _guess_reliefweb_company(context) or "ReliefWeb source"
         closing = parse_closing_date(context) or ""
@@ -532,6 +629,41 @@ def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int) -> list[Jo
         if len(jobs) >= limit:
             break
     return deduplicate_jobs(jobs)
+
+
+def _parse_reliefweb_detail(html: str, job: Job) -> Job:
+    soup = BeautifulSoup(html or "", "html.parser")
+    text = strip_html(soup.get_text("\n", strip=True))
+    title_node = soup.select_one("h1")
+    if title_node:
+        title = normalize_space(title_node.get_text(" ", strip=True))
+        if title and title.lower() not in {"jobs", "reliefweb"}:
+            job.title = title
+    job.description = normalize_space(text)[:12000]
+    company = _labeled_value(text, r"Organization") or _labeled_value(text, r"Source")
+    if company:
+        job.company = company
+        job.metadata["organization"] = company
+    country = _labeled_value(text, r"Country")
+    if country:
+        job.location = country
+        job.metadata["location"] = country
+    closing = parse_closing_date(text)
+    if closing:
+        job.metadata["closing_date"] = closing
+    linked_urls = [urljoin(job.url, str(anchor.get("href") or "")) for anchor in soup.select("a[href]")]
+    app_url = _extract_application_url("\n".join([text, *linked_urls]))
+    email = _extract_email(text)
+    if email:
+        job.apply_email = email
+        job.application_method = "EMAIL"
+        job.metadata.update({"apply_email": email, "application_email": email, "application_method": "EMAIL"})
+    elif app_url and _vacancy_identity(app_url) != _vacancy_identity(job.url):
+        job.apply_url = app_url
+        job.application_method = "WEB"
+        job.metadata.update({"apply_url": app_url, "application_url": app_url, "application_method": "WEB"})
+    job.metadata.setdefault("source_provenance", []).append({"source": "ReliefWeb detail", "url": job.url, "field": "vacancy page"})
+    return job
 
 
 def _guess_company_from_listing_context(context: str, title: str) -> str:

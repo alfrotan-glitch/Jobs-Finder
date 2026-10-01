@@ -201,19 +201,16 @@ async def test_acbar_relevant_vacancy_after_detail_limit_is_discovered(monkeypat
         "job_sources": {"acbar": {"max_pages": 4, "detail_limit": 10}}
     })
 
-    assert len(jobs) == 2
-    assert {j.title for j in jobs} == {"Medical Officer"}
-    assert {j.url for j in jobs} == {
+    # Listing relevance prioritizes the two obvious medical cards, while the
+    # remaining bounded budget enriches terse cards before making a final
+    # relevance decision. The fake detail page is medical for every URL.
+    assert len(jobs) == 10
+    assert {
         "https://www.acbar.org/en/jobs/details/1001/medical-officer-1",
         "https://www.acbar.org/en/jobs/details/1002/medical-officer-2",
-    }
-    # Detail fetches were only made for the 2 medical vacancies, not the 35 non-medical ones.
+    }.issubset({j.url for j in jobs})
     detail_calls = [c for c in fake_client.get_calls if c not in pages]
-    assert len(detail_calls) == 2
-    assert set(detail_calls) == {
-        "https://www.acbar.org/en/jobs/details/1001/medical-officer-1",
-        "https://www.acbar.org/en/jobs/details/1002/medical-officer-2",
-    }
+    assert len(detail_calls) == 10
 
 
 @pytest.mark.asyncio

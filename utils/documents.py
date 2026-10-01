@@ -127,7 +127,10 @@ def _contact_lines(profile: dict[str, Any]) -> list[str]:
         if value or _is_placeholder_contact(value, key):
             lines.append(f"{label}: {_safe_contact_value(personal, key)}")
     for key, label in [("location", "Location"), ("linkedin", "LinkedIn")]:
-        if personal.get(key):
+        # Unresolved placeholders ("Needs verification" etc.) are internal
+        # review markers and must never be printed into an employer-facing
+        # document; the line is simply omitted until the value is resolved.
+        if personal.get(key) and not is_unresolved_value(personal.get(key)):
             lines.append(f"{label}: {personal[key]}")
     return lines
 
@@ -854,7 +857,7 @@ def _infer_form_fields(job: dict[str, Any], profile: dict[str, Any]) -> list[str
         f"Full name: {_full_name(profile)}",
         f"Email: {_safe_contact_value(personal, 'email')}",
         f"Phone: {_safe_contact_value(personal, 'phone')}",
-        f"Current location: {personal.get('location', 'confirm before submit') or 'confirm before submit'}",
+        f"Current location: {personal.get('location') if personal.get('location') and not is_unresolved_value(personal.get('location')) else 'confirm before submit'}",
         f"Position applied for: {job.get('title', 'confirm exact title')}",
         "Education: use only education shown in the reviewed profile/CV",
         "License/registration: enter only explicitly verified details; leave number/date blank when missing",

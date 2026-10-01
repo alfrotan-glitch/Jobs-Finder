@@ -320,3 +320,35 @@ def test_docx_and_pdf_artifacts_respect_the_evidence_gate(tmp_path):
     cv_pdf = _pdf_text(bundle["generated_paths"]["tailored_cv"]["pdf"])
     assert "Verified Clinic Alpha" in cv_docx
     assert "Verified Clinic Alpha" in cv_pdf
+
+
+def test_cv_import_draft_profile_produces_fully_gated_documents():
+    """End-to-end regression: a complete CV-import draft (profile_builder
+    output, which fills personal.location/nationality and languages with
+    'Needs verification' placeholders) must yield employer-facing documents
+    with no internal placeholder text, no unverified claims, and a neutral
+    summary -- while still displaying draft contact data for review."""
+    from utils.profile_builder import build_profile_from_cv_text
+
+    cv_text = (
+        "Jane Doe\nMedical Doctor (MD)\nEmail: jane.doe@example.org\n"
+        "Phone: +93 70 111 2233\nLicense: Afghan Medical Council registration\n"
+        "Languages: English (fluent), Dari (native)\n"
+        "2018-2023 Medical Officer, Example Clinic, Kabul\n"
+        "Certificates: BLS, ACLS\n"
+    )
+    profile = build_profile_from_cv_text(cv_text, resume_path="cv.txt")
+    job = _job("MD required. Afghan Medical Council registration required. Fluent English. Apply to hr@example.org by 2026-12-31.")
+    report = match_job_against_profile(job, profile, resume_text=cv_text, today=date(2026, 10, 1)).to_dict()
+    docs = generate_tailored_documents(job, profile, report, resume_text=cv_text)
+    for text in [docs["tailored_cv_text"], docs["cover_letter"]]:
+        assert "Needs verification" not in text
+        assert "Medical Doctor with Afghanistan" not in text
+        assert "EDUCATION" not in text
+        assert "LICENSE" not in text
+        assert "LANGUAGES" not in text
+        assert "English" not in text
+    # Draft contact data is displayed for review (never suppressed).
+    assert "jane.doe@example.org" in docs["tailored_cv_text"]
+    # Neutral summary, no credential headline without a verified MD.
+    assert "Applicant applying for the" in docs["tailored_cv_text"]

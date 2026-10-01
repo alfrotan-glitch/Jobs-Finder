@@ -360,8 +360,11 @@ def _residency_match(requirement: Requirement, evidence: ProfileEvidence) -> Req
 def _location_match(requirement: Requirement, evidence: ProfileEvidence) -> RequirementMatch:
     required_locations = [str(v).lower() for v in (requirement.value or [])]
     current = [str(v).lower() for v in evidence.verified_values("location") + evidence.verified_values("preferred_location")]
-    field_ok = bool(evidence.first("field_deployment", False)) and evidence.has_verified("field_deployment")
-    relocation_ok = bool(evidence.first("willing_to_relocate", False)) and evidence.has_verified("willing_to_relocate")
+    # Strict semantics: only an explicitly verified literal True answer may
+    # satisfy a deployment/relocation constraint. Never truthiness, never the
+    # first (possibly unverified) recorded value.
+    field_ok = any(value is True for value in evidence.verified_values("field_deployment"))
+    relocation_ok = any(value is True for value in evidence.verified_values("willing_to_relocate"))
     afghan_provinces = {p.lower() for p in AFGHAN_PROVINCES}
     required_is_afghan = any(req in afghan_provinces for req in required_locations)
     if not required_locations:

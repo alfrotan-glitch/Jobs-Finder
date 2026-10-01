@@ -180,6 +180,14 @@ Vacancies classified `NOT_ELIGIBLE` do not receive an application package.
 
 Vacancies classified `NEEDS_VERIFICATION` keep visible warnings in the package so the user can verify facts before applying.
 
+### Document evidence gate
+
+Employer-facing generated documents (tailored CV and cover letter — TXT, and the DOCX/PDF renders of the same text) only print explicitly verified facts in factual sections: professional summary, experience, competencies, certifications/training, education, license/registration, Medical Exit Exam, languages, and vacancy-fit highlights. There is no hardcoded applicant description. Unverified profile/CV items are never silently promoted into factual content — they are listed in the package's review warnings instead, so nothing is lost and nothing unconfirmed is claimed.
+
+### Contact/identity rule
+
+Contact data (name, email, phone, location) from `profile.personal` is display data for the applicant's own application: it is printed in generated documents even while still a draft (for example right after a CV import), so the user can review it in place and legitimate contact data is never suppressed or invented. Display never implies verification — contact/identity facts only become verified evidence for matching via an explicit `personal.verified: true`. Known placeholder values are replaced with `CONFIRM BEFORE SUBMISSION`, and while `personal.verified` is not `true`, the application package keeps a visible "confirm identity/contact" blocker.
+
 ## Troubleshooting
 
 ### The dashboard does not open

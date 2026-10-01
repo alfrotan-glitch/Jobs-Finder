@@ -4,6 +4,38 @@ Review-first tailored document generation.
 The output is deterministic and conservative. It uses only facts from the
 profile/CV evidence and the match report. It never invents qualifications; open
 items are listed as verification warnings instead of being claimed.
+
+DOCUMENT EVIDENCE GATE (canonical rule for every employer-facing artifact —
+TXT, and therefore also the DOCX/PDF renders derived from the same text):
+
+* Factual CV sections (PROFESSIONAL SUMMARY, PROFESSIONAL EXPERIENCE, CORE
+  COMPETENCIES, EDUCATION, LICENSE/REGISTRATION, MEDICAL EXIT EXAM,
+  CERTIFICATIONS & TRAINING, LANGUAGES, VACANCY-FIT HIGHLIGHTS) and every
+  cover-letter claim may only contain items that are explicitly verified
+  (``verified: true`` per the canonical contract in ``utils.profile``) or
+  that the authoritative matcher marked MET from verified evidence.
+* Unverified profile/CV items are never silently promoted into factual
+  content. They are surfaced in ``review_warnings`` instead, so nothing is
+  lost but nothing unconfirmed is claimed to an employer.
+* There is no generic hardcoded applicant description: the professional
+  summary is assembled only from verified evidence (verified MD degree,
+  verified experience years) plus the vacancy's own focus phrases.
+
+CONTACT/IDENTITY CONTRACT (single rule for employer-facing contact data):
+
+* Name/email/phone/location/linkedin from ``profile.personal`` are DISPLAY
+  data, not credential claims: they are printed in generated documents even
+  while the personal block is still an unconfirmed draft (e.g. fresh from a
+  CV import), because the user must be able to review them in place, and
+  legitimate contact data must never be suppressed or invented.
+* Display never implies verification: contact/identity values only become
+  verified evidence for matching (gender/nationality/location requirements)
+  via an explicit ``personal.verified: true`` (see utils.profile).
+* Known placeholder contact values are replaced with the explicit review
+  marker ``CONFIRM BEFORE SUBMISSION`` so a fake address can never be sent.
+* While ``personal.verified`` is not ``true``, the application package keeps
+  a blocking "confirm identity/contact" item, so a draft import is visible
+  as unresolved and the package is never presented as fully ready.
 """
 
 from __future__ import annotations
@@ -79,6 +111,15 @@ def _language_lines(profile: dict[str, Any], *, verified_only: bool = False) -> 
 
 
 def _contact_lines(profile: dict[str, Any]) -> list[str]:
+    """Employer-facing contact lines, per the CONTACT/IDENTITY CONTRACT.
+
+    Contact data is display data for the applicant's own application: it is
+    printed even while still an unconfirmed draft (so the user can review it
+    in place, and legitimate contact data is never suppressed), but known
+    placeholder values are replaced with the explicit CONFIRM BEFORE
+    SUBMISSION marker, and nothing here ever counts as verified evidence --
+    only ``personal.verified: true`` does that (see utils.profile).
+    """
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     lines = []
     for key, label in [("email", "Email"), ("phone", "Phone")]:
@@ -151,17 +192,92 @@ def _safe_bullets(items: list[Any], limit: int = 6) -> list[str]:
     return bullets
 
 
+def _resolved_entry_value(entry: dict[str, Any], *keys: str) -> str:
+    """First non-placeholder value among ``keys`` ("Needs verification" etc. never prints)."""
+    for key in keys:
+        value = entry.get(key)
+        if value and not is_unresolved_value(value):
+            return str(value)
+    return ""
+
+
 def _experience_header(entry: dict[str, Any]) -> str:
-    title = entry.get("title") or entry.get("role") or ""
-    organization = entry.get("organization") or entry.get("employer") or ""
-    location = entry.get("location") or ""
-    start = entry.get("start") or entry.get("start_date") or ""
-    end = entry.get("end") or entry.get("end_date") or ""
+    title = _resolved_entry_value(entry, "title", "role")
+    organization = _resolved_entry_value(entry, "organization", "employer")
+    location = _resolved_entry_value(entry, "location")
+    start = _resolved_entry_value(entry, "start", "start_date")
+    end = _resolved_entry_value(entry, "end", "end_date")
     parts = [part for part in [title, organization, location] if part]
     header = " | ".join(parts)
     if start or end:
         header += f" ({start} – {end or 'Present'})"
     return header
+
+
+def _is_verified_entry(item: Any) -> bool:
+    """True only for a dict entry explicitly confirmed with ``verified: true``."""
+    return isinstance(item, dict) and is_verified_flag(item.get("verified"))
+
+
+def _split_work_entries(profile: dict[str, Any]) -> tuple[list[dict[str, Any]], list[Any]]:
+    """Split work history into (verified dict entries, everything unverified).
+
+    Plain string entries carry no verification flag, so they can never appear
+    as factual employer-facing experience; they land in the unverified bucket
+    together with dict entries lacking an explicit ``verified: true``.
+    """
+    entries = _profile_list(profile, "work_history") + _profile_list(profile, "experience")
+    verified = [entry for entry in entries if _is_verified_entry(entry)]
+    unverified = [entry for entry in entries if not _is_verified_entry(entry)]
+    return verified, unverified
+
+
+def _named_items_by_verification(value: Any) -> tuple[list[str], list[str]]:
+    """Split a skills/certificates/training structure into display names.
+
+    Returns ``(verified, unverified)``. Only a dict item carrying an explicit
+    ``verified: true`` next to its name counts as verified; plain strings have
+    no verification flag and are therefore always unverified. Placeholder
+    names are dropped entirely.
+    """
+    verified: list[str] = []
+    unverified: list[str] = []
+
+    def add(bucket: list[str], name: Any) -> None:
+        text = str(name or "").strip()
+        if text and not is_unresolved_value(text) and text not in verified and text not in unverified:
+            bucket.append(text)
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            name = node.get("name") or node.get("title")
+            if name:
+                add(verified if is_verified_flag(node.get("verified")) else unverified, name)
+            for key, child in node.items():
+                if key not in {"name", "title", "verified"}:
+                    walk(child)
+        elif isinstance(node, list):
+            for child in node:
+                walk(child)
+        elif node not in (None, ""):
+            add(unverified, node)
+
+    walk(value)
+    return verified, unverified
+
+
+def _skills_by_verification(profile: dict[str, Any]) -> tuple[list[str], list[str]]:
+    return _named_items_by_verification(profile.get("skills"))
+
+
+def _certificates_by_verification(profile: dict[str, Any]) -> tuple[list[str], list[str]]:
+    verified: list[str] = []
+    unverified: list[str] = []
+    for key in ["certificates", "certifications", "training"]:
+        v, u = _named_items_by_verification(profile.get(key))
+        verified.extend(item for item in v if item not in verified)
+        unverified.extend(item for item in u if item not in unverified and item not in verified)
+    return verified, unverified
 
 
 def _rank_work_entries(entries: list[dict[str, Any]], job: dict[str, Any], matched_labels: list[str]) -> list[dict[str, Any]]:
@@ -332,32 +448,34 @@ def _focus_labels(match_report: dict[str, Any], *, limit: int = 8) -> list[str]:
 
 
 def _profile_evidence_lines(profile: dict[str, Any]) -> list[str]:
-    """Return factual profile/CV lines suitable for selecting vacancy-fit highlights."""
+    """Return verified factual profile lines for selecting vacancy-fit highlights.
+
+    DOCUMENT EVIDENCE GATE: vacancy-fit highlights are presented to the
+    employer as confirmed evidence, so only explicitly verified work-history
+    entries and explicitly verified skill/certificate items may feed them.
+    Unverified profile data stays out of this pool entirely (it is surfaced
+    via review warnings instead).
+    """
     lines: list[str] = []
 
     def add(text: str) -> None:
         text = re.sub(r"\s+", " ", str(text or "")).strip()
-        if text and text not in lines:
+        if text and not is_unresolved_value(text) and text not in lines:
             lines.append(text)
 
-    for entry in profile.get("work_history") or profile.get("experience") or []:
-        if not isinstance(entry, dict):
-            continue
+    verified_work, _ = _split_work_entries(profile)
+    for entry in verified_work:
         header = _experience_header(entry)
         for bullet in entry.get("bullets") or []:
             add(f"{bullet} ({header})" if header else bullet)
         if not entry.get("bullets") and entry.get("description"):
             add(f"{entry['description']} ({header})" if header else entry["description"])
-    skills = profile.get("skills", {})
-    if isinstance(skills, dict):
-        for values in skills.values():
-            for value in values if isinstance(values, list) else [values]:
-                add(str(value))
-    elif isinstance(skills, list):
-        for value in skills:
-            add(str(value))
-    for cert in profile.get("certificates") or profile.get("certifications") or profile.get("training") or []:
-        add(str(cert))
+    verified_skills, _ = _skills_by_verification(profile)
+    for value in verified_skills:
+        add(value)
+    verified_certs, _ = _certificates_by_verification(profile)
+    for cert in verified_certs:
+        add(cert)
     return lines
 
 
@@ -439,6 +557,37 @@ def _requirement_summary_phrase(match_report: dict[str, Any]) -> str:
     labels = _focus_labels(match_report, limit=5)
     return ", ".join(labels) if labels else "the advertised health requirements"
 
+
+def _max_verified_years(evidence, key: str) -> float | None:
+    values: list[float] = []
+    for value in evidence.verified_values(key):
+        try:
+            values.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    return max(values) if values else None
+
+
+def _verified_summary_sentence(evidence, title: str, company: str) -> str:
+    """Build the professional-summary opener from verified evidence only.
+
+    There is deliberately no hardcoded applicant description here: the
+    "Medical Doctor" headline requires a verified MD degree, and experience
+    qualifiers require verified years evidence. With nothing verified, the
+    summary is an honest, neutral application statement.
+    """
+    headline = "Medical Doctor" if evidence.has_verified("md_degree") else "Applicant"
+    qualifiers: list[str] = []
+    clinical_years = _max_verified_years(evidence, "clinical_experience_years")
+    if clinical_years:
+        qualifiers.append(f"{clinical_years:g} years of verified clinical experience")
+    ngo_years = _max_verified_years(evidence, "ngo_experience_years")
+    if ngo_years:
+        qualifiers.append(f"{ngo_years:g} years of verified NGO/humanitarian experience")
+    if qualifiers:
+        return f"{headline} with {' and '.join(qualifiers)}, applying for the {title} role at {company}."
+    return f"{headline} applying for the {title} role at {company}."
+
 def generate_tailored_documents(
     job: dict[str, Any],
     profile: dict[str, Any],
@@ -464,37 +613,29 @@ def generate_tailored_documents(
     matched_sentence = ", ".join(focus_phrases[:5]) if focus_phrases else _requirement_summary_phrase(match_report)
     vacancy_highlights = _vacancy_fit_highlights(profile, job, match_report, limit=6)
 
-    # Credential-style facts (education, license, exam) require explicit
-    # verification before they can be printed as a confirmed section in a
-    # document that may be sent to an employer; unverified CV mentions are
-    # surfaced only as review warnings, never as a confirmed EDUCATION entry.
+    # DOCUMENT EVIDENCE GATE: every factual section below is restricted to
+    # explicitly verified items. Credential-style facts (education, license,
+    # exam) already required explicit verification; the same single rule now
+    # governs work history, skills, certificates/training, languages, and the
+    # professional summary. Unverified items are collected into review
+    # warnings instead of being printed as employer-facing facts.
     raw_education_items = _profile_list(profile, "medical_education") + _profile_list(profile, "medical.education") + _profile_list(profile, "medical.degrees")
     education = _safe_bullets(_verified_dict_items(raw_education_items), limit=4)
-    work_entries = [item for item in (_profile_list(profile, "work_history") + _profile_list(profile, "experience")) if isinstance(item, dict)]
-    work = _safe_bullets(_profile_list(profile, "work_history") + _profile_list(profile, "experience"), limit=6)
-    certs = _safe_bullets(_profile_list(profile, "certificates") + _profile_list(profile, "certifications") + _profile_list(profile, "training"), limit=8)
+    unverified_education = [item for item in raw_education_items if not _is_verified_entry(item)]
 
-    skills_raw = []
-    skills = profile.get("skills", {})
-    if isinstance(skills, dict):
-        for value in skills.values():
-            if isinstance(value, list):
-                skills_raw.extend(value)
-            elif value:
-                skills_raw.append(value)
-    elif isinstance(skills, list):
-        skills_raw.extend(skills)
-    skills_bullets = _rank_strings_for_job([str(item) for item in skills_raw], job, match_report, limit=12)
+    work_entries, unverified_work = _split_work_entries(profile)
+    verified_skills, unverified_skills = _skills_by_verification(profile)
+    certs_verified, unverified_certs = _certificates_by_verification(profile)
+    certs = _safe_bullets(certs_verified, limit=8)
+    skills_bullets = _rank_strings_for_job(verified_skills, job, match_report, limit=12)
 
-    languages = _language_lines(profile)
-    if not languages:
-        for lang_key in ["language_english", "language_dari", "language_pashto"]:
-            if evidence.has(lang_key):
-                languages.append(lang_key.replace("language_", "").title())
+    # Languages: only explicitly verified languages (name + resolved level +
+    # verified: true) may be listed as factual CV content. Unverified mentions
+    # (profile drafts or CV text) are review warnings, never CV facts.
+    languages = _language_lines(profile, verified_only=True)
+    unverified_languages = [item for item in _language_lines(profile) if item not in languages]
 
-    summary_parts = [
-        f"Medical Doctor with Afghanistan health and nutrition field/supervisory experience, tailored for the {title} role at {company}."
-    ]
+    summary_parts = [_verified_summary_sentence(evidence, title, company)]
     if focus_labels:
         summary_parts.append(f"Vacancy focus areas considered for tailoring include {matched_sentence}; the evidence below is limited to verified profile/CV facts.")
 
@@ -523,14 +664,12 @@ def generate_tailored_documents(
             line = _experience_header(entry)
             if line:
                 cv_lines.append(line)
-            ranked_entry_bullets = _rank_strings_for_job([str(b) for b in (entry.get("bullets") or [])], job, match_report, limit=5)
+            ranked_entry_bullets = _rank_strings_for_job([str(b) for b in (entry.get("bullets") or []) if not is_unresolved_value(b)], job, match_report, limit=5)
             for bullet in ranked_entry_bullets:
                 cv_lines.append(f"- {bullet}")
-            if not ranked_entry_bullets and entry.get("description"):
+            if not ranked_entry_bullets and entry.get("description") and not is_unresolved_value(entry.get("description")):
                 cv_lines.append(f"- {entry['description']}")
             cv_lines.append("")
-    elif work:
-        cv_lines.extend(["PROFESSIONAL EXPERIENCE", *[f"- {item}" for item in work], ""])
     if education:
         cv_lines.extend(["EDUCATION", *[f"- {item}" for item in education], ""])
     if evidence.has_verified("license_registration"):
@@ -543,6 +682,24 @@ def generate_tailored_documents(
         cv_lines.extend(["LANGUAGES", f"- {', '.join(languages)}", ""])
 
     warnings = _verification_warnings(match_report)
+    # Unverified profile items excluded by the document evidence gate stay
+    # visible to the user as review warnings so nothing is silently lost --
+    # mark the item `verified: true` in profile.yaml after review to include it.
+    for entry in unverified_work:
+        header = _experience_header(entry) if isinstance(entry, dict) else str(entry).strip()
+        header = header or _stringify_item(entry)
+        if header:
+            warnings.append(f"Unverified work history excluded from employer-facing documents (set verified: true after review to include): {header}")
+    if unverified_skills:
+        warnings.append("Unverified skills excluded from employer-facing documents (set verified: true after review to include): " + ", ".join(unverified_skills[:15]))
+    if unverified_certs:
+        warnings.append("Unverified certificates/training excluded from employer-facing documents (set verified: true after review to include): " + ", ".join(unverified_certs[:15]))
+    if unverified_languages:
+        warnings.append("Unverified languages excluded from employer-facing documents (confirm level and set verified: true to include): " + ", ".join(unverified_languages[:10]))
+    if unverified_education:
+        labels = [label for label in (_stringify_item(item) for item in unverified_education) if label]
+        if labels:
+            warnings.append("Unverified education excluded from employer-facing documents (set verified: true after review to include): " + "; ".join(labels[:6]))
 
     facts = match_report.get("facts", {})
     metadata = job.get("metadata", {}) if isinstance(job.get("metadata", {}), dict) else {}
@@ -579,14 +736,11 @@ def generate_tailored_documents(
         cover_lines.append("I also meet the professional medical registration/license requirement stated for the role.")
     if _requirement_met(match_report, "medical_exit_exam"):
         cover_lines.append("My profile also includes verified completion of the required Medical Exit Exam.")
-    verified_languages = _language_lines(profile, verified_only=True)
-    if verified_languages:
-        cover_lines.append(f"My verified language profile is {', '.join(verified_languages)}.")
-    elif languages:
-        # Languages are listed in the CV as ordinary self-reported content,
-        # but the cover letter must not claim they are verified when they are
-        # not; use neutral wording instead of fabricated certainty.
-        cover_lines.append(f"My language skills include {', '.join(languages)}; proficiency levels should be confirmed before submission.")
+    # Languages: only explicitly verified languages may be claimed. An
+    # unverified language is neither claimed nor hedged in the letter sent to
+    # the employer -- it stays in review warnings until the user verifies it.
+    if languages:
+        cover_lines.append(f"My verified language profile is {', '.join(languages)}.")
     cover_lines.extend([
         "",
         "I would welcome the opportunity to discuss how my experience can support your health program and the communities served by this position.",
@@ -695,7 +849,7 @@ def _infer_form_fields(job: dict[str, Any], profile: dict[str, Any]) -> list[str
     if explicit:
         return explicit
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
-    language_summary = "; ".join(_language_lines(profile)) or "confirm languages from reviewed CV"
+    language_summary = "; ".join(_language_lines(profile, verified_only=True)) or "enter only languages you have verified in profile.yaml"
     fields = [
         f"Full name: {_full_name(profile)}",
         f"Email: {_safe_contact_value(personal, 'email')}",
@@ -942,6 +1096,12 @@ def generate_application_package(
         missing.append("Confirmed personal email address")
     if not personal.get("phone") or _is_placeholder_contact(personal.get("phone"), "phone"):
         missing.append("Confirmed phone number")
+    # CONTACT/IDENTITY CONTRACT: draft (e.g. CV-imported) contact data is
+    # displayed in the documents for review, but until the owner explicitly
+    # confirms the personal block it remains a visible blocker -- it never
+    # silently becomes confirmed application data.
+    if not is_verified_flag(personal.get("verified")):
+        missing.append("Identity/contact details reviewed and confirmed (set personal.verified: true after review)")
     for item in blocking_user_inputs + [m for m in missing if m not in blocking_user_inputs]:
         action = f"Provide/confirm: {item}"
         if action not in user_actions:

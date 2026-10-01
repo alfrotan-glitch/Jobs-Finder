@@ -94,8 +94,10 @@ clinical_experience:
 # end, bullets/description, and `verified: true`. `verified: true` on an
 # entry confirms that specific job's dates/title/organization/description.
 # Years-of-experience evidence is only inferred from entries that are
-# explicitly verified; an entry without `verified: true` is kept for CV
-# wording only and is never used to satisfy an experience requirement.
+# explicitly verified. An entry WITHOUT `verified: true` is a draft: it is
+# never printed as factual experience in an employer-facing CV/cover letter
+# and never satisfies an experience requirement -- it stays visible as a
+# review warning until you confirm it.
 # Example (left empty by default):
 #   - title: Medical Doctor
 #     organization: Example Clinic
@@ -104,13 +106,23 @@ clinical_experience:
 #     end: Present
 #     bullets: ["Clinical consultations and patient assessment"]
 #     verified: true
+
 work_history: []
 
+# Skills follow the same single verification rule as everything else: only
+# an item written as `{name: ..., verified: true}` is a confirmed competency
+# that may be printed in an employer-facing CV. A plain string skill has no
+# `verified` flag, so it remains a draft note: kept for your review (and
+# listed in review warnings when excluded), never printed as a confirmed CV
+# competency and never used to satisfy a requirement.
 skills:
   medical:
-    - Clinical care
-    - Patient assessment
-    - Diagnosis and treatment planning
+    - name: Clinical care
+      verified: true   # Set true only for skills you personally confirm.
+    - name: Patient assessment
+      verified: true
+    - name: Diagnosis and treatment planning
+      verified: true
   public_health: []
   management: []
 
@@ -120,8 +132,9 @@ skills:
 # matching, or be called "verified" in generated documents. `verified: true`
 # on one language entry confirms only that language's proficiency level --
 # it has no effect on the other languages listed. Until both the level is
-# resolved AND verified is true, a language is listed only as ordinary CV
-# content with its name (no placeholder level text is printed).
+# resolved AND verified is true, a language is NOT listed in employer-facing
+# documents at all; it remains a review warning (no placeholder level text
+# is ever printed, and no unverified language is claimed to an employer).
 languages:
   - name: Dari
     level: "Needs verification"
@@ -133,6 +146,12 @@ languages:
     level: "Needs verification"
     verified: false
 
+# Certificates/training follow the same rule as skills: only
+# `{name: ..., verified: true}` items are printed as confirmed credentials
+# in employer-facing documents. Plain strings stay draft/review-only.
+# Example:
+#   - name: IMNCI training
+#     verified: true
 certificates: []
 
 ngo_humanitarian_experience:

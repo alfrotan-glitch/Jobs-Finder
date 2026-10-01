@@ -172,15 +172,6 @@ def _rank_work_entries(entries: list[dict[str, Any]], job: dict[str, Any], match
 
     return sorted(entries, key=score, reverse=True)
 
-
-def _matched_labels(match_report: dict[str, Any]) -> list[str]:
-    labels = []
-    for item in match_report.get("requirement_matches", []):
-        if item.get("status") == MET and item.get("key") not in {"closing_date", "application_destination"}:
-            labels.append(item.get("label", ""))
-    return [label for label in labels if label]
-
-
 def _verification_warnings(match_report: dict[str, Any]) -> list[str]:
     warnings = []
     for item in match_report.get("requirement_matches", []):
@@ -1142,16 +1133,3 @@ def prepare_application_bundle(
     docs["generated_paths"] = paths
     docs["no_submission_performed"] = True
     return docs
-
-def redact_unverified_claims(text: str, allowed_terms: list[str]) -> str:
-    """Small helper for tests and future AI output validation.
-
-    It flags text containing common medical claims not represented in allowed
-    terms.  It returns a warning string, not modified application content.
-    """
-    lowered_allowed = " ".join(allowed_terms).lower()
-    risky = []
-    for term in ["licensed", "registered", "mbbs", "md", "bphs", "ephs", "hmis", "imam", "imnci"]:
-        if re.search(rf"\b{term}\b", text, flags=re.I) and term.lower() not in lowered_allowed:
-            risky.append(term)
-    return ", ".join(sorted(set(risky)))

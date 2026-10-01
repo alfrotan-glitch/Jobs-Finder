@@ -153,13 +153,6 @@ def parse_profile_date(value: Any, today: date | None = None) -> date | None:
             return date(int(match.group("year")), month, 1)
     return None
 
-
-def months_between(start: date | None, end: date | None) -> int:
-    if not start or not end or end < start:
-        return 0
-    return max(0, (end.year - start.year) * 12 + (end.month - start.month) + 1)
-
-
 def _month_index(value: date) -> int:
     return value.year * 12 + value.month
 
@@ -267,12 +260,13 @@ def _add_structured_education(evidence: ProfileEvidence, profile: dict[str, Any]
 
     for item in education:
         text = " ".join(_iter_strings(item)) if isinstance(item, dict) else str(item)
+        verified = bool(item.get("verified")) if isinstance(item, dict) else False
         if re.search(r"\b(M\.?D\.?|MBBS|Medical Doctor|Doctor of Medicine|Physician)\b", text, flags=re.I):
-            evidence.add("md_degree", True, "profile.medical_education", text, verified=True)
-            evidence.add("medical_education", text, "profile.medical_education", text, verified=True)
+            evidence.add("md_degree", True, "profile.medical_education", text, verified=verified)
+            evidence.add("medical_education", text, "profile.medical_education", text, verified=verified)
 
 
-def _add_license(evidence: ProfileEvidence, profile: dict[str, Any], profile_text: str) -> None:
+def _add_license(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
     candidates = []
     medical = profile.get("medical", {}) if isinstance(profile.get("medical"), dict) else {}
     for key in ["license", "registration", "license_registration"]:
@@ -280,7 +274,6 @@ def _add_license(evidence: ProfileEvidence, profile: dict[str, Any], profile_tex
             candidates.append(medical[key])
         if key in profile:
             candidates.append(profile[key])
-    verified_candidate_found = False
     for candidate in candidates:
         if candidate in (None, "", {}, []):
             continue
@@ -293,7 +286,6 @@ def _add_license(evidence: ProfileEvidence, profile: dict[str, Any], profile_tex
             # A placeholder like "Needs verification" is intentionally not evidence.
             if not (verified or number or (status and "needs verification" not in status)):
                 continue
-            verified_candidate_found = True
             authority = candidate.get("authority") or candidate.get("council") or candidate.get("issuer")
             if status_text and "needs verification" not in status:
                 quote = status_text
@@ -321,10 +313,7 @@ def _add_license(evidence: ProfileEvidence, profile: dict[str, Any], profile_tex
         else:
             if "needs verification" in text.lower():
                 continue
-            verified_candidate_found = True
-            evidence.add("license_registration", True, "profile.license_registration", text, verified=True)
-    if not verified_candidate_found and not candidates and re.search(r"\b(licen[cs]e|registration|registered)\b", profile_text, flags=re.I):
-        evidence.add("license_registration", True, "profile", "License or registration mentioned in profile", verified=True)
+            evidence.add("license_registration", True, "profile.license_registration", text, verified=False)
 
 
 def _add_medical_exit_exam(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
@@ -341,7 +330,7 @@ def _add_medical_exit_exam(evidence: ProfileEvidence, profile: dict[str, Any]) -
     else:
         text = str(exam)
         if "needs verification" not in text.lower():
-            evidence.add("medical_exit_exam", True, "profile", text, verified=True)
+            evidence.add("medical_exit_exam", True, "profile", text, verified=False)
 
 
 def _add_languages(evidence: ProfileEvidence, profile: dict[str, Any], texts: list[tuple[str, str]]) -> None:
@@ -494,7 +483,7 @@ def build_profile_evidence(profile: dict[str, Any], resume_text: str = "", today
 
     _add_personal(evidence, profile)
     _add_structured_education(evidence, profile)
-    _add_license(evidence, profile, ptext)
+    _add_license(evidence, profile)
     _add_medical_exit_exam(evidence, profile)
     _add_skills_and_certificates(evidence, profile)
     _add_languages(evidence, profile, texts)

@@ -235,7 +235,15 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
             report.error = str(exc)
         source_reports.append(report)
 
-    normalized = [enrich_job(job, today=today) for job in jobs if _job_is_relevant(job)]
+    normalized: list[Job] = []
+    for job in jobs:
+        try:
+            if not isinstance(job, Job) or not _job_is_relevant(job):
+                continue
+            normalized.append(enrich_job(job, today=today))
+        except (AttributeError, TypeError, ValueError, KeyError):
+            # A malformed item must not discard valid vacancies or crash the scan.
+            continue
     deduped = deduplicate_jobs(normalized, today=today)
 
     successful = sum(1 for report in source_reports if report.ok)
@@ -254,11 +262,6 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
         message = f"Scan completed. {len(deduped)} relevant current vacancies found."
 
     return ScanResult(status=status, jobs=deduped, source_reports=source_reports, started_at=started, finished_at=utc_now(), message=message)
-
-
-
-def run_discovery_scan_sync(profile: dict[str, Any] | None = None, *, today: date | None = None) -> ScanResult:
-    return asyncio.run(run_discovery_scan(profile, today=today))
 
 
 def _job_is_relevant(job: Job) -> bool:

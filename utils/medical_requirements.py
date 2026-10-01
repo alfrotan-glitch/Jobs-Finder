@@ -1091,9 +1091,3 @@ def extract_requirements_from_job(job: Any, today: date | None = None) -> Extrac
         application_url=get("apply_url", "") or get("url", ""),
         today=today,
     )
-
-
-def requirements_to_jsonable(extracted: ExtractedRequirements | dict[str, Any]) -> dict[str, Any]:
-    if isinstance(extracted, ExtractedRequirements):
-        return extracted.to_dict()
-    return extracted

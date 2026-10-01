@@ -89,7 +89,3 @@ job_sources:
   reliefweb:
     timeout_seconds: 25
     limit: 20
-
-safety:
-  submit_applications_automatically: false
-  bypass_captcha_or_login: false

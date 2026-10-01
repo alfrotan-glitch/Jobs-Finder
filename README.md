@@ -54,7 +54,7 @@ The launcher:
 - opens <http://localhost:8080>
 - does not run background scanning or submit applications
 
-Python support is intentionally conservative. The code was validated in this environment on Python 3.11. The dependency set is lightweight and avoids JobSpy/NumPy/Playwright, but Python 3.13 could not be executed in this Linux sandbox; if a package installer fails on Python 3.13, install Python 3.12 or 3.11 alongside it and rerun the launcher.
+Python support is intentionally conservative. The code was validated in this environment on Python 3.11. The dependency set is lightweight. Python 3.11 was used for validation in this environment; if installation fails on another Python version, use Python 3.11 or 3.12 and rerun the launcher.
 
 ## Manual setup
 
@@ -143,6 +143,10 @@ Each package includes:
 - missing fact warnings
 - official application route
 
+## Eligibility and package review
+
+`READY_TO_APPLY` describes vacancy eligibility based on the available verified evidence. It does not mean that an application has been prepared or submitted. Generated packages have their own review status, such as `READY_FOR_REVIEW` or `NEEDS_USER_INPUT`, and must be reviewed by the user.
+
 ## Safety rules
 
 The matching and document systems use:
@@ -172,4 +176,4 @@ This means the app could not reach active live sources from your network/environ
 
 ### Python package installation fails
 
-This final product removed JobSpy, NumPy, Playwright, Stagehand, APScheduler, and email-monitoring dependencies. If installation still fails on Python 3.13, install Python 3.12 or 3.11 alongside it, delete `.venv`, and rerun `run_jobs_finder.bat`.
+If installation fails, use Python 3.11 or 3.12, delete `.venv`, and rerun `run_jobs_finder.bat`.

@@ -1,313 +1,72 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Afghan MD Job Assistant</title>
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-  <script defer src="/static/app.js"></script>
-  <link rel="stylesheet" href="/static/style.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jobs-Finder</title>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
-<body x-data="mrjobs()" x-init="init()" x-cloak>
-  <div class="toast" x-show="notification" :class="notificationType" x-text="notification"></div>
-
-  <section class="setup" x-show="needsSetup" x-cloak>
-    <div class="setup-card">
-      <p class="eyebrow">First setup</p>
-      <h1>Afghan MD Job Assistant</h1>
-      <p class="muted">Create your verified profile. Missing evidence will be shown as “Needs verification” — it will not be treated as a failure or invented.</p>
-
-      <div class="grid two">
-        <label>First name <input x-model="setupData.personal.first_name" /></label>
-        <label>Last name <input x-model="setupData.personal.last_name" /></label>
-        <label>Email <input type="email" x-model="setupData.personal.email" /></label>
-        <label>Phone <input x-model="setupData.personal.phone" /></label>
-        <label>Current location <input x-model="setupData.personal.location" /></label>
-        <label>Nationality <input x-model="setupData.personal.nationality" /></label>
-      </div>
-
-      <div class="grid two">
-        <label>Medical degree <input x-model="setupData.medical_education[0].degree" placeholder="MD / MBBS" /></label>
-        <label>Medical university <input x-model="setupData.medical_education[0].institution" /></label>
-        <label>Clinical experience years <input type="number" min="0" step="0.5" x-model.number="setupData.clinical_experience.years" /></label>
-        <label>License / registration number <input x-model="setupData.license_registration.number" placeholder="Leave blank if not verified" /></label>
-      </div>
-
-      <div class="actions">
-        <button class="primary" @click="completeSetup()">Save profile and start</button>
-      </div>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Afghanistan Job Finder</p>
+      <h1>Find relevant vacancies and prepare application packages.</h1>
     </div>
-  </section>
+    <button id="findJobs" class="primary">Find Jobs</button>
+  </header>
 
-  <div class="app-shell" x-show="!needsSetup">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">MD</div>
-        <div>
-          <strong>Job Assistant</strong>
-          <span>Afghanistan medical roles</span>
-        </div>
+  <nav class="tabs" aria-label="Main navigation">
+    <button data-tab="recommended" class="active">Recommended</button>
+    <button data-tab="jobs">Jobs</button>
+    <button data-tab="applications">Applications</button>
+    <button data-tab="profile">My Profile</button>
+    <button data-tab="settings">Settings</button>
+    <button data-tab="advanced">Advanced</button>
+  </nav>
+
+  <main>
+    <section id="status" class="status">Ready. Press “Find Jobs” to scan reachable sources.</section>
+
+    <section id="recommended" class="panel active">
+      <h2>Recommended</h2>
+      <p class="muted">Jobs worth reviewing now, based on verified profile evidence.</p>
+      <div id="recommendedList" class="cards"></div>
+    </section>
+
+    <section id="jobs" class="panel">
+      <h2>Jobs</h2>
+      <div id="jobsList" class="cards"></div>
+    </section>
+
+    <section id="applications" class="panel">
+      <h2>Applications</h2>
+      <p class="muted">Prepared packages and manually-applied vacancies.</p>
+      <div id="applicationsList" class="cards"></div>
+    </section>
+
+    <section id="profile" class="panel">
+      <h2>My Profile</h2>
+      <div id="profileBox" class="card"></div>
+    </section>
+
+    <section id="settings" class="panel">
+      <h2>Settings</h2>
+      <div class="card">
+        <h3>Active sources</h3>
+        <ul>
+          <li><strong>ACBAR</strong> — Tier A core source.</li>
+          <li><strong>ReliefWeb</strong> — Tier B secondary source.</li>
+        </ul>
+        <p>Automatic background scanning is disabled by default. Use “Find Jobs” when you want a scan.</p>
       </div>
-      <nav>
-        <button :class="{active:view==='recommended'}" @click="setView('recommended')">Recommended</button>
-        <button :class="{active:view==='jobs'}" @click="setView('jobs')">Jobs</button>
-        <button :class="{active:view==='applications'}" @click="setView('applications')">Applications</button>
-        <button :class="{active:view==='profile'}" @click="setView('profile')">My Profile</button>
-        <button :class="{active:view==='settings'}" @click="setView('settings')">Settings</button>
-        <button :class="{active:view==='advanced'}" @click="setView('advanced')">Advanced / System</button>
-      </nav>
-      <div class="safe-note">Review-first: the app never submits without your explicit confirmation.</div>
-    </aside>
+    </section>
 
-    <main class="content">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">Today</p>
-          <h1 x-show="view==='recommended'">Which jobs should I look at today?</h1>
-          <h1 x-show="view==='jobs'">All discovered medical jobs</h1>
-          <h1 x-show="view==='applications'">Applications</h1>
-          <h1 x-show="view==='profile'">My verified profile</h1>
-          <h1 x-show="view==='settings'">Settings</h1>
-          <h1 x-show="view==='advanced'">Advanced / System</h1>
-        </div>
-        <div class="top-actions">
-          <button class="secondary" @click="refreshAll()">Refresh</button>
-          <button class="primary" @click="discover()" :disabled="discovering"><span x-text="discovering ? 'Finding…' : 'Find jobs'"></span></button>
-        </div>
-      </header>
+    <section id="advanced" class="panel">
+      <h2>Advanced</h2>
+      <pre id="advancedLog" class="log">No scan run in this browser session.</pre>
+    </section>
+  </main>
 
-      <section class="summary-cards" x-show="view !== 'profile'">
-        <div><strong x-text="stats.recommended || recommended.length || 0"></strong><span>Recommended</span></div>
-        <div><strong x-text="stats.needs_verification || 0"></strong><span>Need verification</span></div>
-        <div><strong x-text="stats.prepared || 0"></strong><span>Prepared</span></div>
-        <div><strong x-text="watcherSummary.unread_notifications || 0"></strong><span>New alerts</span></div>
-      </section>
-
-      <section x-show="view==='recommended'" class="main-grid">
-        <div class="list-panel">
-          <div class="watch-summary">
-            <p class="eyebrow">New opportunities</p>
-            <h2><span x-text="watcherSummary.counts?.ready_to_apply || 0"></span> ready · <span x-text="watcherSummary.counts?.needs_verification || 0"></span> need verification</h2>
-            <p class="muted" x-show="watcherSummary.last_scan">Last scan: <span x-text="watcherSummary.last_scan?.started_at"></span></p>
-          </div>
-          <template x-if="recommended.length === 0">
-            <div class="empty">
-              <h2>No recommendations yet</h2>
-              <p>Click “Find jobs” to run the Afghan Job Watcher across enabled registry sources.</p>
-            </div>
-          </template>
-          <template x-for="job in recommended" :key="job.id">
-            <article class="job-card" @click="openJob(job)" :class="{selected:selectedJob && selectedJob.id===job.id}">
-              <div class="job-card-head">
-                <span class="priority" :class="(job.readiness_status || '').toLowerCase()" x-text="readinessLabel(job)"></span>
-                <span class="date" x-show="job.closing_date">Deadline <span x-text="job.closing_date"></span></span>
-              </div>
-              <h2><span x-text="job.title"></span> <span class="muted">—</span> <span x-text="job.company"></span></h2>
-              <p><span x-text="job.location || 'Location not listed'"></span> · <span x-text="routeLabel(job)"></span></p>
-              <div class="why-list">
-                <strong>Why it matches</strong>
-                <ul><template x-for="reason in matchReasons(job)"><li x-text="reason"></li></template></ul>
-              </div>
-              <p class="doc-state"><span x-text="job.tailored_cv_ready ? 'Tailored CV ready' : 'Tailored CV not prepared'"></span> · <span x-text="job.cover_letter_ready ? 'Cover letter ready' : 'Cover letter not prepared'"></span></p>
-              <button class="primary" @click.stop="openJob(job); prepare(job)">Prepare application →</button>
-            </article>
-          </template>
-        </div>
-        <div class="detail-panel">
-          <template x-if="!selectedJob"><div class="empty small"><h2>Select a job</h2><p>Eligibility details, document drafts, and application actions will appear here.</p></div></template>
-          <div x-show="selectedJob" class="detail-content">
-            <div class="detail-title">
-              <div>
-                <span class="priority" :class="(selectedJob?.readiness_status || '').toLowerCase()" x-text="selectedJob ? readinessLabel(selectedJob) : ''"></span>
-                <h2 x-text="selectedJob?.title"></h2>
-                <p><strong x-text="selectedJob?.company"></strong> · <span x-text="selectedJob?.location"></span></p>
-                <p class="muted">Application: <span x-text="selectedJob ? routeLabel(selectedJob) : ''"></span> · Deadline: <span x-text="selectedJob?.closing_date || 'not listed'"></span></p>
-                <p class="muted">Source: <span x-text="selectedJob ? sourceLabel(selectedJob) : ''"></span></p>
-              </div>
-            </div>
-            <p class="explanation" x-text="selectedAnalysis?.explanation || selectedJob?.reasoning || 'Review the matched requirements below.'"></p>
-            <div class="next-action"><strong>Next action:</strong> <span x-text="nextAction(selectedJob)"></span></div>
-            <div class="actions wrap">
-              <button class="secondary" @click="loadAnalysis(selectedJob)">Recheck eligibility</button>
-              <button class="secondary" @click="prepare(selectedJob)">Prepare CV & letter</button>
-              <button class="secondary" @click="fillReview(selectedJob)">Assist filling (review only)</button>
-              <button class="primary" @click="openApplication(selectedJob)">Open application page</button>
-            </div>
-
-            <h3>Eligibility</h3>
-            <div class="requirements">
-              <template x-for="item in (selectedAnalysis?.requirement_matches || tableFor(selectedJob))" :key="item.key + item.label">
-                <div class="req-row">
-                  <div><strong x-text="item.label"></strong><span x-text="item.required"></span></div>
-                  <span class="status" :class="item.status?.toLowerCase().replaceAll(' ','-')" x-text="item.status"></span>
-                  <p x-text="item.explanation"></p>
-                  <ul x-show="item.evidence && item.evidence.length"><template x-for="ev in item.evidence"><li x-text="ev"></li></template></ul>
-                </div>
-              </template>
-            </div>
-
-            <div x-show="selectedDocs && (selectedDocs.cover_letter || selectedDocs.tailored_cv_text)" class="docs">
-              <h3>Prepared documents for review</h3>
-              <template x-if="selectedDocs.review_warnings && selectedDocs.review_warnings.length">
-                <div class="warning"><strong>Review before applying</strong><ul><template x-for="w in selectedDocs.review_warnings"><li x-text="w"></li></template></ul></div>
-              </template>
-              <label>Suggested email subject <input readonly :value="selectedDocs.suggested_subject || ''" /></label>
-              <label>Cover letter draft <textarea readonly rows="10" x-text="selectedDocs.cover_letter || selectedDocs.tailored_cover_letter || ''"></textarea></label>
-              <label>Tailored CV draft <textarea readonly rows="14" x-text="selectedDocs.tailored_cv_text || ''"></textarea></label>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section x-show="view==='jobs'" class="panel">
-        <div class="filter-bar">
-          <button :class="{active:jobFilter==='recommended'}" @click="jobFilter='recommended'">Recommended</button>
-          <button :class="{active:jobFilter==='active'}" @click="jobFilter='active'">All active</button>
-          <button :class="{active:jobFilter==='ready'}" @click="jobFilter='ready'">Ready to Apply</button>
-          <button :class="{active:jobFilter==='verify'}" @click="jobFilter='verify'">Needs Verification</button>
-          <button :class="{active:jobFilter==='closing'}" @click="jobFilter='closing'">Closing Soon</button>
-          <button :class="{active:jobFilter==='new'}" @click="jobFilter='new'">New</button>
-          <button :class="{active:jobFilter==='updated'}" @click="jobFilter='updated'">Updated</button>
-        </div>
-        <div class="table">
-          <div class="table-row head"><span>Role</span><span>Organization</span><span>Status</span><span>Deadline</span><span></span></div>
-          <template x-for="job in filteredJobs()" :key="job.id">
-            <div class="table-row"><span x-text="job.title"></span><span x-text="job.company"></span><span x-text="readinessLabel(job)"></span><span x-text="job.closing_date || '—'"></span><span><button class="link" @click="setView('recommended'); openJob(job)">Review</button></span></div>
-          </template>
-        </div>
-      </section>
-
-      <section x-show="view==='applications'" class="panel">
-        <template x-if="applications.length === 0"><div class="empty small"><h2>No applications tracked yet</h2><p>Prepare a job, open the application page, then record submission after you submit manually.</p></div></template>
-        <template x-for="job in applications" :key="job.id">
-          <div class="application-row application-row-rich">
-            <div>
-              <strong x-text="job.title"></strong>
-              <p x-text="job.company + ' · ' + (job.location || '')"></p>
-              <p class="muted">Deadline: <span x-text="job.closing_date || 'not listed'"></span> · <span x-text="routeLabel(job)"></span></p>
-              <p class="doc-state"><span x-text="job.tailored_cv_ready ? 'CV prepared' : 'CV not prepared'"></span> · <span x-text="job.cover_letter_ready ? 'Cover letter prepared' : 'Cover letter not prepared'"></span> · <strong x-text="applicationStateLabel(job)"></strong></p>
-            </div>
-            <select x-model="job.status" @change="updateStatus(job, job.status)">
-              <option value="prepared">Prepared</option><option value="review">Ready to Review</option><option value="opened">Opened</option><option value="interviewing">Interview</option><option value="offer">Offer</option><option value="rejected">Rejected</option><option value="withdrawn">Withdrawn</option><option value="closed">Closed</option><option value="expired">Expired</option><option value="archived">Closed / Archived</option>
-            </select>
-            <button class="secondary" @click="openApplication(job)">Open route</button>
-            <button class="primary" @click="confirmSubmitted(job)" x-show="!['submitted','applied','closed','expired','archived'].includes(job.status)">Record submitted</button>
-          </div>
-        </template>
-      </section>
-
-      <section x-show="view==='profile'" class="panel profile-panel">
-        <h2>Profile summary</h2>
-        <p class="muted">These are the facts used for matching. Missing evidence stays “Needs Verification”; the app will not invent license numbers, certificate numbers, dates, or identifiers.</p>
-        <div class="profile-summary-grid">
-          <div><span>Medical Doctor</span><strong>Verified</strong></div>
-          <div><span>Health / nutrition / programme experience</span><strong x-text="(profile.work_history || []).length ? 'Verified' : 'Needs Verification'"></strong></div>
-          <div><span>Afghanistan experience</span><strong x-text="evidenceCount('afghanistan_experience') ? 'Verified' : 'Needs Verification'"></strong></div>
-          <div><span>License / registration</span><strong x-text="profile.license_registration?.verified ? 'Verified' : 'Needs Verification'"></strong></div>
-          <div><span>Languages</span><strong>Dari · Pashto · English</strong></div>
-          <div><span>Key skills</span><strong>Clinical care · BPHS/EPHS · HMIS · Nutrition</strong></div>
-        </div>
-        <h2>Review core facts</h2>
-        <div class="grid two">
-          <label>First name <input x-model="profile.personal.first_name" /></label>
-          <label>Last name <input x-model="profile.personal.last_name" /></label>
-          <label>Email <input x-model="profile.personal.email" /></label>
-          <label>Phone <input x-model="profile.personal.phone" /></label>
-          <label>Location <input x-model="profile.personal.location" /></label>
-          <label>Nationality <input x-model="profile.personal.nationality" /></label>
-          <label>Gender (optional) <input x-model="profile.personal.gender" placeholder="Only needed for gender-restricted vacancies" /></label>
-          <label>Clinical experience years <input type="number" min="0" step="0.5" x-model.number="profile.clinical_experience.years" /></label>
-          <label>Medical degree <input x-model="profile.medical_education[0].degree" /></label>
-          <label>Medical university <input x-model="profile.medical_education[0].institution" /></label>
-          <label>License authority <input x-model="profile.license_registration.authority" /></label>
-          <label>License number <input x-model="profile.license_registration.number" /></label>
-        </div>
-        <div class="grid two">
-          <label>Willing to relocate/deploy <input type="checkbox" x-model="profile.preferences.willing_to_relocate" /></label>
-          <label>Field/district deployment OK <input type="checkbox" x-model="profile.preferences.field_deployment" /></label>
-        </div>
-        <div class="actions"><button class="primary" @click="saveProfile()">Save profile</button></div>
-
-        <h2>CV document</h2>
-        <div class="upload-line">
-          <input x-model="resumeName" placeholder="CV name" />
-          <input type="file" accept=".pdf,.txt,.md" @change="uploadResume($event.target)" />
-        </div>
-
-        <h2>Evidence found</h2>
-        <div class="evidence-grid">
-          <div>MD/MBBS <strong x-text="evidenceCount('md_degree') ? 'Found' : 'Needs verification'"></strong></div>
-          <div>License/registration <strong x-text="evidenceCount('license_registration') ? 'Found' : 'Needs verification'"></strong></div>
-          <div>English <strong x-text="evidenceCount('language_english') ? 'Found' : 'Needs verification'"></strong></div>
-          <div>Dari <strong x-text="evidenceCount('language_dari') ? 'Found' : 'Needs verification'"></strong></div>
-          <div>Pashto <strong x-text="evidenceCount('language_pashto') ? 'Found' : 'Needs verification'"></strong></div>
-          <div>NGO/humanitarian <strong x-text="evidenceCount('ngo_humanitarian') || evidenceCount('ngo_experience_years') ? 'Found' : 'Needs verification'"></strong></div>
-        </div>
-      </section>
-
-      <section x-show="view==='settings'" class="panel profile-panel">
-        <h2>Sources</h2>
-        <label><input type="checkbox" x-model="profile.job_sources.acbar.enabled" /> ACBAR / Afghan NGO jobs</label>
-        <label><input type="checkbox" x-model="profile.job_sources.reliefweb.enabled" /> ReliefWeb Afghanistan health jobs</label>
-        <label><input type="checkbox" x-model="profile.search.generic_job_boards_enabled" /> Generic job boards (opt-in, may be noisy)</label>
-        <h2>Job Watcher</h2>
-        <label><input type="checkbox" x-model="profile.watcher.enabled" /> Run scheduled Afghan Job Watch scans</label>
-        <label>Scan every N hours <input type="number" min="1" step="1" x-model.number="profile.watcher.scan_interval_hours" /></label>
-        <label>Deadline alert days <input x-model="profile.watcher.deadline_alert_days" placeholder="7,3,1" /></label>
-        <label>Application package folder <input x-model="profile.watcher.application_out_dir" placeholder="documents/applications" /></label>
-        <label><input type="checkbox" x-model="profile.watcher.auto_prepare_ready_to_apply" /> Automatically prepare review packages for Ready to Apply jobs</label>
-        <h2>Notifications</h2>
-        <label><input type="checkbox" x-model="profile.notifications.new_jobs" /> New Ready to Apply jobs</label>
-        <label><input type="checkbox" x-model="profile.notifications.needs_verification" /> New jobs needing verification</label>
-        <label><input type="checkbox" x-model="profile.notifications.deadline_alerts" /> Deadline reminders</label>
-        <label><input type="checkbox" x-model="profile.notifications.updates" /> Material job updates</label>
-        <label><input type="checkbox" x-model="profile.notifications.source_failures" /> Source failure warnings</label>
-        <h2>Advanced safety</h2>
-        <p class="muted">CAPTCHA, login, MFA, and protected websites are never bypassed. If a site cannot be automated safely, the app opens the real application page and guides you manually.</p>
-        <h2>AI</h2>
-        <label><input type="checkbox" x-model="profile.ai.enabled" /> Enable optional AI helpers</label>
-        <label><input type="checkbox" x-model="profile.ai.enable_document_refinement" /> Allow AI wording refinement for prepared documents</label>
-        <div class="actions"><button class="primary" @click="saveProfile()">Save settings</button></div>
-      </section>
-
-      <section x-show="view==='advanced'" class="panel profile-panel">
-        <h2>Scheduler</h2>
-        <p><strong x-text="schedulerStatus.running ? 'Running' : 'Stopped'"></strong> · Watch interval: <span x-text="schedulerStatus.settings?.job_watch_interval_hours || profile.watcher?.scan_interval_hours || 6"></span> hours</p>
-        <template x-for="job in schedulerStatus.jobs || []" :key="job.id">
-          <p class="muted"><span x-text="job.name"></span>: next run <span x-text="job.next_run || 'not scheduled'"></span></p>
-        </template>
-        <h2>Scan audits</h2>
-        <p class="muted">Source diagnostics and failures live here so the main workflow stays simple.</p>
-        <template x-if="scanAudits.length === 0"><div class="empty small"><h2>No scan logs yet</h2><p>Run Find jobs to create the first audit.</p></div></template>
-        <template x-for="scan in scanAudits" :key="scan.scan_id">
-          <div class="application-row">
-            <div>
-              <strong x-text="scan.scan_id"></strong>
-              <p x-text="`${scan.status} · new ${scan.new_count} · updated ${scan.updated_count} · unchanged ${scan.unchanged_count} · closed ${scan.closed_count}`"></p>
-              <p class="muted" x-show="scan.errors && scan.errors.length" x-text="`${scan.errors.length} warning/error(s). Open source details if needed.`"></p>
-            </div>
-          </div>
-        </template>
-        <h2>Source registry</h2>
-        <p>Active/Limited sources enabled: <strong x-text="sourceRegistryStatus.active?.length || 0"></strong></p>
-        <p class="muted">ACTIVE <span x-text="sourceRegistryStatus.counts?.ACTIVE || 0"></span> · LIMITED <span x-text="sourceRegistryStatus.counts?.LIMITED || 0"></span> · INACCESSIBLE <span x-text="sourceRegistryStatus.counts?.INACCESSIBLE || 0"></span></p>
-        <template x-if="sourceRegistryStatus.last_scan_source_state">
-          <div class="source-state">
-            <strong>Last discovery source state</strong>
-            <p class="muted">Attempted <span x-text="sourceRegistryStatus.last_scan_source_state.sources_attempted?.length || 0"></span> · successful <span x-text="sourceRegistryStatus.last_scan_source_state.sources_successful?.length || 0"></span> · failed <span x-text="sourceRegistryStatus.last_scan_source_state.sources_failed?.length || 0"></span> · jobs found <span x-text="sourceRegistryStatus.last_scan_source_state.jobs_found || 0"></span></p>
-            <template x-if="sourceRegistryStatus.last_scan_source_state.sources_failed && sourceRegistryStatus.last_scan_source_state.sources_failed.length"><div class="warning"><strong>Source failures are visible</strong><ul><template x-for="err in sourceRegistryStatus.last_scan_source_state.sources_failed"><li x-text="(err.source || err.id || 'source') + ': ' + (err.error || err.message || 'failed')"></li></template></ul></div></template>
-          </div>
-        </template>
-        <template x-if="sourceRegistryStatus.errors && sourceRegistryStatus.errors.length"><div class="warning"><strong>Registry validation warnings</strong><ul><template x-for="err in sourceRegistryStatus.errors"><li x-text="err"></li></template></ul></div></template>
-        <h2>Notifications</h2>
-        <template x-for="event in watcherNotifications" :key="event.id">
-          <div class="application-row">
-            <div><strong x-text="event.event_type"></strong><p x-text="event.message"></p></div>
-            <span class="status" x-text="event.state"></span>
-          </div>
-        </template>
-      </section>
-    </main>
-  </div>
+  <script src="/static/app.js"></script>
 </body>
 </html>

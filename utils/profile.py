@@ -468,7 +468,10 @@ def _add_experience_years(evidence: ProfileEvidence, profile: dict[str, Any], re
     if isinstance(clinical, dict):
         years = clinical.get("years") or clinical.get("years_total")
         if years not in (None, ""):
-            evidence.add("clinical_experience_years", float(years), "profile.clinical_experience", f"{years} years clinical experience", verified=True)
+            try:
+                evidence.add("clinical_experience_years", float(years), "profile.clinical_experience", f"{years} years clinical experience", verified=True)
+            except (TypeError, ValueError):
+                pass
     elif isinstance(clinical, (int, float, str)) and str(clinical).strip():
         try:
             evidence.add("clinical_experience_years", float(clinical), "profile.clinical_experience", f"{clinical} years clinical experience", verified=True)
@@ -479,7 +482,10 @@ def _add_experience_years(evidence: ProfileEvidence, profile: dict[str, Any], re
     if isinstance(ngo, dict):
         years = ngo.get("years") or ngo.get("years_total")
         if years not in (None, ""):
-            evidence.add("ngo_experience_years", float(years), "profile.ngo_humanitarian_experience", f"{years} years NGO/humanitarian experience", verified=True)
+            try:
+                evidence.add("ngo_experience_years", float(years), "profile.ngo_humanitarian_experience", f"{years} years NGO/humanitarian experience", verified=True)
+            except (TypeError, ValueError):
+                pass
     elif isinstance(ngo, bool) and ngo:
         evidence.add("ngo_humanitarian", True, "profile.ngo_humanitarian_experience", "NGO/humanitarian experience marked in profile", verified=True)
 

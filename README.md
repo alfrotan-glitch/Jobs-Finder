@@ -1,229 +1,172 @@
-# Afghan MD Job Assistant
+# Jobs-Finder
 
-A local, review-first job-search assistant for a medical doctor looking for medical and public-health vacancies in Afghanistan.
+Jobs-Finder is a lightweight Windows-first assistant for Afghanistan job search and application preparation.
 
-The workflow is:
+It helps one user answer:
 
-**Find → Understand → Match → Prepare → Review → Apply → Track**
-
-It is intentionally not a generic job-search dashboard. It focuses on Afghan medical roles such as MD, MBBS, physician, medical officer, health officer, public health, PHC, BPHS/EPHS, HMIS, IMNCI, IMAM, nutrition, SRHR, IPC, and humanitarian/NGO health work.
-
-## Safety rules
-
-- AI is optional. Discovery, requirement extraction, eligibility matching, and draft documents work without AI.
-- The profile and CV are the only sources for applicant facts.
-- Missing evidence is shown as **Needs verification**, not as a fabricated claim.
-- The app never invents qualifications, licenses, languages, locations, achievements, or experience.
-- It never bypasses CAPTCHA, login, MFA, or site security.
-- It never submits an application without explicit user confirmation.
-- Default behavior is review-first: prepare drafts, open the real application page, and stop before final submission.
+> Which Afghanistan vacancies are relevant to my verified CV/profile, why do they fit, and what application package should I review before applying?
 
 ## What it does
 
-1. Finds Afghanistan-first medical vacancies from high-value sources.
-2. Deduplicates jobs and keeps the original source URL and application URL.
-3. Extracts deterministic requirements from each vacancy:
-   - MD / MBBS / physician / medical officer
-   - license or registration
-   - required clinical years
-   - Afghanistan health-sector experience
-   - BPHS / EPHS / PHC / HMIS / IMNCI / IMAM / nutrition / SRHR / IPC
-   - NGO or humanitarian experience
-   - reporting, supervision, management
-   - English / Dari / Pashto
-   - province, district, Kabul, field deployment
-   - gender, nationality, and residency requirements
-   - reference number, application email, application URL, required subject, closing date
-4. Compares each requirement against verified profile/CV evidence.
-5. Shows a table: **Required → Met / Not met / Needs verification**.
-6. Prioritizes jobs as “Review first”, “Review soon”, “Needs verification”, “Low priority”, or “Closed” without pretending to predict hiring probability.
-7. Generates a tailored CV draft and cover letter draft for review.
-8. Opens the real application page and can assist with safe form filling.
-9. Stops before final submission unless the user explicitly confirms.
-10. Tracks prepared, opened, submitted, interviewing, offer, rejected, withdrawn, and archived applications.
+1. Finds Afghanistan-relevant vacancies from maintained sources.
+2. Normalizes and deduplicates vacancies.
+3. Extracts practical requirements: education, license/registration, experience, languages, location, deadline, documents, application URL/email, subject/reference.
+4. Compares the vacancy against the verified profile/CV evidence.
+5. Classifies the vacancy as:
+   - `READY_TO_APPLY`
+   - `NEEDS_VERIFICATION`
+   - `NOT_ELIGIBLE`
+6. Explains the match in plain language.
+7. Prepares a review-first application package:
+   - tailored CV: TXT, DOCX, PDF
+   - tailored cover letter: TXT, DOCX, PDF
+   - application instructions/checklist
+   - missing-fact warnings
+   - official application URL or email
+8. Opens the official application route for the user to complete manually.
 
-## Install
+## What it does not do
 
-### Requirements
+Jobs-Finder is not an ATS, recruiter bot, form-submission bot, email monitor, interview platform, or generic global job-board aggregator.
 
-- Python 3.11+; Python 3.13 is supported on Windows and is preferred by the launcher when available
-- Playwright browser binaries if you want browser-assisted form filling
+It does **not**:
 
-### Local setup
+- submit applications automatically
+- bypass CAPTCHA, login, MFA, or employer security controls
+- invent experience, license numbers, documents, dates, achievements, references, or skills
+- silently run continuous scans when the dashboard starts
+- monitor email or perform follow-up automation
 
-```bash
-git clone https://github.com/alfrotan-glitch/Jobs-Finder.git
-cd Jobs-Finder
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -m playwright install chromium
-cp profile.yaml.example profile.yaml
-```
+## Windows one-click start
 
-If you have a text export or PDF of Dr. Frotan's CV, you can create the structured profile directly:
-
-```bash
-python main.py import-cv profiles/dr_allah_yar_frotan_source_cv.txt
-```
-
-To export the professional master CV after profile review:
-
-```bash
-python main.py create-master-cv --profile profiles/dr_allah_yar_frotan_profile.yaml --out-dir documents
-```
-
-Edit `profile.yaml` with your verified facts, especially:
-
-- personal information
-- medical education
-- license/registration
-- clinical experience years
-- work history with dates
-- skills and certificates
-- languages
-- location and preferred locations
-- CV path
-
-Then start the web app:
-
-```bash
-python main.py server --port 8080
-```
-
-Open <http://localhost:8080>.
-
-### Windows one-click launcher
-
-On Windows, double-click:
+From the repository folder, double-click:
 
 ```text
 run_jobs_finder.bat
 ```
 
-The launcher detects the project folder, uses `.venv\Scripts\python.exe` when it exists, and on first run creates that exact project `.venv` using the existing `requirements.txt` and Playwright Chromium setup. If `.venv` does not exist, it looks for Windows Python in this order: `py -3.13`, `py -3.12`, `py -3.11`, then any `py -3` or `python` that is Python 3.11 or newer. It then starts the canonical dashboard command (`main.py server --port 8080`), opens <http://localhost:8080> in the default browser, and keeps the console window open so startup errors remain visible. It does not create another project, create a second environment elsewhere, run discovery/watch scans directly, or submit applications.
+The launcher:
 
-## CLI usage
+- uses this project directory
+- creates exactly one project `.venv` if missing
+- installs from `requirements.txt`
+- starts only the dashboard
+- opens <http://localhost:8080>
+- does not run background scanning or submit applications
+
+Python support is intentionally conservative. The code was validated in this environment on Python 3.11. The dependency set is lightweight and avoids JobSpy/NumPy/Playwright, but Python 3.13 could not be executed in this Linux sandbox; if a package installer fails on Python 3.13, install Python 3.12 or 3.11 alongside it and rerun the launcher.
+
+## Manual setup
 
 ```bash
-# Find and analyze Afghan medical jobs
-python main.py discover
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp profile.yaml.example profile.yaml
+python main.py server --host 0.0.0.0 --port 8080
+```
 
-# Show jobs to look at today
+Open <http://localhost:8080>.
+
+## Profile/CV setup
+
+`profile.yaml` is the source of truth. Copy `profile.yaml.example` and edit only verified facts.
+
+Important rules:
+
+- Leave missing facts blank or marked `Needs verification`.
+- Do not enter license numbers, issue dates, expiry dates, certificates, references, or experience years unless verified.
+- Optional CV/PDF text can support evidence, but it must not silently replace profile facts.
+
+You can build a draft profile from a CV for review:
+
+```bash
+python main.py import-cv path/to/cv.pdf --profile profile.yaml
+```
+
+Then manually review `profile.yaml` before scanning or preparing documents.
+
+## Find jobs
+
+CLI:
+
+```bash
+python main.py find
 python main.py recommended
-
-# Generate tailored CV and cover letter drafts for a job
-python main.py prepare JOB_ID
-
-# Open the real application page
-python main.py open JOB_ID
-
-# Review-only form assistance; stops before submit
-python main.py fill JOB_ID
-
-# Allow final submit only after typed confirmation
-python main.py fill JOB_ID --live
-
-# Record a manually submitted application
-python main.py mark-submitted JOB_ID
-
-# View tracking statistics
-python main.py stats
+python main.py jobs
 ```
 
-## Web navigation
+Dashboard:
 
-The main navigation is simple:
+1. Open the app.
+2. Press **Find Jobs**.
+3. Review **Recommended**.
+4. Select a vacancy and press **Prepare package**.
+5. Review the generated files.
+6. Open the official route and apply manually.
 
-- **Recommended** — answers “Which jobs should I look at today?”
-- **Jobs** — all discovered jobs
-- **Applications** — prepared/opened/submitted applications and follow-up states
-- **My Profile** — verified applicant facts and CV evidence
-- **Settings** — sources, optional AI, and safety settings
+## Source status semantics
 
-## Sources
+Jobs-Finder distinguishes market results from technical failures:
 
-Enabled by default:
+- `SCAN_COMPLETE` — reachable sources returned relevant jobs.
+- `NO_RELEVANT_JOBS_FOUND` — reachable sources were scanned and no relevant current roles were found.
+- `PARTIAL_SCAN` — at least one source worked and at least one source failed.
+- `SOURCES_UNAVAILABLE` — all active sources were unreachable.
+- `SCAN_FAILED` — no active source configuration was available.
 
-- ACBAR / Afghan NGO job listings
-- UNJobs Afghanistan public UN/INGO listings (used as discovery hints; official employer route must still be verified)
-- UNICEF official Afghanistan careers
-- ReliefWeb Afghanistan health/humanitarian jobs when accessible (v2 API requires an approved appname; public HTML fallback is used without bypassing controls)
-- User-configured official organization career pages
-- User-configured ATS boards such as Greenhouse and Lever
+A result of zero jobs is never used to claim the Afghanistan market is empty when sources were unreachable.
 
-The maintained source registry is machine-readable at `docs/source_registry.json`; `docs/source_inventory.json` is a compatibility inventory generated from it. Each source is marked `ACTIVE`, `LIMITED`, `BLOCKED`, `INACCESSIBLE`, or `NOT_IMPLEMENTED`, with provenance, access limits, and whether it is enabled for autonomous discovery. See `docs/source_registry.md` for safe update rules and `docs/source_activation_report_2026-09-30.md` for the latest Afghanistan health/NGO source activation evidence. Generic job boards are opt-in because they are often noisy and less relevant for Afghanistan medical roles. Reusable adapters now include registry static pages and public Oracle HCM Candidate Experience APIs; LinkedIn/Facebook are not scraped by default. If login, CAPTCHA, MFA, robots, or access controls block public content, the source is recorded as blocked/limited rather than bypassed.
+## Active sources
 
-## Continuous Afghan Job Watcher
+Maintained active sources are intentionally few:
 
-Jobs-Finder can run as a persistent watcher instead of only a manual discovery tool:
+- **Tier A: ACBAR Jobs** — core Afghanistan NGO/INGO job board.
+- **Tier B: ReliefWeb Afghanistan jobs** — secondary humanitarian source filtered for health/medical/public-health terms.
 
-```text
-Source Registry → Scheduled Scan → Detect New/Changed Jobs → Normalize → Deduplicate → Expire Closed Jobs → Match Dr. Frotan → Prioritize → Notify → Prepare Application
+Other official employer and UN routes are treated as trusted application routes when discovered, but not claimed as active parser-backed sources unless maintained.
+
+## Application package output
+
+Generated files are written under `documents/applications/` and are ignored by Git because they may contain personal data.
+
+Each package includes:
+
+- tailored CV in TXT/DOCX/PDF
+- tailored cover letter in TXT/DOCX/PDF
+- complete package instructions in TXT/JSON
+- application data checklist
+- required documents checklist
+- missing fact warnings
+- official application route
+
+## Safety rules
+
+The matching and document systems use:
+
+- `Met`
+- `Not met`
+- `Needs verification`
+
+Vacancies classified `NOT_ELIGIBLE` do not receive an application package.
+
+Vacancies classified `NEEDS_VERIFICATION` keep visible warnings in the package so the user can verify facts before applying.
+
+## Troubleshooting
+
+### The dashboard does not open
+
+Check whether port 8080 is already in use. You can set a different port:
+
+```powershell
+$env:JOBS_FINDER_PORT=8081
+.\run_jobs_finder.bat
 ```
 
-The watcher stores canonical vacancies in SQLite, using the same deduplication rules as discovery. It records first seen, last seen, last changed, source URLs/provenance, closing date, content and requirements fingerprints, deterministic matching results, notification state, and scan audits. It distinguishes `NEW`, `UPDATED`, `UNCHANGED`, and `CLOSED`/`EXPIRED` vacancies and does not delete existing jobs just because a source temporarily fails or returns zero results.
+### The scan says sources unavailable
 
-Run one manual persistent scan:
+This means the app could not reach active live sources from your network/environment. It does not mean there are no jobs. Try again later or open ACBAR/ReliefWeb manually.
 
-```bash
-python main.py watch
-```
+### Python package installation fails
 
-Scheduled scans are configured in `profile.yaml` under `watcher` / `schedule`:
-
-```yaml
-watcher:
-  enabled: true
-  scan_interval_hours: 6
-  deadline_alert_days: [7, 3, 1]
-  auto_prepare_ready_to_apply: false
-```
-
-Notifications are internal by default: new ready jobs, jobs needing verification, deadline alerts, material updates, closures/expirations, and source failures. External email/SMS/WhatsApp is not required. READY_TO_APPLY jobs can be prepared with the existing review-first package workflow; the app still never submits without explicit user confirmation.
-
-## Optional AI
-
-AI can be enabled in `profile.yaml`, but it is not required for basic operation.
-
-```yaml
-ai:
-  enabled: false
-  enable_document_refinement: false
-```
-
-When enabled, AI may help refine wording or analyze unusual forms. It must not add facts that are missing from the verified profile/CV.
-
-## Data and provenance
-
-The app stores tracking data in `applications.db` (SQLite). For each job it keeps:
-
-- original source URL
-- application URL or email
-- extracted requirements
-- deterministic match report
-- evidence snippets from the vacancy and profile/CV
-- generated draft documents
-- application status and follow-up dates
-
-This lets the user answer: **“Where did this information come from?”**
-
-## Tests
-
-Run:
-
-```bash
-python -m pytest
-```
-
-The tests cover CV parsing, deterministic requirement extraction, MD matching, missing evidence, experience requirements, duplicate jobs, closing dates, source failures, invalid application URLs, tailored documents, and application state transitions.
-
-To replay the product validation against the real ACBAR Afghanistan vacancies captured during review, run:
-
-```bash
-python scripts/validate_real_vacancies.py
-```
-
-It writes a Markdown/JSON validation report and vacancy-specific tailored CV/cover-letter drafts under `documents/real_vacancy_validation/`. The validation checks source URL preservation, application destination preservation, requirement extraction, evidence-based `Met / Not met / Needs verification`, document generation, safe open tracking, and the guard that blocks submission without explicit confirmation.
-
-Real public ATS form tests are skipped by default because they require network access and installed Playwright browsers. Run them with `RUN_REAL_FORMS=1 python -m pytest tests/test_real_forms.py` after `python -m playwright install chromium`.
+This final product removed JobSpy, NumPy, Playwright, Stagehand, APScheduler, and email-monitoring dependencies. If installation still fails on Python 3.13, install Python 3.12 or 3.11 alongside it, delete `.venv`, and rerun `run_jobs_finder.bat`.

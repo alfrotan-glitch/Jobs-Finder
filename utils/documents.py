@@ -941,7 +941,7 @@ def generate_application_package(
             "Attach the final reviewed files listed in the attachment list",
             "Send the email manually only after explicit user confirmation",
         ])
-        package_status = "READY_TO_SEND" if not missing else "NEEDS_USER_INPUT"
+        package_status = "READY_FOR_REVIEW" if not missing else "NEEDS_USER_INPUT"
     elif route_type == "online_form":
         online_application = {"url": online_url, "form_fields_checklist": form_fields}
         user_actions.extend([
@@ -951,7 +951,7 @@ def generate_application_package(
             "Do not bypass CAPTCHA, login, MFA, or other security controls",
             "Submit only after explicit user confirmation",
         ])
-        package_status = "READY_TO_SUBMIT" if online_url and not missing else "NEEDS_USER_INPUT"
+        package_status = "READY_FOR_REVIEW" if online_url and not missing else "NEEDS_USER_INPUT"
     else:
         missing.append("application route")
         user_actions.append("Open the source URL and verify the application route manually")
@@ -1081,7 +1081,7 @@ def write_application_bundle_files(
     )
     package_txt = out / f"{prefix}_complete_application_package.txt"
     package_json = out / f"{prefix}_complete_application_package.json"
-    fields_txt = out / f"{prefix}_form_fields_prefill_checklist.txt"
+    fields_txt = out / f"{prefix}_application_data_checklist.txt"
     package_txt.write_text(package.get("text", ""), encoding="utf-8")
     package_json.write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
     fields_lines = [
@@ -1103,7 +1103,7 @@ def write_application_bundle_files(
         "cover_letter": cover_paths,
         "application_package_txt": str(package_txt),
         "application_package_json": str(package_json),
-        "form_fields_prefill_checklist": str(fields_txt),
+        "application_data_checklist": str(fields_txt),
     }
 
 

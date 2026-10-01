@@ -5,42 +5,30 @@ __pycache__/
 .venv/
 venv/
 
-# Database
+# Local database
 applications.db
 applications.db-wal
 applications.db-shm
 
 # Cache
 .cache/
+.pytest_cache/
 
-# Resumes and generated profile/CV/application artifacts (may contain PII)
+# User/private data and generated application artifacts
+profile.yaml
 resumes/
 profiles/
 documents/
+*.pdf
+*.docx
+*.png
 
-# IDE
+# IDE / OS
 .vscode/
 .idea/
-
-# Playwright MCP
-.playwright-mcp/
-
-# Claude
-.claude/
-
-# OS
 .DS_Store
 
 # Logs
 logs/
 *.log
 nohup.out
-
-# Profile (contains PII)
-profile.yaml
-
-# Screenshots (may contain PII from live sessions)
-*.png
-
-# Broken empty directory
-{adapters,utils}/

@@ -188,7 +188,10 @@ def test_settings_endpoint_reflects_acbar_budget_not_a_toggle(client):
     response = client.get("/api/settings")
     assert response.status_code == 200
     body = response.json()
-    assert body["acbar"]["max_pages"] > 0
+    # A normal ACBAR scan has no artificial page ceiling; a page cap is only
+    # meaningful when a user explicitly configures it and must make the scan partial.
+    assert body["acbar"]["max_pages"] is None
+    assert body["acbar"]["detail_limit"] is None
     assert body["acbar"]["max_detail_concurrency"] > 0
     assert body["sources"]
     assert all(source.get("official_url") for source in body["sources"])

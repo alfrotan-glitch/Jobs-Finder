@@ -133,7 +133,7 @@ Jobs-Finder distinguishes market results from technical failures:
 
 - `SCAN_COMPLETE` — reachable sources returned relevant jobs.
 - `NO_RELEVANT_JOBS_FOUND` — reachable sources were scanned and no relevant current roles were found.
-- `PARTIAL_SCAN` — at least one source worked and at least one source failed.
+- `PARTIAL_SCAN` — at least one source worked, but a source failed, pagination could not reach its real end, or an explicitly configured page/detail limit deferred part of the scan.
 - `SOURCES_UNAVAILABLE` — all active sources were unreachable.
 - `SCAN_FAILED` — no active source configuration was available.
 
@@ -143,7 +143,7 @@ A result of zero jobs is never used to claim the Afghanistan market is empty whe
 
 Maintained active sources are intentionally few:
 
-- **Tier A: ACBAR Jobs** — core Afghanistan NGO/INGO job board. Each scan walks listing pages with bounded, documented pagination (`job_sources.acbar.max_pages`, default 6) and stops automatically once a page returns no new vacancies; detail pages are fetched with a bounded concurrency limit (`max_detail_concurrency`, default 5) and a per-request timeout. This is a deliberate performance/safety budget, not a claim that the entire ACBAR archive is scanned on every run. See `profile.yaml.example` to adjust it.
+- **Tier A: ACBAR Jobs** — core Afghanistan NGO/INGO job board. Normal discovery follows `?page=N` until ACBAR returns a real empty listing page (`END_REACHED`), deduplicates all current cards, and cross-checks the discovered total against the count published by ACBAR. Detail pages are opened only for plausible health/medical candidates, with bounded concurrency (`max_detail_concurrency`, default 5) and a per-request timeout. `job_sources.acbar.max_pages` and `detail_limit` are **optional explicit safety caps only**: either cap marks the source and overall scan `PARTIAL`; neither is a default completion condition. See `profile.yaml.example` for the accounting semantics.
 - **Tier B: ReliefWeb Afghanistan jobs** — secondary humanitarian source filtered for health/medical/public-health terms.
 
 Other official employer and UN routes are treated as trusted application routes when discovered, but not claimed as active parser-backed sources unless maintained.

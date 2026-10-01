@@ -27,6 +27,7 @@ def render_professional_document_artifacts(
     *,
     document_type: str,
     metadata: dict[str, Any] | None = None,
+    canonical_cv_model: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     """Write TXT, DOCX and PDF using the global Jobs-Finder design system.
 
@@ -48,7 +49,10 @@ def render_professional_document_artifacts(
         render_cover_letter_pdf(model, pdf)
         render_cover_letter_docx(model, docx)
     else:
-        model = parse_cv_text(text or "", metadata)
+        # The tailored generator can provide the content model directly. This
+        # prevents a text re-parser from dropping/reinterpreting experience
+        # lines between the canonical CV and its PDF/DOCX views.
+        model = canonical_cv_model if isinstance(canonical_cv_model, dict) else parse_cv_text(text or "", metadata)
         render_cv_pdf(model, pdf)
         render_cv_docx(model, docx)
     return {"txt": str(txt), "docx": str(docx), "pdf": str(pdf)}
@@ -160,13 +164,20 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
     for item in strengths:
         expanded.extend([p.strip() for p in item.split(",") if p.strip()])
     strengths = expanded or [_clean_bullet(x) for x in sections.get("VACANCY-FIT HIGHLIGHTS", [])]
-    strengths = _unique(strengths)[:8]
+    strengths = _unique(strengths)
     def parse_experience(lines_for_section: list[str], group: str) -> list[dict[str, Any]]:
         parsed: list[dict[str, Any]] = []
         current: dict[str, Any] | None = None
         for line in lines_for_section:
             if line.startswith("-") and current:
                 current.setdefault("bullets", []).append(_clean_bullet(line))
+            elif current and " | " in line and not current.get("org"):
+                # Canonical CV text uses a separate Employer | Location | Dates
+                # metadata line below each title for readability.
+                parts = [part.strip() for part in line.split("|")]
+                current["org"] = parts[0] if parts else ""
+                current["loc"] = parts[1] if len(parts) > 1 else ""
+                current["dates"] = parts[2] if len(parts) > 2 else ""
             elif not line.startswith("-"):
                 if current:
                     parsed.append(current)
@@ -447,12 +458,12 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
+    from reportlab.platypus import Paragraph, SimpleDocTemplate
 
     serif, serif_bold, sans, sans_bold = _register_fonts()
     doc = SimpleDocTemplate(
         str(path), pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm,
-        topMargin=15 * mm, bottomMargin=16 * mm,
+        topMargin=12 * mm, bottomMargin=13 * mm,
         title=f"{model.get('name') or 'Applicant'} — Curriculum Vitae",
         author=model.get("name") or "Applicant",
     )
@@ -460,11 +471,11 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     name_style = ParagraphStyle("CVName", parent=styles["Title"], fontName=serif_bold, fontSize=22, leading=25, textColor=colors.HexColor(Theme.deep), spaceAfter=2)
     title_style = ParagraphStyle("CVTitle", parent=styles["Normal"], fontName=sans, fontSize=10.5, leading=13, textColor=colors.HexColor(Theme.teal), spaceAfter=3)
     contact_style = ParagraphStyle("CVContact", parent=styles["Normal"], fontName=sans, fontSize=8.5, leading=11, textColor=colors.HexColor(Theme.muted), spaceAfter=10)
-    section_style = ParagraphStyle("CVSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=10.5, leading=13, textColor=colors.HexColor(Theme.deep), spaceBefore=9, spaceAfter=5, borderColor=colors.HexColor(Theme.rule), borderWidth=0, borderBottomWidth=.6, borderPadding=(0, 0, 3, 0))
-    role_style = ParagraphStyle("CVRole", parent=styles["Heading3"], fontName=serif_bold, fontSize=10.5, leading=13, textColor=colors.HexColor(Theme.deep), spaceBefore=7, spaceAfter=1, keepWithNext=True)
-    meta_style = ParagraphStyle("CVMeta", parent=styles["Normal"], fontName=sans, fontSize=8, leading=10, textColor=colors.HexColor(Theme.muted), spaceAfter=3, keepWithNext=True)
-    body_style = ParagraphStyle("CVBody", parent=styles["BodyText"], fontName=sans, fontSize=9, leading=12.2, textColor=colors.HexColor(Theme.ink), spaceAfter=5)
-    bullet_style = ParagraphStyle("CVBullet", parent=body_style, leftIndent=11, firstLineIndent=-7, bulletIndent=0, spaceAfter=3)
+    section_style = ParagraphStyle("CVSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=10.3, leading=12.2, textColor=colors.HexColor(Theme.deep), spaceBefore=5, spaceAfter=2.5, borderColor=colors.HexColor(Theme.rule), borderWidth=0, borderBottomWidth=.6, borderPadding=(0, 0, 2.5, 0), keepWithNext=True)
+    role_style = ParagraphStyle("CVRole", parent=styles["Heading3"], fontName=serif_bold, fontSize=10.2, leading=12, textColor=colors.HexColor(Theme.deep), spaceBefore=3, spaceAfter=.7, keepWithNext=True)
+    meta_style = ParagraphStyle("CVMeta", parent=styles["Normal"], fontName=sans, fontSize=8, leading=9.4, textColor=colors.HexColor(Theme.muted), spaceAfter=2, keepWithNext=True)
+    body_style = ParagraphStyle("CVBody", parent=styles["BodyText"], fontName=sans, fontSize=8.8, leading=11.1, textColor=colors.HexColor(Theme.ink), spaceAfter=3.5)
+    bullet_style = ParagraphStyle("CVBullet", parent=body_style, leftIndent=11, firstLineIndent=-7, bulletIndent=0, spaceAfter=.5)
 
     def esc(value: Any) -> str:
         from xml.sax.saxutils import escape
@@ -483,7 +494,7 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     story: list[Any] = [
         Paragraph(esc(model.get("name") or "Applicant"), name_style),
         Paragraph(esc(model.get("headline") or "Medical Professional"), title_style),
-        Paragraph(esc(" | ".join(x for x in [model.get("location"), model.get("phone"), model.get("email")] if x)), contact_style),
+        Paragraph(esc(" | ".join(str(x) for x in (model.get("contact_lines") or [model.get("location"), model.get("phone"), model.get("email")]) if x)), contact_style),
         Paragraph("PROFESSIONAL SUMMARY", section_style),
         Paragraph(esc(model.get("profile") or ""), body_style),
     ]
@@ -492,8 +503,7 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
         for item in model.get("strengths") or []:
             story.append(Paragraph(esc(item), bullet_style, bulletText="•"))
 
-    relevant = [item for item in model.get("experience") or [] if item.get("group") != "remaining"]
-    remaining = [item for item in model.get("experience") or [] if item.get("group") == "remaining"]
+    experience = list(model.get("experience") or [])
 
     def add_experience(title: str, entries: list[dict[str, Any]]) -> None:
         if not entries:
@@ -509,26 +519,26 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
             for bullet in item.get("bullets") or []:
                 story.append(Paragraph(esc(bullet), bullet_style, bulletText="•"))
 
-    add_experience("MOST RELEVANT PROFESSIONAL EXPERIENCE", relevant)
-    if remaining:
-        story.append(PageBreak())
-        add_experience("REMAINING PROFESSIONAL EXPERIENCE", remaining)
-
+    # Place credentials before chronology to balance real multi-page CVs; this
+    # is mirrored by TXT and DOCX from the same canonical model.
     for title, values in [
         ("EDUCATION", model.get("education") or []),
         ("PROFESSIONAL REGISTRATION", model.get("registration") or []),
         ("MEDICAL EXIT EXAMINATION", model.get("exit_exam") or []),
-        ("TRAINING & CERTIFICATIONS", model.get("certifications") or []),
     ]:
         if values:
             story.append(Paragraph(title, section_style))
             for value in values:
                 story.append(Paragraph(esc(value), bullet_style, bulletText="•"))
+    add_experience("PROFESSIONAL EXPERIENCE", experience)
+    if model.get("certifications"):
+        story.append(Paragraph("TRAINING & CERTIFICATIONS", section_style))
+        for value in model.get("certifications") or []:
+            story.append(Paragraph(esc(value), bullet_style, bulletText="•"))
     if model.get("languages"):
         story.append(Paragraph("LANGUAGES", section_style))
-        for language, level in model.get("languages") or []:
-            text = f"{language} — {level}" if level else language
-            story.append(Paragraph(esc(text), bullet_style, bulletText="•"))
+        language_line = "  |  ".join(f"{language} — {level}" if level else language for language, level in model.get("languages") or [])
+        story.append(Paragraph(esc(language_line), bullet_style, bulletText="•"))
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
 
 
@@ -542,14 +552,14 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
 
     doc = Document()
     section = doc.sections[0]
-    section.top_margin = Inches(0.58)
-    section.bottom_margin = Inches(0.58)
-    section.left_margin = Inches(0.68)
-    section.right_margin = Inches(0.68)
+    section.top_margin = Inches(0.48)
+    section.bottom_margin = Inches(0.50)
+    section.left_margin = Inches(0.60)
+    section.right_margin = Inches(0.60)
     styles = doc.styles
     styles["Normal"].font.name = "Aptos"
     styles["Normal"]._element.rPr.rFonts.set(qn("w:eastAsia"), "Aptos")
-    styles["Normal"].font.size = Pt(9)
+    styles["Normal"].font.size = Pt(8.8)
 
     def style(name: str, size: float, bold: bool = False, color=(23, 42, 53), font="Aptos"):
         st = styles.add_style(name, 1) if name not in styles else styles[name]
@@ -567,17 +577,17 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
     contact_style = style("CV Contact", 8.2, False, (102, 115, 122))
     contact_style.paragraph_format.space_after = Pt(7)
     section_style = style("CV Section", 10.2, True, (12, 52, 66))
-    section_style.paragraph_format.space_before = Pt(8)
-    section_style.paragraph_format.space_after = Pt(3)
+    section_style.paragraph_format.space_before = Pt(6)
+    section_style.paragraph_format.space_after = Pt(2)
     role_style = style("CV Role", 10.2, True, (12, 52, 66), "Georgia")
-    role_style.paragraph_format.space_before = Pt(6)
+    role_style.paragraph_format.space_before = Pt(4)
     role_style.paragraph_format.space_after = Pt(0)
     role_style.paragraph_format.keep_with_next = True
     meta_style = style("CV Meta", 7.8, False, (102, 115, 122))
-    meta_style.paragraph_format.space_after = Pt(2)
+    meta_style.paragraph_format.space_after = Pt(1)
     meta_style.paragraph_format.keep_with_next = True
-    body_style = style("CV Body", 9, False, (23, 42, 53))
-    body_style.paragraph_format.space_after = Pt(4)
+    body_style = style("CV Body", 8.8, False, (23, 42, 53))
+    body_style.paragraph_format.space_after = Pt(2)
 
     def add_section(title: str) -> None:
         p = doc.add_paragraph(title, style="CV Section")
@@ -595,13 +605,13 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
         p = doc.add_paragraph(style="CV Body")
         p.paragraph_format.left_indent = Inches(0.18)
         p.paragraph_format.first_line_indent = Inches(-0.12)
-        p.paragraph_format.space_after = Pt(2)
+        p.paragraph_format.space_after = Pt(1)
         p.add_run("• ")
         p.add_run(str(text))
 
     doc.add_paragraph(model.get("name") or "Applicant", style="CV Name")
     doc.add_paragraph(model.get("headline") or "Medical Professional", style="CV Professional Title")
-    contact = " | ".join(x for x in [model.get("location"), model.get("phone"), model.get("email")] if x)
+    contact = " | ".join(str(x) for x in (model.get("contact_lines") or [model.get("location"), model.get("phone"), model.get("email")]) if x)
     doc.add_paragraph(contact, style="CV Contact")
     add_section("PROFESSIONAL SUMMARY")
     doc.add_paragraph(model.get("profile") or "", style="CV Body")
@@ -610,8 +620,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
         for value in model.get("strengths") or []:
             add_bullet(value)
 
-    relevant = [item for item in model.get("experience") or [] if item.get("group") != "remaining"]
-    remaining = [item for item in model.get("experience") or [] if item.get("group") == "remaining"]
+    experience = list(model.get("experience") or [])
 
     def add_experience(title: str, entries: list[dict[str, Any]]) -> None:
         if not entries:
@@ -624,25 +633,24 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
             for bullet in item.get("bullets") or []:
                 add_bullet(bullet)
 
-    add_experience("MOST RELEVANT PROFESSIONAL EXPERIENCE", relevant)
-    if remaining:
-        doc.add_page_break()
-        add_experience("REMAINING PROFESSIONAL EXPERIENCE", remaining)
-
     for title, values in [
         ("EDUCATION", model.get("education") or []),
         ("PROFESSIONAL REGISTRATION", model.get("registration") or []),
         ("MEDICAL EXIT EXAMINATION", model.get("exit_exam") or []),
-        ("TRAINING & CERTIFICATIONS", model.get("certifications") or []),
     ]:
         if values:
             add_section(title)
             for value in values:
                 add_bullet(value)
+    add_experience("PROFESSIONAL EXPERIENCE", experience)
+    if model.get("certifications"):
+        add_section("TRAINING & CERTIFICATIONS")
+        for value in model.get("certifications") or []:
+            add_bullet(value)
     if model.get("languages"):
         add_section("LANGUAGES")
-        for language, level in model.get("languages") or []:
-            add_bullet(f"{language} — {level}" if level else language)
+        language_line = "  |  ".join(f"{language} — {level}" if level else language for language, level in model.get("languages") or [])
+        add_bullet(language_line)
 
     footer = section.footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER

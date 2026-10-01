@@ -193,10 +193,11 @@ job_sources:
   # override locally.
   acbar:
     # timeout_seconds:
-    # detail_limit:        # Maximum vacancy detail pages fetched per scan.
-    # max_pages:           # Bounded pagination budget (not the whole site).
+    # detail_limit:        # Optional explicit detail-page cap. If set, deferred candidates make the scan PARTIAL.
+    # max_pages:           # Optional explicit listing-page cap. If set before ACBAR's end, the scan is PARTIAL.
     # max_detail_concurrency:
-    # urls: []             # Optional pinned listing pages instead of auto-pagination.
+    # urls: []             # Optional pinned listing pages; this intentionally scoped scan is reported PARTIAL.
+    # Leave detail_limit and max_pages unset for normal full discovery through ACBAR's real END_REACHED.
   reliefweb:
     # timeout_seconds:
     # limit:

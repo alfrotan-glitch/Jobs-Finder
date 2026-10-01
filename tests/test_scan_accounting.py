@@ -184,6 +184,47 @@ async def test_pagination_end_page_limit_and_detail_budget_are_distinct(monkeypa
     limited = await discovery.discover_acbar_jobs({"job_sources": {"acbar": {"max_pages": 1, "detail_limit": 1}}})
     assert limited.metrics.pagination_stop_reason == "PAGE_LIMIT_REACHED"
     assert limited.metrics.not_processed_due_to_budget == 1
-    assert limited.metrics.vacancies_parsed == 1
+    # Stage 1 still parses both discovered cards; the configured detail cap
+    # defers one candidate rather than making it disappear from accounting.
+    assert limited.metrics.vacancies_parsed == 2
     assert "PAGE_LIMIT_REACHED" in limited.metrics.partial_reasons
     assert "DETAIL_LIMIT_REACHED" in limited.metrics.partial_reasons
+
+@pytest.mark.asyncio
+async def test_explicit_detail_budget_is_a_terminal_lifecycle_outcome(monkeypatch):
+    cards = "".join(
+        f"<div><a href='/en/jobs/details/{number}/medical-officer-{number}'>Medical Officer {number}</a><span>Org</span><span>Kabul</span><span>2026-12-31</span></div>"
+        for number in range(1, 4)
+    )
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def get(self, url):
+            if "/details/" in url:
+                return Response("<h1>Medical Officer</h1><p>MD required. Apply hr@example.org.</p>")
+            return Response(cards)
+
+    monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: Client())
+    result = await run_discovery_scan(
+        {"sources": {"enabled": ["acbar"]}, "job_sources": {"acbar": {"max_pages": 1, "detail_limit": 1}}},
+        today=date(2026, 10, 1),
+    )
+    report = result.source_reports[0]
+    assert result.status == discovery.PARTIAL_SCAN
+    assert report.status == "PARTIAL"
+    assert report.pagination_stop_reason == "PAGE_LIMIT_REACHED"
+    assert report.vacancies_parsed == 3
+    assert report.not_processed_due_to_budget == 2
+    assert report.detail_pages_attempted == report.detail_pages_succeeded == 1
+    assert report.relevant_retained == 1
+    assert report.application_routes_found + report.application_routes_unavailable == report.relevant_retained
+    assert report.vacancies_parsed == sum([
+        report.duplicates_removed,
+        report.expired_excluded,
+        report.not_processed_due_to_budget,
+        report.irrelevant_excluded,
+        report.incompatible_role_classification_excluded,
+        report.source_validation_excluded,
+        report.relevant_retained,
+    ])

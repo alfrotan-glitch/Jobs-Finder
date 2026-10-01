@@ -46,7 +46,7 @@ It is intentionally not a generic job-search dashboard. It focuses on Afghan med
 
 ### Requirements
 
-- Python 3.11+
+- Python 3.11+; Python 3.13 is supported on Windows and is preferred by the launcher when available
 - Playwright browser binaries if you want browser-assisted form filling
 
 ### Local setup
@@ -101,7 +101,7 @@ On Windows, double-click:
 run_jobs_finder.bat
 ```
 
-The launcher detects the project folder, uses `.venv\Scripts\python.exe` when it exists, and on first run creates that exact project `.venv` using the existing `requirements.txt` and Playwright Chromium setup. It then starts the canonical dashboard command (`main.py server --port 8080`), opens <http://localhost:8080> in the default browser, and keeps the console window open so startup errors remain visible. It does not create another project, create a second environment elsewhere, run discovery/watch scans directly, or submit applications.
+The launcher detects the project folder, uses `.venv\Scripts\python.exe` when it exists, and on first run creates that exact project `.venv` using the existing `requirements.txt` and Playwright Chromium setup. If `.venv` does not exist, it looks for Windows Python in this order: `py -3.13`, `py -3.12`, `py -3.11`, then any `py -3` or `python` that is Python 3.11 or newer. It then starts the canonical dashboard command (`main.py server --port 8080`), opens <http://localhost:8080> in the default browser, and keeps the console window open so startup errors remain visible. It does not create another project, create a second environment elsewhere, run discovery/watch scans directly, or submit applications.
 
 ## CLI usage
 

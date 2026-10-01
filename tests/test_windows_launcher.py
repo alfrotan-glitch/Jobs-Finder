@@ -32,6 +32,17 @@ def test_windows_launcher_has_safe_first_run_setup_using_existing_conventions():
     assert "pip install -r" in lowered
     assert "playwright install chromium" in lowered
     assert "project's normal .venv folder only" in lowered
+    assert "using !bootstrap_py! for the project .venv" in lowered
+
+
+def test_windows_launcher_prefers_python_313_then_stable_fallbacks():
+    lowered = _launcher_text().lower()
+
+    assert lowered.index("py -3.13") < lowered.index("py -3.12")
+    assert lowered.index("py -3.12") < lowered.index("py -3.11")
+    assert 'set "bootstrap_py=py -3"' in lowered
+    assert "python 3.13 is supported" in lowered
+    assert "sys.version_info < (3, 11)" in lowered
 
 
 def test_windows_launcher_does_not_create_parallel_runtime_or_run_watcher():

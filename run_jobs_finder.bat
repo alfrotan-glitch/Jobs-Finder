@@ -73,13 +73,14 @@ if not exist "%VENV_PYTHON%" (
     call :find_bootstrap_python
     if errorlevel 1 (
         echo Startup status: FAILED
-        echo Python 3.11+ was not found. Install Python 3.11 or newer, then double-click this file again.
+        echo Python 3.11+ was not found. Python 3.13 is supported; install Python 3.13, 3.12, or 3.11, then double-click this file again.
         echo.
         popd >nul 2>&1
         pause
         exit /b 1
     )
 
+    echo First-run setup: using !BOOTSTRAP_PY! for the project .venv.
     echo First-run setup: creating .venv in this project only...
     call !BOOTSTRAP_PY! -m venv "%VENV_DIR%"
     if errorlevel 1 (
@@ -200,6 +201,16 @@ exit /b %EXIT_CODE%
 set "BOOTSTRAP_PY="
 where py >nul 2>&1
 if not errorlevel 1 (
+    py -3.13 -c "import sys; raise SystemExit(sys.version_info < (3, 11))" >nul 2>&1
+    if not errorlevel 1 (
+        set "BOOTSTRAP_PY=py -3.13"
+        exit /b 0
+    )
+    py -3.12 -c "import sys; raise SystemExit(sys.version_info < (3, 11))" >nul 2>&1
+    if not errorlevel 1 (
+        set "BOOTSTRAP_PY=py -3.12"
+        exit /b 0
+    )
     py -3.11 -c "import sys; raise SystemExit(sys.version_info < (3, 11))" >nul 2>&1
     if not errorlevel 1 (
         set "BOOTSTRAP_PY=py -3.11"

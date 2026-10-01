@@ -274,22 +274,70 @@ def _unique(items: list[str]) -> list[str]:
 
 
 def _register_fonts() -> tuple[str, str, str, str]:
+    """Register the design-system fonts portably.
+
+    TTF candidates are tried per platform (Linux DejaVu, Windows system
+    fonts, macOS system fonts). When no candidate file is available or
+    registration fails, the role falls back to ReportLab's built-in Type 1
+    fonts (Times/Helvetica), which require no font files on any OS — the
+    returned names are therefore always renderable. The previous
+    implementation hardcoded Linux-only paths, silently swallowed the
+    registration failure, and still returned the unregistered names, which
+    crashed PDF export on Windows/macOS.
+    """
+    import os
+
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 
-    fonts = {
-        "JFSerif": "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
-        "JFSerifBold": "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
-        "JFSans": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "JFSansBold": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    windows_fonts = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+    candidates: dict[str, list[Path]] = {
+        "JFSerif": [
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+            windows_fonts / "georgia.ttf",
+            windows_fonts / "times.ttf",
+            Path("/Library/Fonts/Georgia.ttf"),
+        ],
+        "JFSerifBold": [
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"),
+            windows_fonts / "georgiab.ttf",
+            windows_fonts / "timesbd.ttf",
+            Path("/Library/Fonts/Georgia Bold.ttf"),
+        ],
+        "JFSans": [
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            windows_fonts / "arial.ttf",
+            Path("/Library/Fonts/Arial.ttf"),
+        ],
+        "JFSansBold": [
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+            windows_fonts / "arialbd.ttf",
+            Path("/Library/Fonts/Arial Bold.ttf"),
+        ],
     }
-    for name, path in fonts.items():
-        try:
-            if name not in pdfmetrics.getRegisteredFontNames():
-                pdfmetrics.registerFont(TTFont(name, path))
-        except Exception:  # pragma: no cover - font fallback safety
-            pass
-    return "JFSerif", "JFSerifBold", "JFSans", "JFSansBold"
+    builtin_fallbacks = {
+        "JFSerif": "Times-Roman",
+        "JFSerifBold": "Times-Bold",
+        "JFSans": "Helvetica",
+        "JFSansBold": "Helvetica-Bold",
+    }
+    resolved: dict[str, str] = {}
+    registered = set(pdfmetrics.getRegisteredFontNames())
+    for name, paths in candidates.items():
+        if name in registered:
+            resolved[name] = name
+            continue
+        for path in paths:
+            try:
+                if path.is_file():
+                    pdfmetrics.registerFont(TTFont(name, str(path)))
+                    resolved[name] = name
+                    break
+            except Exception:  # pragma: no cover - corrupt/unreadable font file
+                continue
+        if name not in resolved:
+            resolved[name] = builtin_fallbacks[name]
+    return resolved["JFSerif"], resolved["JFSerifBold"], resolved["JFSans"], resolved["JFSansBold"]
 
 
 class Theme:

@@ -80,6 +80,11 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
             "nationality": "Needs verification",
             "gender": "",
             "linkedin": "",
+            # Explicit and unconditional: a CV import can propose a name,
+            # email, and phone number, but it can never confirm them. Only
+            # the profile owner reviewing and setting this to true (by hand,
+            # or via the dashboard's confirm action) verifies this block.
+            "verified": False,
         },
         "resume_path": resume_path,
         "medical_education": [
@@ -111,7 +116,11 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
         "ngo_humanitarian_experience": {"years": "", "organizations": []},
         "preferences": {
             "roles": ["Medical Officer", "Medical Doctor", "Physician", "Public Health Officer", "Nutrition / TSFP health roles"],
-            "locations": ["Afghanistan"],
+            # Never a resolved value: a CV import must not manufacture a
+            # ready-made "verified" location preference the user never
+            # actually typed (see utils.profile._add_personal, which treats
+            # any non-placeholder preferences.locations entry as confirmed).
+            "locations": ["Needs verification"],
             "willing_to_relocate": "Needs verification",
             "field_deployment": "Needs verification",
         },

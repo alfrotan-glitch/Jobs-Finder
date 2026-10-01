@@ -105,6 +105,41 @@ def test_confirm_endpoint_flips_only_the_requested_verified_flag(client):
     assert updated["license_registration"]["verified"] is False
 
 
+def test_confirm_endpoint_supports_confirming_the_personal_block(client):
+    """personal (identity/contact/nationality/location) has no per-field
+    verified flag of its own -- one explicit confirm sets personal.verified
+    for the whole block, and review surfaces nationality/location as
+    confirmable via that same "personal" field, never auto-verified."""
+    profile = {
+        "personal": {
+            "first_name": "Jane",
+            "last_name": "Doe",
+            "email": "doctor@example.org",
+            "nationality": "Afghan",
+            "location": "Kabul",
+        },
+    }
+    server.PROFILE_PATH.write_text(yaml.safe_dump(profile), encoding="utf-8")
+
+    review = client.get("/api/profile/review").json()
+    nationality_row = next(f for f in review["fields"] if f["key"] == "nationality")
+    location_row = next(f for f in review["fields"] if f["key"] == "location")
+    assert nationality_row["status"] == "Needs verification"
+    assert nationality_row["confirm_field"] == "personal"
+    assert location_row["status"] == "Needs verification"
+    assert location_row["confirm_field"] == "personal"
+
+    response = client.post("/api/profile/confirm", json={"field": "personal"})
+    assert response.status_code == 200
+
+    updated = yaml.safe_load(server.PROFILE_PATH.read_text(encoding="utf-8"))
+    assert updated["personal"]["verified"] is True
+
+    review_after = client.get("/api/profile/review").json()
+    nationality_row_after = next(f for f in review_after["fields"] if f["key"] == "nationality")
+    assert nationality_row_after["status"] == "Verified"
+
+
 def test_confirm_endpoint_supports_confirming_a_specific_language_with_level(client):
     profile = {
         "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org"},

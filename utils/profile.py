@@ -41,7 +41,16 @@ class ProfileEvidence:
     def add(self, key: str, value: Any, source: str, quote: str = "", verified: bool = False) -> None:
         if value in (None, "", [], {}):
             return
-        verified = bool(verified)
+        # Canonical rule: only a literal boolean True counts as verified.
+        # This deliberately does NOT use bool(verified) -- bool("false") and
+        # bool(0 if accidentally passed as "0") etc. are traps that would
+        # silently coerce a non-boolean "truthy" value (e.g. the string
+        # "true", "yes", or the integer 1) into verified evidence. Every
+        # caller is expected to have already resolved its own verification
+        # decision via is_verified_flag()/parse_tristate() before calling
+        # add(); this check is a second, independent backstop against
+        # truthiness coercion inside the evidence store itself.
+        verified = verified is True
         bucket = self.items.setdefault(key, [])
         for item in bucket:
             if item.value == value and item.source == source:
@@ -606,18 +615,23 @@ def _add_experience_years(evidence: ProfileEvidence, profile: dict[str, Any], re
 
 def _add_personal(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
     # Personal/preference scalars live directly in profile.yaml, which the
-    # profile_builder CV importer never fills with a resolved value for
-    # nationality/location/gender/relocation/deployment (it always writes the
-    # literal placeholder "Needs verification"). A placeholder string is
-    # therefore skipped entirely rather than treated as evidence -- it must
-    # never be mistaken for a real (and then contradicted) fact by the
-    # matcher. A genuine, non-placeholder value typed by the profile owner is
-    # treated as verified.
+    # profile_builder CV importer DOES populate for some fields (first_name,
+    # last_name, email, phone are extracted straight from CV text; see
+    # profile_builder.build_profile_from_cv_text). A CV-derived value is
+    # therefore NOT automatically verified just because it is present and
+    # non-placeholder -- per the canonical rule, identity/contact data is
+    # subject to the exact same verification contract as any other evidence.
+    # The whole `personal` block is treated as verified only when it carries
+    # its own explicit `verified: true` sibling flag, set by the profile
+    # owner after reviewing (whether hand-typed from scratch or confirmed
+    # after a CV import). profile_builder.py never sets this flag, so a
+    # freshly-imported draft never marks any personal field as verified.
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
+    personal_verified = is_verified_flag(personal.get("verified"))
     for key in ["location", "nationality", "gender", "phone", "email", "first_name", "last_name"]:
         value = personal.get(key)
         if value and not is_unresolved_value(value):
-            evidence.add(key, value, f"profile.personal.{key}", str(value), verified=True)
+            evidence.add(key, value, f"profile.personal.{key}", str(value), verified=personal_verified)
     prefs = profile.get("preferences", {}) if isinstance(profile.get("preferences"), dict) else {}
     for loc in prefs.get("locations", []) or []:
         if not is_unresolved_value(loc):

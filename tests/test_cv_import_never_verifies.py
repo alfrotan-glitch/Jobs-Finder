@@ -69,6 +69,28 @@ def test_cv_import_evidence_has_no_verified_medical_facts():
         assert not evidence.has_verified(key), f"{key} must not be verified from CV import alone"
 
 
+def test_cv_import_never_verifies_identity_or_contact_evidence():
+    """Even though the synthetic CV has a real name, email, and phone number
+    that profile_builder.py DOES extract into personal.first_name/last_name/
+    email/phone, none of that may be represented as verified evidence --
+    explicit confirmation (personal.verified: true) is the only route.
+    """
+    profile = build_profile_from_cv_text(SYNTHETIC_CV, resume_path="cv.txt")
+    assert profile["personal"]["email"]  # sanity: the extractor did find one
+    assert profile["personal"]["verified"] is False
+    evidence = build_profile_evidence(profile)
+    for key in ["first_name", "last_name", "email", "phone"]:
+        assert not evidence.has_verified(key), f"{key} must not be verified from CV import alone"
+
+
+def test_cv_import_location_preference_is_not_silently_verified():
+    """profile_builder.py must not manufacture a ready-made 'verified'
+    location preference the user never typed."""
+    profile = build_profile_from_cv_text(SYNTHETIC_CV, resume_path="cv.txt")
+    evidence = build_profile_evidence(profile)
+    assert not evidence.has_verified("preferred_location")
+
+
 def test_cv_import_does_not_satisfy_matcher_requirements():
     from utils.medical_matcher import NOT_ELIGIBLE_STATUS, READY_TO_APPLY, match_job_against_profile
 

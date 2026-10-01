@@ -9,12 +9,38 @@ treated as evidence.
 from datetime import date
 
 from utils.profile import (
+    ProfileEvidence,
     build_profile_evidence,
     infer_years_from_history,
     is_unresolved_value,
     is_verified_flag,
     parse_tristate,
 )
+
+
+def test_evidence_add_never_uses_truthiness_for_verification():
+    """ProfileEvidence.add() must only treat a literal boolean True as
+    verified -- "true"/"false"/1/"yes"/non-empty strings are all truthy in
+    Python but must NEVER produce verified evidence.
+    """
+    for sneaky_value in ["true", "false", "yes", "no", 1, 0, "1", "0", "True", [True], {"ok": True}]:
+        evidence = ProfileEvidence()
+        evidence.add("some_key", "some_value", "test.source", "quote", verified=sneaky_value)
+        assert not evidence.has_verified("some_key"), f"verified={sneaky_value!r} must not mark evidence verified"
+
+    evidence = ProfileEvidence()
+    evidence.add("some_key", "some_value", "test.source", "quote", verified=True)
+    assert evidence.has_verified("some_key")
+
+
+def test_evidence_add_verified_upgrade_requires_literal_true_not_truthy():
+    """A later 'upgrade' add() call must also only upgrade on literal True."""
+    evidence = ProfileEvidence()
+    evidence.add("skill", "First Aid", "profile.skills", "First Aid", verified=False)
+    evidence.add("skill", "First Aid", "profile.skills", "First Aid", verified="true")
+    assert not evidence.has_verified("skill")
+    evidence.add("skill", "First Aid", "profile.skills", "First Aid", verified=True)
+    assert evidence.has_verified("skill")
 
 
 def test_parse_tristate_never_coerces_placeholders_to_true():
@@ -119,3 +145,52 @@ def test_structured_education_evidence_never_leaks_internal_verified_flag_text()
         assert "False" not in quote
         assert "True" not in quote
         assert "Needs verification" not in quote
+
+
+def test_personal_identity_fields_require_explicit_personal_verified_flag():
+    """CV-derived identity/contact data (name, email, phone) must not become
+    verified evidence just because it is present and non-placeholder --
+    profile_builder.py extracts these directly from CV text with no
+    `personal.verified` flag, so they must stay unverified until the owner
+    explicitly confirms the whole personal block.
+    """
+    profile = {
+        "personal": {
+            "first_name": "Jane",
+            "last_name": "Doe",
+            "email": "jane.doe@example.org",
+            "phone": "+93700000000",
+            "gender": "female",
+            "nationality": "Afghan",
+            "location": "Kabul",
+        }
+    }
+    evidence = build_profile_evidence(profile)
+    for key in ["first_name", "last_name", "email", "phone", "gender", "nationality", "location"]:
+        assert evidence.has(key), f"{key} should still be recorded as (unverified) evidence"
+        assert not evidence.has_verified(key), f"{key} must not be verified without personal.verified: true"
+
+
+def test_personal_identity_fields_verify_once_personal_block_is_confirmed():
+    profile = {
+        "personal": {
+            "first_name": "Jane",
+            "last_name": "Doe",
+            "email": "jane.doe@example.org",
+            "gender": "female",
+            "nationality": "Afghan",
+            "verified": True,
+        }
+    }
+    evidence = build_profile_evidence(profile)
+    for key in ["first_name", "last_name", "email", "gender", "nationality"]:
+        assert evidence.has_verified(key)
+
+
+def test_personal_verified_false_does_not_verify():
+    profile = {"personal": {"gender": "male", "verified": False}}
+    evidence = build_profile_evidence(profile)
+    assert not evidence.has_verified("gender")
+    profile2 = {"personal": {"gender": "male", "verified": "true"}}
+    evidence2 = build_profile_evidence(profile2)
+    assert not evidence2.has_verified("gender")

@@ -94,8 +94,8 @@ REVIEW_FIELDS: list[tuple[str, str, str | None]] = [
     ("language_english", "English language", "language:English"),
     ("language_dari", "Dari language", "language:Dari"),
     ("language_pashto", "Pashto language", "language:Pashto"),
-    ("nationality", "Nationality", None),
-    ("location", "Current location", None),
+    ("nationality", "Nationality", "personal"),
+    ("location", "Current location", "personal"),
     ("willing_to_relocate", "Willing to relocate", None),
     ("field_deployment", "Field deployment availability", None),
 ]
@@ -103,7 +103,16 @@ REVIEW_FIELDS: list[tuple[str, str, str | None]] = [
 # Allow-listed fields a user can explicitly confirm from the browser. Each
 # entry mutates only the matching `verified` flag inside profile.yaml -- it
 # never invents a value, a number, a date, or a document.
-CONFIRMABLE_FIELDS = {"medical_education", "license_registration", "medical_exit_exam"}
+#
+# "personal" confirms the whole personal: block in one action (name, email,
+# phone, gender, nationality, location) -- the same convention as
+# medical_education/license_registration/medical_exit_exam below, where one
+# explicit user click sets exactly one `verified: true` flag and nothing
+# else. willing_to_relocate/field_deployment remain intentionally outside
+# this list: they live under preferences as free-text tri-state answers with
+# no dedicated verified flag of their own, so they still require a direct
+# profile.yaml edit to resolve.
+CONFIRMABLE_FIELDS = {"medical_education", "license_registration", "medical_exit_exam", "personal"}
 
 
 def _is_confirmable(field: str) -> bool:

@@ -71,6 +71,20 @@ python main.py server --host 127.0.0.1 --port 8080
 
 Open <http://localhost:8080>.
 
+## Running the tests
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest -q
+```
+
+This has been run and verified on Linux. It has not been executed on Windows
+in this repository's development; the Windows one-click start script is
+reviewed for correctness but is not a substitute for actually running it on
+a Windows machine.
+
 ## Profile/CV setup
 
 `profile.yaml` is the source of truth. Copy `profile.yaml.example` and edit only verified facts.

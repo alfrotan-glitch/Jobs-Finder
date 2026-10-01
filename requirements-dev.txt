@@ -1,0 +1,6 @@
+# Test-only dependencies. Install with:
+#   pip install -r requirements.txt -r requirements-dev.txt
+# then run the suite with:
+#   python -m pytest -q
+pytest>=8.0.0
+pytest-asyncio>=0.24.0

@@ -303,8 +303,12 @@ def _years_match(requirement: Requirement, evidence: ProfileEvidence) -> Require
 
 
 def _gender_match(requirement: Requirement, evidence: ProfileEvidence) -> RequirementMatch:
+    # Only genuinely verified gender evidence may satisfy or conflict with a
+    # gender requirement -- an unverified (e.g. CV-derived or unconfirmed)
+    # value must never produce a MET or NOT_MET (exclusion) decision.
     required = str(requirement.value or "").lower()
-    profile_gender = str(evidence.first("gender", "") or "").lower()
+    verified_genders = [str(v).lower() for v in evidence.verified_values("gender")]
+    profile_gender = verified_genders[0] if verified_genders else ""
     if required.endswith("encouraged"):
         base = required.replace("_encouraged", "")
         matches = bool(profile_gender and base in profile_gender)
@@ -318,7 +322,7 @@ def _gender_match(requirement: Requirement, evidence: ProfileEvidence) -> Requir
                 if matches
                 else "This appears to be a preference or encouragement, not a hard eligibility requirement."
             ),
-            evidence=evidence.evidence_text("gender"),
+            evidence=evidence.evidence_text("gender", verified_only=True),
             required_evidence=requirement.evidence,
             value=requirement.value,
             criticality=requirement.criticality,
@@ -326,49 +330,50 @@ def _gender_match(requirement: Requirement, evidence: ProfileEvidence) -> Requir
     if not profile_gender:
         return _needs_verification(requirement, "The vacancy has a gender requirement, but gender is not verified in the profile.")
     if required in profile_gender:
-        return _met(requirement, evidence.evidence_text("gender"), "Profile gender matches this requirement.")
-    return _not_met(requirement, evidence.evidence_text("gender"), "Profile gender conflicts with this requirement.")
+        return _met(requirement, evidence.evidence_text("gender", verified_only=True), "Profile gender matches this requirement.")
+    return _not_met(requirement, evidence.evidence_text("gender", verified_only=True), "Profile gender conflicts with this requirement.")
 
 
 def _nationality_match(requirement: Requirement, evidence: ProfileEvidence) -> RequirementMatch:
     required = str(requirement.value or "").lower()
-    nationality = str(evidence.first("nationality", "") or "").lower()
+    verified_nationalities = [str(v).lower() for v in evidence.verified_values("nationality")]
+    nationality = verified_nationalities[0] if verified_nationalities else ""
     if not nationality:
         return _needs_verification(requirement, "The vacancy has a nationality requirement, but nationality is not verified in the profile.")
     if required == "afghan" and ("afghan" in nationality or "afghanistan" in nationality):
-        return _met(requirement, evidence.evidence_text("nationality"), "Profile nationality matches this requirement.")
+        return _met(requirement, evidence.evidence_text("nationality", verified_only=True), "Profile nationality matches this requirement.")
     if required == "international" and "afghan" not in nationality:
-        return _met(requirement, evidence.evidence_text("nationality"), "Profile nationality appears compatible with an international role.")
-    return _not_met(requirement, evidence.evidence_text("nationality"), "Profile nationality appears to conflict with this requirement.")
+        return _met(requirement, evidence.evidence_text("nationality", verified_only=True), "Profile nationality appears compatible with an international role.")
+    return _not_met(requirement, evidence.evidence_text("nationality", verified_only=True), "Profile nationality appears to conflict with this requirement.")
 
 
 def _residency_match(requirement: Requirement, evidence: ProfileEvidence) -> RequirementMatch:
     required = str(requirement.value or "").lower()
-    locations = [str(v).lower() for v in evidence.values("location") + evidence.values("preferred_location")]
+    locations = [str(v).lower() for v in evidence.verified_values("location") + evidence.verified_values("preferred_location")]
     if not locations:
         return _needs_verification(requirement, "The vacancy has a residency requirement, but current/preferred location is not verified.")
     if any(loc and loc in required or required in loc for loc in locations):
-        return _met(requirement, evidence.evidence_text("location") + evidence.evidence_text("preferred_location"), "Profile location appears to match the residency requirement.")
+        return _met(requirement, evidence.evidence_text("location", verified_only=True) + evidence.evidence_text("preferred_location", verified_only=True), "Profile location appears to match the residency requirement.")
     return _needs_verification(requirement, "Profile location does not clearly prove local residency. Please verify before applying.")
 
 
 def _location_match(requirement: Requirement, evidence: ProfileEvidence) -> RequirementMatch:
     required_locations = [str(v).lower() for v in (requirement.value or [])]
-    current = [str(v).lower() for v in evidence.values("location") + evidence.values("preferred_location")]
-    field_ok = bool(evidence.first("field_deployment", False))
-    relocation_ok = bool(evidence.first("willing_to_relocate", False))
+    current = [str(v).lower() for v in evidence.verified_values("location") + evidence.verified_values("preferred_location")]
+    field_ok = bool(evidence.first("field_deployment", False)) and evidence.has_verified("field_deployment")
+    relocation_ok = bool(evidence.first("willing_to_relocate", False)) and evidence.has_verified("willing_to_relocate")
     afghan_provinces = {p.lower() for p in AFGHAN_PROVINCES}
     required_is_afghan = any(req in afghan_provinces for req in required_locations)
     if not required_locations:
         return _met(requirement, [], "No specific location constraint was extracted.")
     if current and any(any(req in loc or loc in req for loc in current) for req in required_locations):
-        return _met(requirement, evidence.evidence_text("location") + evidence.evidence_text("preferred_location"), "Profile location/preference matches the vacancy location.")
+        return _met(requirement, evidence.evidence_text("location", verified_only=True) + evidence.evidence_text("preferred_location", verified_only=True), "Profile location/preference matches the vacancy location.")
     if required_is_afghan and any("afghanistan" in loc for loc in current):
-        return _met(requirement, evidence.evidence_text("location") + evidence.evidence_text("preferred_location"), "Profile lists Afghanistan as a location preference for Afghan vacancies.")
+        return _met(requirement, evidence.evidence_text("location", verified_only=True) + evidence.evidence_text("preferred_location", verified_only=True), "Profile lists Afghanistan as a location preference for Afghan vacancies.")
     if (any("field" in req or "district" in req for req in required_locations) or required_is_afghan) and field_ok:
-        return _met(requirement, evidence.evidence_text("field_deployment"), "Profile indicates willingness for field/district deployment in Afghanistan.")
+        return _met(requirement, evidence.evidence_text("field_deployment", verified_only=True), "Profile indicates willingness for field/district deployment in Afghanistan.")
     if relocation_ok:
-        return _met(requirement, evidence.evidence_text("willing_to_relocate"), "Profile indicates willingness to relocate/deploy.")
+        return _met(requirement, evidence.evidence_text("willing_to_relocate", verified_only=True), "Profile indicates willingness to relocate/deploy.")
     if current:
         return _needs_verification(requirement, "The vacancy location is not listed in profile preferences. Verify willingness and feasibility before applying.")
     return _needs_verification(requirement, "No verified location preference is available.")

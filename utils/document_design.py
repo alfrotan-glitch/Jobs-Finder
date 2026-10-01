@@ -1,10 +1,13 @@
 """Global professional document design system for Jobs-Finder packages.
 
-This module is deliberately presentation-focused: it receives already-tailored,
-verified document text from ``utils.documents`` and renders it with a reusable
-medical/NGO visual identity.  It must not add facts.  The TXT artifact remains
-ATS/plain-text canonical; the DOCX and PDF artifacts are designed views of that
-same content.
+This module is deliberately presentation-focused: it receives already-tailored
+document text from ``utils.documents`` (which is itself responsible for only
+presenting verified facts as confirmed credentials -- see the EDUCATION /
+LICENSE / MEDICAL EXIT EXAM gating in ``generate_tailored_documents``) and
+renders it with a reusable medical/NGO visual identity.  It must not add
+facts, and it must not claim a stronger verification status than the source
+text actually supports.  The TXT artifact remains ATS/plain-text canonical;
+the DOCX and PDF artifacts are designed views of that same content.
 """
 
 from __future__ import annotations
@@ -511,7 +514,7 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     cnv.setFont(sans_bold, 6.8)
     cnv.setFillColor(_c(Theme.gold))
     cnv.drawString(main_x, 76, "APPLICATION FOCUS")
-    _draw_wrapped(cnv, f"Tailored to {model.get('target_role')} using verified clinical, HMIS, coordination, and role-relevant evidence only.", main_x + 93, 76, main_w - 93, font=sans, size=7.2, leading=9.2, color=Theme.muted)
+    _draw_wrapped(cnv, f"Tailored to {model.get('target_role')} using role-relevant clinical, HMIS, and coordination evidence from the reviewed profile/CV.", main_x + 93, 76, main_w - 93, font=sans, size=7.2, leading=9.2, color=Theme.muted)
     _draw_footer(cnv, 1, fonts, model.get("target_role") or "")
     cnv.showPage()
 
@@ -542,7 +545,7 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     cnv.setFont(sans_bold, 6.8)
     cnv.setFillColor(_c(Theme.gold))
     cnv.drawString(main_x, 72, "DOCUMENT SCOPE")
-    _draw_wrapped(cnv, f"Prepared for {model.get('reference') or model.get('target_role')} using verified profile evidence only.", main_x + 90, 72, main_w - 90, font=sans, size=7.2, leading=9.2, color=Theme.muted)
+    _draw_wrapped(cnv, f"Prepared for {model.get('reference') or model.get('target_role')} using reviewed profile/CV evidence only.", main_x + 90, 72, main_w - 90, font=sans, size=7.2, leading=9.2, color=Theme.muted)
     _draw_footer(cnv, 2, fonts, model.get("target_role") or "")
     cnv.save()
 
@@ -719,7 +722,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
         for b in item.get("bullets", [])[:2]:
             bullet_cell(right, b)
     sec_cell(right, "Application Focus")
-    right.add_paragraph(f"Tailored to {model.get('target_role')} using verified role-relevant evidence only.", style="JF Body")
+    right.add_paragraph(f"Tailored to {model.get('target_role')} using reviewed role-relevant evidence only.", style="JF Body")
     doc.add_page_break()
     doc.add_paragraph(f"{model.get('name')}    {model.get('target_role')} — {model.get('reference') or model.get('target_org')}", style="JF Section")
     table = doc.add_table(1, 2)

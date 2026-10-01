@@ -11,17 +11,21 @@ from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 
 def profile():
     return {
-        "personal": {"first_name": "Allah Yar", "last_name": "Frotan", "email": "alfrotan@gmail.com", "phone": "+93766462006", "location": "Kabul", "gender": "male", "nationality": "Afghan"},
+        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "phone": "+93700000000", "location": "Kabul", "gender": "male", "nationality": "Afghan", "verified": True},
         "medical_education": [{"degree": "MD", "verified": True}],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},
         "clinical_experience": {"years": 4, "settings": ["clinic", "hospital"]},
         "skills": {"medical": ["Clinical care", "Patient assessment"], "public_health": ["Nutrition", "TSFP", "HMIS"], "management": ["Supervision", "Reporting"]},
         "work_history": [
-            {"title": "Medical Doctor", "organization": "Verified Clinic", "location": "Kabul", "start": "2022-01", "end": "Present", "description": "Clinical consultations, patient assessment, diagnosis, treatment, referral and HMIS reporting."},
-            {"title": "Health and Nutrition Supervisor", "organization": "Verified NGO", "location": "Afghanistan", "start": "2020-01", "end": "2021-12", "description": "Nutrition screening, TSFP coordination, supervision, reporting and team mentoring."},
+            {"title": "Medical Doctor", "organization": "Verified Clinic", "location": "Kabul", "start": "2022-01", "end": "Present", "description": "Clinical consultations, patient assessment, diagnosis, treatment, referral and HMIS reporting.", "verified": True},
+            {"title": "Health and Nutrition Supervisor", "organization": "Verified NGO", "location": "Afghanistan", "start": "2020-01", "end": "2021-12", "description": "Nutrition screening, TSFP coordination, supervision, reporting and team mentoring.", "verified": True},
         ],
-        "languages": [{"name": "Dari", "level": "Native"}, {"name": "Pashto", "level": "Fluent"}, {"name": "English", "level": "Professional"}],
+        "languages": [
+            {"name": "Dari", "level": "Native", "verified": True},
+            {"name": "Pashto", "level": "Fluent", "verified": True},
+            {"name": "English", "level": "Professional", "verified": True},
+        ],
     }
 
 

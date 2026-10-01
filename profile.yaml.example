@@ -1,16 +1,59 @@
 # Jobs-Finder verified profile
 # Copy this file to profile.yaml and edit only with verified facts.
 # The product can tailor wording, but it must not invent applicant facts.
+#
+# ---------------------------------------------------------------------------
+# THE ONE VERIFICATION RULE, used identically everywhere in this file and by
+# the whole product (profile evidence, matching, and generated documents):
+#
+#   A claim only counts as VERIFIED when the specific `verified: true` field
+#   that sits next to THAT claim is set to the literal value `true`.
+#
+#   - `verified` missing, `verified: false`, or any non-boolean value (e.g.
+#     the text "true", "yes", or the number 1) is NOT verified.
+#   - A value simply being present/non-empty does NOT make it verified.
+#   - Importing a CV never sets any `verified: true` field by itself -- it
+#     only ever produces a DRAFT for you to review and confirm by hand (or
+#     via the dashboard's "Mark verified" buttons, which only ever flip one
+#     of these exact flags after you explicitly confirm it).
+#   - An unverified claim is treated as "Needs verification": it is shown to
+#     you for review, but it can never satisfy a hard job requirement and is
+#     never printed as a confirmed credential in a generated CV/cover letter.
+#
+# There are TWO kinds of `verified: true` fields below:
+#   (A) A flag that sits beside ONE specific block and confirms every claim
+#       inside that block (e.g. `personal.verified`, `medical_education[].
+#       verified`, `license_registration.verified`, `medical_exit_exam.
+#       verified`, each `languages[].verified`, each `work_history[].
+#       verified`). Setting it to `true` confirms exactly that block's facts
+#       and nothing else.
+#   (B) A small number of plain scalar number fields that have NO sibling
+#       `verified` flag at all (`clinical_experience.years`,
+#       `ngo_humanitarian_experience.years`). These are the one deliberate
+#       exception: because you type the number directly, and a CV import
+#       NEVER fills them in (it always leaves them blank), simply entering a
+#       real number here already is your confirmation -- do not type a
+#       number you have not personally verified.
+# ---------------------------------------------------------------------------
 
 personal:
-  first_name: Allah Yar
-  last_name: Frotan
-  email: alfrotan@gmail.com
-  phone: "+93766462006"
+  first_name: Jane         # Placeholder -- replace with your own details.
+  last_name: Doe
+  email: applicant@example.org
+  phone: "+93 00 000 0000"
   location: Kabul, Afghanistan
   nationality: Afghan
   gender: ""   # Optional; only used for explicit gender-restricted vacancies.
   linkedin: ""
+  # `verified: true` here confirms every field in THIS personal: block above
+  # (name, email, phone, location, nationality, gender) as your own
+  # self-reported, reviewed identity/contact facts. Importing a CV fills in
+  # name/email/phone automatically but ALWAYS leaves this at `false` --
+  # only you setting it to `true` (by hand, or via the dashboard's "Mark
+  # verified" action) lets nationality/location/gender be used to satisfy a
+  # vacancy's nationality/residency/gender requirement, and lets a generated
+  # document reference these details as reviewed rather than draft.
+  verified: true
 
 resume_path: ""  # Optional local CV/PDF path; profile.yaml remains source of truth.
 
@@ -18,7 +61,10 @@ medical_education:
   - degree: MD
     institution: "Needs verification"
     graduation_year: "Needs verification"
-    verified: true
+    # `verified: true` confirms this ONE medical_education entry (the MD
+    # degree claim above, and only that claim) -- it does not confirm
+    # institution/graduation_year if you leave those as placeholders.
+    verified: true   # Set to true only once you have personally confirmed this.
 
 license_registration:
   authority: Afghan Medical Council / relevant medical registration authority
@@ -26,16 +72,38 @@ license_registration:
   issue_date: ""    # Do not invent.
   expiry_date: ""   # Do not invent.
   status: Valid medical professional registration/license
-  verified: true
+  # `verified: true` confirms you hold a genuine, current medical
+  # license/registration as described by `status`/`authority` above.
+  verified: true     # Set to true only once you have personally confirmed this.
 
 medical_exit_exam:
   status: Completed
-  verified: true
+  # `verified: true` confirms you have genuinely completed the Medical Exit
+  # Exam as described by `status` above.
+  verified: true     # Set to true only once you have personally confirmed this.
 
 clinical_experience:
-  years: ""   # Add a number only when verified.
+  years: ""   # Add a number only when verified. This field has NO separate
+              # `verified` flag (see note (B) at the top of this file): a CV
+              # import never fills this in, so typing a real number here IS
+              # itself your confirmation -- do not enter a number you have
+              # not personally verified.
   settings: []
 
+# Each work_history entry may include: title, organization, location, start,
+# end, bullets/description, and `verified: true`. `verified: true` on an
+# entry confirms that specific job's dates/title/organization/description.
+# Years-of-experience evidence is only inferred from entries that are
+# explicitly verified; an entry without `verified: true` is kept for CV
+# wording only and is never used to satisfy an experience requirement.
+# Example (left empty by default):
+#   - title: Medical Doctor
+#     organization: Example Clinic
+#     location: Kabul
+#     start: "2022-01"
+#     end: Present
+#     bullets: ["Clinical consultations and patient assessment"]
+#     verified: true
 work_history: []
 
 skills:
@@ -46,18 +114,30 @@ skills:
   public_health: []
   management: []
 
+# Each language entry needs an explicit `verified: true` (and a resolved
+# level, e.g. "Native"/"Fluent"/"Professional"/"Basic" instead of "Needs
+# verification") before it can satisfy a hard language requirement in
+# matching, or be called "verified" in generated documents. `verified: true`
+# on one language entry confirms only that language's proficiency level --
+# it has no effect on the other languages listed. Until both the level is
+# resolved AND verified is true, a language is listed only as ordinary CV
+# content with its name (no placeholder level text is printed).
 languages:
   - name: Dari
     level: "Needs verification"
+    verified: false
   - name: Pashto
     level: "Needs verification"
+    verified: false
   - name: English
     level: "Needs verification"
+    verified: false
 
 certificates: []
 
 ngo_humanitarian_experience:
-  years: ""   # Add a number only when verified.
+  years: ""   # Add a number only when verified (same no-separate-flag rule
+              # as clinical_experience.years above).
   organizations: []
 
 preferences:
@@ -68,11 +148,16 @@ preferences:
     - Public Health Officer
     - Nutrition / TSFP health roles
     - Quality of Care / Capacity Building health roles
+  # These locations have no separate `verified` flag either: typing a real
+  # location here (not left as "Needs verification") is itself your
+  # confirmation that it is a genuine current/preferred location. A CV
+  # import never fills in a real location here -- it always leaves this as
+  # "Needs verification" until you edit it yourself.
   locations:
     - Kabul
     - Afghanistan
-  willing_to_relocate: "Needs verification"
-  field_deployment: "Needs verification"
+  willing_to_relocate: "Needs verification"   # Yes / No / Needs verification
+  field_deployment: "Needs verification"      # Yes / No / Needs verification
 
 sources:
   enabled: []     # Empty means use maintained active sources: ACBAR + ReliefWeb.
@@ -81,11 +166,11 @@ sources:
 job_sources:
   acbar:
     timeout_seconds: 25
-    detail_limit: 30
-    urls:
-      - https://www.acbar.org/en/jobs
-      - https://www.acbar.org/en/jobs?page=2
-      - https://www.acbar.org/en/jobs?page=3
+    detail_limit: 30        # Maximum vacancy detail pages fetched per scan.
+    max_pages: 6             # Bounded pagination budget (not the whole site).
+    max_detail_concurrency: 5  # Bounded concurrent detail fetches per scan.
+    # Optional: set `urls` to pin an exact set of listing pages instead of
+    # auto-pagination, e.g. ["https://www.acbar.org/en/jobs?page=2"].
   reliefweb:
     timeout_seconds: 25
     limit: 20

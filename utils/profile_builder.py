@@ -34,21 +34,43 @@ def _name_from_text(text: str) -> tuple[str, str]:
     return "", ""
 
 
-def _languages(text: str) -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
+def _languages(text: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     for name in ["Dari", "Pashto", "English"]:
         if re.search(rf"\b{name}\b", text, flags=re.I):
-            out.append({"name": name, "level": "Needs verification"})
-    return out or [{"name": "Dari", "level": "Needs verification"}, {"name": "Pashto", "level": "Needs verification"}, {"name": "English", "level": "Needs verification"}]
+            out.append({"name": name, "level": "Needs verification", "verified": False})
+    return out or [
+        {"name": "Dari", "level": "Needs verification", "verified": False},
+        {"name": "Pashto", "level": "Needs verification", "verified": False},
+        {"name": "English", "level": "Needs verification", "verified": False},
+    ]
 
 
 def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str, Any]:
+    """Build a conservative DRAFT profile from CV text for human review.
+
+    CRITICAL INVARIANT: nothing extracted from CV text may ever be written
+    with ``verified: true``. Regex matches below (MD mention, license mention,
+    exit-exam mention) only ever influence the human-readable status note
+    ("Mentioned in CV; verify details") -- they NEVER set the explicit
+    ``verified`` flag. Only a human editing profile.yaml after reviewing the
+    draft can change ``verified`` to ``true``. This matches the canonical
+    verification contract in utils/profile.py: a fact is verified only when
+    its source explicitly establishes verification, and a CV is never such a
+    source by itself.
+    """
     first, last = _name_from_text(text)
-    md_found = bool(re.search(r"\b(MD|M\.D\.|Medical Doctor|Doctor of Medicine)\b", text, flags=re.I))
-    license_found = bool(re.search(r"\b(medical\s+(?:license|licence|registration)|Afghan Medical Council|medical council)\b", text, flags=re.I))
-    exit_exam_found = bool(re.search(r"\bexit\s+exam", text, flags=re.I))
+    md_mentioned = bool(re.search(r"\b(MD|M\.D\.|Medical Doctor|Doctor of Medicine)\b", text, flags=re.I))
+    license_mentioned = bool(re.search(r"\b(medical\s+(?:license|licence|registration)|Afghan Medical Council|medical council)\b", text, flags=re.I))
+    exit_exam_mentioned = bool(re.search(r"\bexit\s+exam", text, flags=re.I))
 
     return {
+        "profile_status": "DRAFT",
+        "profile_status_note": (
+            "This profile was generated from a CV import and has not been reviewed. "
+            "Every field is a draft; nothing here is verified until you confirm it and "
+            "set the matching 'verified: true' field in profile.yaml."
+        ),
         "personal": {
             "first_name": first,
             "last_name": last,
@@ -58,18 +80,34 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
             "nationality": "Needs verification",
             "gender": "",
             "linkedin": "",
+            # Explicit and unconditional: a CV import can propose a name,
+            # email, and phone number, but it can never confirm them. Only
+            # the profile owner reviewing and setting this to true (by hand,
+            # or via the dashboard's confirm action) verifies this block.
+            "verified": False,
         },
         "resume_path": resume_path,
-        "medical_education": [{"degree": "MD", "institution": "Needs verification", "graduation_year": "Needs verification", "verified": md_found}],
+        "medical_education": [
+            {
+                "degree": "MD",
+                "institution": "Needs verification",
+                "graduation_year": "Needs verification",
+                "status": "Mentioned in CV; verify details" if md_mentioned else "Needs verification",
+                "verified": False,
+            }
+        ],
         "license_registration": {
             "authority": "Needs verification",
             "number": "",
             "issue_date": "",
             "expiry_date": "",
-            "status": "Mentioned in CV; verify details" if license_found else "Needs verification",
-            "verified": license_found,
+            "status": "Mentioned in CV; verify details" if license_mentioned else "Needs verification",
+            "verified": False,
         },
-        "medical_exit_exam": {"status": "Mentioned in CV; verify details" if exit_exam_found else "Needs verification", "verified": exit_exam_found},
+        "medical_exit_exam": {
+            "status": "Mentioned in CV; verify details" if exit_exam_mentioned else "Needs verification",
+            "verified": False,
+        },
         "clinical_experience": {"years": "", "settings": []},
         "work_history": [],
         "skills": {"medical": ["Clinical care"], "public_health": [], "management": []},
@@ -78,13 +116,17 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
         "ngo_humanitarian_experience": {"years": "", "organizations": []},
         "preferences": {
             "roles": ["Medical Officer", "Medical Doctor", "Physician", "Public Health Officer", "Nutrition / TSFP health roles"],
-            "locations": ["Afghanistan"],
+            # Never a resolved value: a CV import must not manufacture a
+            # ready-made "verified" location preference the user never
+            # actually typed (see utils.profile._add_personal, which treats
+            # any non-placeholder preferences.locations entry as confirmed).
+            "locations": ["Needs verification"],
             "willing_to_relocate": "Needs verification",
             "field_deployment": "Needs verification",
         },
         "sources": {"enabled": [], "disabled": []},
         "job_sources": {
-            "acbar": {"timeout_seconds": 25, "detail_limit": 30, "urls": ["https://www.acbar.org/en/jobs", "https://www.acbar.org/en/jobs?page=2", "https://www.acbar.org/en/jobs?page=3"]},
+            "acbar": {"timeout_seconds": 25, "detail_limit": 30, "max_pages": 6, "max_detail_concurrency": 5},
             "reliefweb": {"timeout_seconds": 25, "limit": 20},
         },
         "source_cv_note": "Drafted from a supplied CV. Review every field before matching or applying; missing facts remain Needs verification.",

@@ -55,7 +55,7 @@ function jobCard(job) {
       <div class="actions">
         ${canPrepare ? `<button onclick="prepareJob('${escapeHtml(job.id)}')">Prepare package</button>` : ""}
         ${route ? `<a class="button secondary" href="${escapeHtml(route)}" target="_blank" rel="noopener">Open official route</a>` : ""}
-        ${job.status === "PACKAGE_READY" ? `<button class="secondary" onclick="markApplied('${escapeHtml(job.id)}')">Mark applied manually</button>` : ""}
+        ${["PACKAGE_READY", "PACKAGE_NEEDS_INPUT"].includes(job.status) ? `<button class="secondary" onclick="markApplied('${escapeHtml(job.id)}')">Mark applied manually</button>` : ""}
       </div>
     </article>`;
 }
@@ -63,27 +63,122 @@ function jobCard(job) {
 function render() {
   $("recommendedList").innerHTML = state.recommended.length ? state.recommended.map(jobCard).join("") : `<div class="card">No recommendations yet. Press “Find Jobs”.</div>`;
   $("jobsList").innerHTML = state.jobs.length ? state.jobs.map(jobCard).join("") : `<div class="card">No jobs stored yet.</div>`;
-  const applicationJobs = state.jobs.filter(j => ["PACKAGE_READY", "APPLIED_MANUALLY"].includes(j.status));
+  const applicationJobs = state.jobs.filter(j => ["PACKAGE_READY", "PACKAGE_NEEDS_INPUT", "APPLIED_MANUALLY"].includes(j.status));
   $("applicationsList").innerHTML = applicationJobs.length ? applicationJobs.map(jobCard).join("") : `<div class="card">No prepared packages yet.</div>`;
 }
 
+function statusPillClass(status) {
+  if (status === "Verified") return "ready_to_apply";
+  if (status === "Needs verification") return "needs_verification";
+  return "not_eligible";
+}
+
+function renderProfileReview(review) {
+  const box = $("profileReview");
+  if (!review || !review.fields || !review.fields.length) {
+    box.innerHTML = `<p class="muted">No profile loaded yet.</p>`;
+    return;
+  }
+  const draftBanner = review.is_draft
+    ? `<p class="status warn">DRAFT — needs review. ${escapeHtml(review.draft_note || "Confirm each fact below before scanning or applying.")}</p>`
+    : "";
+  const rows = review.fields.map(f => `
+    <div class="cardTop" style="margin-bottom:.6rem;">
+      <div>
+        <strong>${escapeHtml(f.label)}</strong>
+        ${(f.evidence || []).map(e => `<p class="muted">${escapeHtml(e)}</p>`).join("")}
+      </div>
+      <div style="display:flex; gap:.5rem; align-items:center;">
+        <span class="pill ${statusPillClass(f.status)}">${escapeHtml(f.status)}</span>
+        ${f.status !== "Verified" && f.confirm_field ? `<button class="secondary" onclick="confirmField('${escapeHtml(f.confirm_field)}')">Mark verified</button>` : ""}
+      </div>
+    </div>`).join("");
+  box.innerHTML = draftBanner + rows;
+}
+
+async function confirmField(field) {
+  const body = {field};
+  if (field.startsWith("language:")) {
+    const name = field.split(":")[1];
+    const level = window.prompt(`Confirm your ${name} proficiency level (e.g. Native, Fluent, Professional, Basic):`, "");
+    if (!level || !level.trim()) { setStatus("Confirmation cancelled: a proficiency level is required.", "warn"); return; }
+    body.level = level.trim();
+  }
+  setStatus(`Confirming ${field}…`);
+  try {
+    const response = await fetch("/api/profile/confirm", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not confirm field");
+    setStatus(data.message, "ok");
+    renderProfileReview(data.review);
+    await refresh();
+  } catch (error) { setStatus(error.message, "error"); }
+}
+window.confirmField = confirmField;
+
+async function importCv() {
+  const input = $("cvFile");
+  if (!input.files || !input.files[0]) { setStatus("Choose a CV file first.", "error"); return; }
+  const form = new FormData();
+  form.append("file", input.files[0]);
+  setStatus("Importing CV…");
+  try {
+    const response = await fetch("/api/import-cv", { method: "POST", body: form });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "CV import failed");
+    setStatus(data.message, "warn");
+    renderProfileReview(data);
+    await refresh();
+  } catch (error) { setStatus(error.message, "error"); }
+}
+
+async function loadSettings() {
+  try {
+    const settings = await fetch("/api/settings").then(r => r.json());
+    const sources = (settings.sources || []).map(s => `<li><strong>${escapeHtml(s.name)}</strong> — Tier ${escapeHtml(s.tier)} ${s.active ? "(active)" : "(inactive)"}</li>`).join("");
+    $("settingsBox").innerHTML = `
+      <h3>Active sources</h3>
+      <ul>${sources}</ul>
+      <h3>Current ACBAR scan budget</h3>
+      <p class="muted">${escapeHtml(settings.acbar?.note || "")}</p>
+      <p>Max pages per scan: <strong>${escapeHtml(settings.acbar?.max_pages)}</strong> ·
+         Detail fetch limit: <strong>${escapeHtml(settings.acbar?.detail_limit)}</strong> ·
+         Concurrent detail fetches: <strong>${escapeHtml(settings.acbar?.max_detail_concurrency)}</strong> ·
+         Timeout: <strong>${escapeHtml(settings.acbar?.timeout_seconds)}s</strong></p>
+      <h3>ReliefWeb</h3>
+      <p>Result limit: <strong>${escapeHtml(settings.reliefweb?.limit)}</strong> · Timeout: <strong>${escapeHtml(settings.reliefweb?.timeout_seconds)}s</strong></p>
+      <h3>Safety</h3>
+      <p>Automatic background scanning: <strong>${settings.background_scanning ? "Enabled" : "Disabled"}</strong>. Use “Find Jobs” to scan on demand.</p>
+      <p>Automatic application submission: <strong>${settings.automatic_submission ? "Enabled" : "Disabled"}</strong>. Applications are always opened for manual review and submission.</p>
+      <p class="muted">These are the current, non-editable system settings. There is no hidden configuration beyond what is shown here.</p>
+    `;
+  } catch (error) {
+    $("settingsBox").innerHTML = `<p class="muted">Could not load settings: ${escapeHtml(error.message)}</p>`;
+  }
+}
+
 async function refresh() {
-  const [recommended, jobs, profile] = await Promise.all([
+  const [recommended, jobs, profile, review] = await Promise.all([
     fetch("/api/recommended").then(r => r.json()),
     fetch("/api/jobs").then(r => r.json()),
     fetch("/api/profile").then(r => r.json()),
+    fetch("/api/profile/review").then(r => r.json()),
   ]);
   state.recommended = recommended.jobs || [];
   state.jobs = jobs.jobs || [];
   const p = profile.summary || {};
   $("profileBox").innerHTML = profile.exists ? `
+    ${p.is_draft ? `<p class="status warn">DRAFT — review before use. ${escapeHtml(p.draft_note || "")}</p>` : ""}
     <p><strong>Name:</strong> ${escapeHtml(p.name || "Not set")}</p>
     <p><strong>Email:</strong> ${escapeHtml(p.email || "Not set")}</p>
     <p><strong>Phone:</strong> ${escapeHtml(p.phone || "Not set")}</p>
     <p><strong>Location:</strong> ${escapeHtml(p.location || "Not set")}</p>
     <p><strong>Resume:</strong> ${escapeHtml(p.resume_path || "Not set")}</p>
     <p><strong>Preferred roles:</strong> ${escapeHtml((p.roles || []).join(", ") || "Not set")}</p>
-  ` : `Copy <code>profile.yaml.example</code> to <code>profile.yaml</code> and enter verified facts.`;
+  ` : `Copy <code>profile.yaml.example</code> to <code>profile.yaml</code> and enter verified facts, or import a CV below.`;
+  renderProfileReview(review);
   render();
 }
 
@@ -141,4 +236,6 @@ for (const button of document.querySelectorAll(".tabs button")) {
 }
 
 $("findJobs").addEventListener("click", findJobs);
+$("importCvBtn").addEventListener("click", importCv);
 refresh().catch(error => setStatus(error.message, "error"));
+loadSettings().catch(error => setStatus(error.message, "error"));

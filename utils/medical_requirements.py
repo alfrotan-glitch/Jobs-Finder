@@ -13,7 +13,7 @@ from __future__ import annotations
 import html
 import re
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
+from datetime import date
 from typing import Any, Iterable
 from urllib.parse import urlparse
 

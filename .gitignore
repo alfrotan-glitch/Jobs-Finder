@@ -16,6 +16,7 @@ applications.db-shm
 
 # User/private data and generated application artifacts
 profile.yaml
+profile.yaml.bak
 resumes/
 profiles/
 documents/

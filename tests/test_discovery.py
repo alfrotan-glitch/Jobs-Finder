@@ -71,3 +71,14 @@ def test_acbar_listing_parser_preserves_url_and_deadline():
     assert jobs[0].title == "Medical Officer"
     assert jobs[0].url == "https://www.acbar.org/en/jobs/details/145774/medical-officer"
     assert jobs[0].metadata["closing_date"] == "2026-10-05"
+
+@pytest.mark.asyncio
+async def test_malformed_source_item_does_not_crash_scan(monkeypatch):
+    async def malformed(profile):
+        return [None, {"title": "broken"}]
+
+    monkeypatch.setitem(discovery.SOURCE_REGISTRY, "malformed", {"name": "Malformed", "tier": "A", "fetcher": "malformed", "active": True})
+    monkeypatch.setattr(discovery, "malformed", malformed, raising=False)
+    result = await run_discovery_scan({"sources": {"enabled": ["malformed"]}})
+    assert result.status == NO_RELEVANT_JOBS_FOUND
+    assert result.jobs == []

@@ -172,15 +172,6 @@ def _rank_work_entries(entries: list[dict[str, Any]], job: dict[str, Any], match
 
     return sorted(entries, key=score, reverse=True)
 
-
-def _matched_labels(match_report: dict[str, Any]) -> list[str]:
-    labels = []
-    for item in match_report.get("requirement_matches", []):
-        if item.get("status") == MET and item.get("key") not in {"closing_date", "application_destination"}:
-            labels.append(item.get("label", ""))
-    return [label for label in labels if label]
-
-
 def _verification_warnings(match_report: dict[str, Any]) -> list[str]:
     warnings = []
     for item in match_report.get("requirement_matches", []):
@@ -660,12 +651,12 @@ def _infer_form_fields(job: dict[str, Any], profile: dict[str, Any]) -> list[str
         f"Phone: {_safe_contact_value(personal, 'phone')}",
         f"Current location: {personal.get('location', 'confirm before submit') or 'confirm before submit'}",
         f"Position applied for: {job.get('title', 'confirm exact title')}",
-        "Education: MD, Kabul Medical Science University, 2013–2020",
-        "License/registration: verified as valid; enter number only if Dr. Frotan provides the exact number",
-        "Medical Exit Exam: verified as completed; enter certificate/document details only if Dr. Frotan provides them",
+        "Education: use only education shown in the reviewed profile/CV",
+        "License/registration: enter only explicitly verified details; leave number/date blank when missing",
+        "Medical Exit Exam: include only when explicitly verified in the profile",
         "Work history with dates exactly as listed in the tailored CV",
         f"Languages: {language_summary}",
-        "References/referees: use only references approved by Dr. Frotan before submission",
+        "References/referees: use only references explicitly approved before submission",
         "Document uploads: attach only the reviewed final files listed in the document checklist",
     ]
     return fields
@@ -892,7 +883,7 @@ def generate_application_package(
     online_application = None
     user_actions = [
         "Review the tailored CV and cover letter for accuracy before use",
-        "Do not add a license/registration number, certificate number, issue date, expiry date, or document unless Dr. Frotan provides it",
+        "Do not add a license/registration number, certificate number, issue date, expiry date, or document unless the applicant provides it",
     ]
     missing: list[str] = list(blocking_user_inputs)
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
@@ -1142,16 +1133,3 @@ def prepare_application_bundle(
     docs["generated_paths"] = paths
     docs["no_submission_performed"] = True
     return docs
-
-def redact_unverified_claims(text: str, allowed_terms: list[str]) -> str:
-    """Small helper for tests and future AI output validation.
-
-    It flags text containing common medical claims not represented in allowed
-    terms.  It returns a warning string, not modified application content.
-    """
-    lowered_allowed = " ".join(allowed_terms).lower()
-    risky = []
-    for term in ["licensed", "registered", "mbbs", "md", "bphs", "ephs", "hmis", "imam", "imnci"]:
-        if re.search(rf"\b{term}\b", text, flags=re.I) and term.lower() not in lowered_allowed:
-            risky.append(term)
-    return ", ".join(sorted(set(risky)))

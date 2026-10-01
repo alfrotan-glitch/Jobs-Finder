@@ -74,15 +74,3 @@ def _extract_pdf_text(path: Path) -> str:
         print(f"  ⚠ Failed to parse resume: {e}")
         return ""
     return "\n".join(chunks)
-
-
-def parse_cv_evidence(profile: dict[str, Any], resume_path: str | None = None) -> dict[str, Any]:
-    """
-    Return structured evidence from profile + CV text.
-
-    This is a read-only view. It is suitable for audit screens and tests.
-    """
-    from utils.profile import build_profile_evidence
-
-    text = extract_resume_text(resume_path or profile.get("resume_path", ""))
-    return build_profile_evidence(profile, resume_text=text).to_dict()

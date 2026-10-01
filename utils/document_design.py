@@ -381,7 +381,7 @@ def _draw_footer(cnv, page: int, fonts: tuple[str, str, str, str], role: str) ->
     cnv.line(42, 38, w - 42, 38)
     cnv.setFont(sans, 6.6)
     cnv.setFillColor(_c(Theme.muted))
-    cnv.drawString(42, 25, "Allah Yar Frotan · Medical Doctor")
+    cnv.drawString(42, 25, "Jobs-Finder · Review copy")
     cnv.drawRightString(w - 42, 25, f"Page {page} / 2")
 
 

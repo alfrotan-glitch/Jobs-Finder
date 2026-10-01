@@ -235,7 +235,10 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
         report = SourceReport(id=source_id, name=spec["name"], tier=spec["tier"], attempted=True)
         try:
             fetcher = globals()[spec["fetcher"]]
-            found = await fetcher(profile)
+            try:
+                found = await fetcher(profile, today=today)
+            except TypeError:
+                found = await fetcher(profile)
             report.ok = True
             report.jobs_found = len(found)
             jobs.extend(found)
@@ -280,7 +283,7 @@ def _job_is_relevant(job: Job) -> bool:
     return any(term in lower for term in MEDICAL_SEARCH_TERMS)
 
 
-async def discover_acbar_jobs(profile: dict[str, Any]) -> list[Job]:
+async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = None) -> list[Job]:
     """Scan ACBAR's listing pages with bounded, documented pagination.
 
     Coverage: this walks ACBAR listing pages starting at page 1 and keeps
@@ -291,14 +294,14 @@ async def discover_acbar_jobs(profile: dict[str, Any]) -> list[Job]:
     explicit ``job_sources.acbar.urls`` list in profile.yaml overrides this
     auto-pagination entirely and is fetched as-is (useful for pinning a
     specific page range). Detail pages are fetched with bounded concurrency
-    (``max_detail_concurrency``) so a slow network cannot turn one scan into a
-    very long sequential wait; the overall HTTP timeout still applies per
-    request via ``timeout_seconds``.
+    (``max_detail_concurrency``) for relevant vacancies up to ``detail_limit``
+    so a slow network cannot turn one scan into a very long sequential wait;
+    the overall HTTP timeout still applies per request via ``timeout_seconds``.
     """
     cfg = ((profile.get("job_sources") or {}).get("acbar") or {}) if isinstance(profile, dict) else {}
     explicit_urls = cfg.get("urls")
     timeout = float(cfg.get("timeout_seconds", ACBAR_DEFAULT_TIMEOUT_SECONDS))
-    detail_limit = int(cfg.get("detail_limit", ACBAR_DEFAULT_DETAIL_LIMIT))
+    detail_limit = max(1, int(cfg.get("detail_limit", ACBAR_DEFAULT_DETAIL_LIMIT)))
     max_pages = max(1, int(cfg.get("max_pages", ACBAR_DEFAULT_MAX_PAGES)))
     max_detail_concurrency = max(1, int(cfg.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY)))
     base_listing_url = "https://www.acbar.org/en/jobs"
@@ -325,8 +328,9 @@ async def discover_acbar_jobs(profile: dict[str, Any]) -> list[Job]:
                 seen_urls.update(job.url for job in new_jobs)
                 summaries.extend(new_jobs)
 
-        summaries = deduplicate_jobs(summaries)[:detail_limit]
-        relevant = [job for job in summaries if _job_is_relevant(job)]
+        deduped = deduplicate_jobs(summaries, today=today)
+        relevant = [job for job in deduped if _job_is_relevant(job)]
+        candidates = relevant[:detail_limit]
 
         semaphore = asyncio.Semaphore(max_detail_concurrency)
 
@@ -339,7 +343,7 @@ async def discover_acbar_jobs(profile: dict[str, Any]) -> list[Job]:
                 except Exception:
                     return job
 
-        detailed = await asyncio.gather(*(fetch_detail(job) for job in relevant))
+        detailed = await asyncio.gather(*(fetch_detail(job) for job in candidates))
         return list(detailed)
 
 

@@ -142,6 +142,74 @@ def _acbar_card(index: int) -> str:
     )
 
 
+def _non_medical_acbar_card(index: int) -> str:
+    return (
+        f'<div><a href="/en/jobs/details/{2000 + index}/finance-officer-{index}">Finance Officer {index}</a>'
+        f"<span>Finance Org</span><span>Kabul</span><span>2026-12-31</span></div>"
+    )
+
+
+@pytest.mark.asyncio
+async def test_acbar_relevant_vacancy_after_detail_limit_is_discovered(monkeypatch):
+    """A medical vacancy appearing after detail_limit non-medical vacancies
+    must still be discovered; detail fetches must only be spent on relevant jobs."""
+    # 35 non-medical vacancies followed by 2 medical vacancies.
+    page1 = "".join(_non_medical_acbar_card(i) for i in range(10))
+    page2 = "".join(_non_medical_acbar_card(i) for i in range(10, 20))
+    page3 = "".join(_non_medical_acbar_card(i) for i in range(20, 30))
+    page4 = "".join(_non_medical_acbar_card(i) for i in range(30, 35)) + _acbar_card(1) + _acbar_card(2)
+    pages = {
+        "https://www.acbar.org/en/jobs": page1,
+        "https://www.acbar.org/en/jobs?page=2": page2,
+        "https://www.acbar.org/en/jobs?page=3": page3,
+        "https://www.acbar.org/en/jobs?page=4": page4,
+    }
+    fake_client = _FakeAcbarClient(pages)
+    monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    # With detail_limit=10, the old code would truncate summaries[:10] on page 1,
+    # completely missing the medical vacancies on page 4.
+    jobs = await discovery.discover_acbar_jobs({
+        "job_sources": {"acbar": {"max_pages": 4, "detail_limit": 10}}
+    })
+
+    assert len(jobs) == 2
+    assert {j.title for j in jobs} == {"Medical Officer"}
+    assert {j.url for j in jobs} == {
+        "https://www.acbar.org/en/jobs/details/1001/medical-officer-1",
+        "https://www.acbar.org/en/jobs/details/1002/medical-officer-2",
+    }
+    # Detail fetches were only made for the 2 medical vacancies, not the 35 non-medical ones.
+    detail_calls = [c for c in fake_client.get_calls if c not in pages]
+    assert len(detail_calls) == 2
+    assert set(detail_calls) == {
+        "https://www.acbar.org/en/jobs/details/1001/medical-officer-1",
+        "https://www.acbar.org/en/jobs/details/1002/medical-officer-2",
+    }
+
+
+@pytest.mark.asyncio
+async def test_acbar_detail_fetches_are_bounded_by_detail_limit(monkeypatch):
+    """When there are more relevant vacancies than detail_limit, network fetches
+    are strictly capped at detail_limit."""
+    page1 = "".join(_acbar_card(i) for i in range(10))
+    page2 = "".join(_acbar_card(i) for i in range(10, 20))
+    pages = {
+        "https://www.acbar.org/en/jobs": page1,
+        "https://www.acbar.org/en/jobs?page=2": page2,
+    }
+    fake_client = _FakeAcbarClient(pages)
+    monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    jobs = await discovery.discover_acbar_jobs({
+        "job_sources": {"acbar": {"max_pages": 2, "detail_limit": 5}}
+    })
+
+    assert len(jobs) == 5
+    detail_calls = [c for c in fake_client.get_calls if c not in pages]
+    assert len(detail_calls) == 5
+
+
 @pytest.mark.asyncio
 async def test_acbar_pagination_stops_when_a_page_has_no_new_vacancies(monkeypatch):
     repeated_page = "".join(_acbar_card(i) for i in range(2))

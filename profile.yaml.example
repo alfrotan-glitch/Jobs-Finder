@@ -53,34 +53,34 @@ personal:
   # verified" action) lets nationality/location/gender be used to satisfy a
   # vacancy's nationality/residency/gender requirement, and lets a generated
   # document reference these details as reviewed rather than draft.
-  verified: true
+  verified: false   # Set to true only once you have personally confirmed this.
 
 resume_path: ""  # Optional local CV/PDF path; profile.yaml remains source of truth.
 
 medical_education:
-  - degree: MD
+  - degree: "Needs verification"
     institution: "Needs verification"
     graduation_year: "Needs verification"
-    # `verified: true` confirms this ONE medical_education entry (the MD
-    # degree claim above, and only that claim) -- it does not confirm
+    # `verified: true` confirms this ONE medical_education entry (the degree
+    # claim above, and only that claim) -- it does not confirm
     # institution/graduation_year if you leave those as placeholders.
-    verified: true   # Set to true only once you have personally confirmed this.
+    verified: false   # Set to true only once you have personally confirmed this.
 
 license_registration:
-  authority: Afghan Medical Council / relevant medical registration authority
+  authority: "Needs verification"   # e.g. your medical registration authority. Do not invent.
   number: ""        # Do not invent.
   issue_date: ""    # Do not invent.
   expiry_date: ""   # Do not invent.
-  status: Valid medical professional registration/license
+  status: "Needs verification"
   # `verified: true` confirms you hold a genuine, current medical
   # license/registration as described by `status`/`authority` above.
-  verified: true     # Set to true only once you have personally confirmed this.
+  verified: false     # Set to true only once you have personally confirmed this.
 
 medical_exit_exam:
-  status: Completed
+  status: "Needs verification"
   # `verified: true` confirms you have genuinely completed the Medical Exit
   # Exam as described by `status` above.
-  verified: true     # Set to true only once you have personally confirmed this.
+  verified: false     # Set to true only once you have personally confirmed this.
 
 clinical_experience:
   years: ""   # Add a number only when verified. This field has NO separate
@@ -117,12 +117,8 @@ work_history: []
 # competency and never used to satisfy a requirement.
 skills:
   medical:
-    - name: Clinical care
-      verified: true   # Set true only for skills you personally confirm.
-    - name: Patient assessment
-      verified: true
-    - name: Diagnosis and treatment planning
-      verified: true
+    - name: "Needs verification"
+      verified: false   # Set true only for skills you personally confirm.
   public_health: []
   management: []
 

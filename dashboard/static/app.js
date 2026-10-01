@@ -29,7 +29,7 @@ function readinessLabel(job) {
   if (readiness === "READY_TO_APPLY" && job.status !== "PACKAGE_READY" && job.status !== "APPLIED_MANUALLY") {
     return "ELIGIBLE — REVIEW PACKAGE";
   }
-  if (readiness === "NEEDS_VERIFICATION") return "ELIGIBLE — VERIFY FIRST";
+  if (readiness === "NEEDS_VERIFICATION") return "REQUIRES VERIFICATION";
   return readiness || "NEEDS REVIEW";
 }
 

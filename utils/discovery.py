@@ -27,7 +27,15 @@ PARTIAL_SCAN = "PARTIAL_SCAN"
 SOURCES_UNAVAILABLE = "SOURCES_UNAVAILABLE"
 SCAN_FAILED = "SCAN_FAILED"
 
-DEFAULT_USER_AGENT = "Jobs-Finder Afghanistan Job Assistant/3.0"
+DEFAULT_USER_AGENT = "Jobs-Finder Afghanistan Job Assistant (+manual, non-automated applications)"
+
+# ACBAR pagination/concurrency budget. This is a deliberate, documented
+# performance/safety budget -- not a claim that every page on the source site
+# is scanned. See discover_acbar_jobs() and docs/source_registry.md.
+ACBAR_DEFAULT_MAX_PAGES = 6
+ACBAR_DEFAULT_DETAIL_LIMIT = 30
+ACBAR_DEFAULT_DETAIL_CONCURRENCY = 5
+ACBAR_DEFAULT_TIMEOUT_SECONDS = 25.0
 
 MEDICAL_SEARCH_TERMS = (
     "medical",
@@ -273,32 +281,66 @@ def _job_is_relevant(job: Job) -> bool:
 
 
 async def discover_acbar_jobs(profile: dict[str, Any]) -> list[Job]:
+    """Scan ACBAR's listing pages with bounded, documented pagination.
+
+    Coverage: this walks ACBAR listing pages starting at page 1 and keeps
+    requesting the next page only while it keeps finding new, not-yet-seen
+    vacancy links, up to ``max_pages`` (default
+    :data:`ACBAR_DEFAULT_MAX_PAGES`). This is a deliberate, bounded budget --
+    not a claim that the entire ACBAR archive is scanned every time. An
+    explicit ``job_sources.acbar.urls`` list in profile.yaml overrides this
+    auto-pagination entirely and is fetched as-is (useful for pinning a
+    specific page range). Detail pages are fetched with bounded concurrency
+    (``max_detail_concurrency``) so a slow network cannot turn one scan into a
+    very long sequential wait; the overall HTTP timeout still applies per
+    request via ``timeout_seconds``.
+    """
     cfg = ((profile.get("job_sources") or {}).get("acbar") or {}) if isinstance(profile, dict) else {}
-    urls = cfg.get("urls") or [
-        "https://www.acbar.org/en/jobs",
-        "https://www.acbar.org/en/jobs?page=2",
-        "https://www.acbar.org/en/jobs?page=3",
-    ]
-    timeout = float(cfg.get("timeout_seconds", 25))
-    detail_limit = int(cfg.get("detail_limit", 30))
+    explicit_urls = cfg.get("urls")
+    timeout = float(cfg.get("timeout_seconds", ACBAR_DEFAULT_TIMEOUT_SECONDS))
+    detail_limit = int(cfg.get("detail_limit", ACBAR_DEFAULT_DETAIL_LIMIT))
+    max_pages = max(1, int(cfg.get("max_pages", ACBAR_DEFAULT_MAX_PAGES)))
+    max_detail_concurrency = max(1, int(cfg.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY)))
+    base_listing_url = "https://www.acbar.org/en/jobs"
+
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
         summaries: list[Job] = []
-        for url in urls:
-            response = await client.get(url)
-            response.raise_for_status()
-            summaries.extend(_parse_acbar_listing(response.text, url))
+        if explicit_urls:
+            for url in explicit_urls:
+                response = await client.get(url)
+                response.raise_for_status()
+                summaries.extend(_parse_acbar_listing(response.text, url))
+        else:
+            seen_urls: set[str] = set()
+            for page in range(1, max_pages + 1):
+                url = base_listing_url if page == 1 else f"{base_listing_url}?page={page}"
+                response = await client.get(url)
+                response.raise_for_status()
+                page_jobs = _parse_acbar_listing(response.text, url)
+                new_jobs = [job for job in page_jobs if job.url not in seen_urls]
+                if not new_jobs:
+                    # No new vacancies on this page: either the last page was
+                    # reached or the site stopped returning distinct results.
+                    break
+                seen_urls.update(job.url for job in new_jobs)
+                summaries.extend(new_jobs)
+
         summaries = deduplicate_jobs(summaries)[:detail_limit]
-        detailed: list[Job] = []
-        for job in summaries:
-            if not _job_is_relevant(job):
-                continue
-            try:
-                detail = await client.get(job.url)
-                detail.raise_for_status()
-                detailed.append(_parse_acbar_detail(detail.text, job))
-            except Exception:
-                detailed.append(job)
-        return detailed
+        relevant = [job for job in summaries if _job_is_relevant(job)]
+
+        semaphore = asyncio.Semaphore(max_detail_concurrency)
+
+        async def fetch_detail(job: Job) -> Job:
+            async with semaphore:
+                try:
+                    detail = await client.get(job.url)
+                    detail.raise_for_status()
+                    return _parse_acbar_detail(detail.text, job)
+                except Exception:
+                    return job
+
+        detailed = await asyncio.gather(*(fetch_detail(job) for job in relevant))
+        return list(detailed)
 
 
 def _parse_acbar_listing(html: str, base_url: str) -> list[Job]:

@@ -1,12 +1,18 @@
 # Jobs-Finder verified profile
 # Copy this file to profile.yaml and edit only with verified facts.
 # The product can tailor wording, but it must not invent applicant facts.
+#
+# Verification rule used everywhere in this file: a fact only counts as
+# verified when its own `verified: true` field is set explicitly. A value
+# simply existing (or a `verified: false` / "Needs verification" placeholder)
+# is treated as unverified and will show as "Needs verification" in matching
+# and will not be printed as a confirmed credential in generated documents.
 
 personal:
-  first_name: Allah Yar
-  last_name: Frotan
-  email: alfrotan@gmail.com
-  phone: "+93766462006"
+  first_name: Jane         # Placeholder -- replace with your own verified details.
+  last_name: Doe
+  email: applicant@example.org
+  phone: "+93 00 000 0000"
   location: Kabul, Afghanistan
   nationality: Afghan
   gender: ""   # Optional; only used for explicit gender-restricted vacancies.
@@ -18,7 +24,7 @@ medical_education:
   - degree: MD
     institution: "Needs verification"
     graduation_year: "Needs verification"
-    verified: true
+    verified: true   # Set to true only once you have personally confirmed this.
 
 license_registration:
   authority: Afghan Medical Council / relevant medical registration authority
@@ -26,16 +32,30 @@ license_registration:
   issue_date: ""    # Do not invent.
   expiry_date: ""   # Do not invent.
   status: Valid medical professional registration/license
-  verified: true
+  verified: true     # Set to true only once you have personally confirmed this.
 
 medical_exit_exam:
   status: Completed
-  verified: true
+  verified: true     # Set to true only once you have personally confirmed this.
 
 clinical_experience:
-  years: ""   # Add a number only when verified.
+  years: ""   # Add a number only when verified. This field is treated as
+              # owner-confirmed by convention -- do not enter a number you
+              # have not personally verified.
   settings: []
 
+# Each work_history entry may include: title, organization, location, start,
+# end, bullets/description, and `verified: true`. Years-of-experience
+# evidence is only inferred from entries that are explicitly verified; an
+# entry without `verified: true` is kept for CV wording only and is never
+# used to satisfy an experience requirement. Example (left empty by default):
+#   - title: Medical Doctor
+#     organization: Example Clinic
+#     location: Kabul
+#     start: "2022-01"
+#     end: Present
+#     bullets: ["Clinical consultations and patient assessment"]
+#     verified: true
 work_history: []
 
 skills:
@@ -46,13 +66,20 @@ skills:
   public_health: []
   management: []
 
+# Each language entry needs an explicit `verified: true` (and a resolved
+# level) before it can satisfy a hard language requirement in matching, or be
+# called "verified" in generated documents. Until then it is listed only as
+# ordinary CV content with its name (no placeholder level text is printed).
 languages:
   - name: Dari
     level: "Needs verification"
+    verified: false
   - name: Pashto
     level: "Needs verification"
+    verified: false
   - name: English
     level: "Needs verification"
+    verified: false
 
 certificates: []
 
@@ -71,8 +98,8 @@ preferences:
   locations:
     - Kabul
     - Afghanistan
-  willing_to_relocate: "Needs verification"
-  field_deployment: "Needs verification"
+  willing_to_relocate: "Needs verification"   # Yes / No / Needs verification
+  field_deployment: "Needs verification"      # Yes / No / Needs verification
 
 sources:
   enabled: []     # Empty means use maintained active sources: ACBAR + ReliefWeb.
@@ -81,11 +108,11 @@ sources:
 job_sources:
   acbar:
     timeout_seconds: 25
-    detail_limit: 30
-    urls:
-      - https://www.acbar.org/en/jobs
-      - https://www.acbar.org/en/jobs?page=2
-      - https://www.acbar.org/en/jobs?page=3
+    detail_limit: 30        # Maximum vacancy detail pages fetched per scan.
+    max_pages: 6             # Bounded pagination budget (not the whole site).
+    max_detail_concurrency: 5  # Bounded concurrent detail fetches per scan.
+    # Optional: set `urls` to pin an exact set of listing pages instead of
+    # auto-pagination, e.g. ["https://www.acbar.org/en/jobs?page=2"].
   reliefweb:
     timeout_seconds: 25
     limit: 20

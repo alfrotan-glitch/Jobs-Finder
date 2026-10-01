@@ -41,3 +41,40 @@ def test_requirements_are_lightweight():
     assert "numpy" not in requirements
     assert "playwright" not in requirements
     assert "apscheduler" not in requirements
+
+
+def test_package_needs_input_status_is_distinct_from_package_ready(tmp_path, monkeypatch):
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
+    job = Job("j2", "Medical Officer", "Org", "Kabul", "https://example.org", "", "test", metadata={})
+    tracker.log_discovered(job)
+    tracker.update_tailored_resume(
+        "j2",
+        {"application_package": {"application_route": "", "package_status": "NEEDS_USER_INPUT", "missing_items": ["Application contact details"]}, "generated_paths": {}},
+    )
+
+    stored = tracker.get_job_by_id("j2")
+    assert stored["status"] == tracker.PACKAGE_NEEDS_INPUT
+    assert stored["status"] != tracker.PACKAGE_READY
+    assert stored["package_status"] == "NEEDS_USER_INPUT"
+
+
+def test_package_ready_for_review_maps_to_package_ready_status(tmp_path, monkeypatch):
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
+    job = Job("j3", "Medical Officer", "Org", "Kabul", "https://example.org", "hr@example.org", "test", metadata={})
+    tracker.log_discovered(job)
+    tracker.update_tailored_resume(
+        "j3",
+        {"application_package": {"application_route": "hr@example.org", "package_status": "READY_FOR_REVIEW"}, "generated_paths": {}},
+    )
+
+    stored = tracker.get_job_by_id("j3")
+    assert stored["status"] == tracker.PACKAGE_READY
+    assert stored["package_status"] == "READY_FOR_REVIEW"
+
+
+def test_new_vacancy_defaults_to_not_created_package_status(tmp_path, monkeypatch):
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
+    job = Job("j4", "Medical Officer", "Org", "Kabul", "https://example.org", "hr@example.org", "test", metadata={})
+    tracker.log_discovered(job)
+    stored = tracker.get_job_by_id("j4")
+    assert stored["package_status"] == "NOT_CREATED"

@@ -5,13 +5,17 @@ from utils.medical_matcher import NEEDS_VERIFICATION_STATUS, NOT_ELIGIBLE_STATUS
 
 def base_profile(**updates):
     profile = {
-        "personal": {"first_name": "Allah Yar", "last_name": "Frotan", "email": "alfrotan@gmail.com", "gender": "male", "nationality": "Afghan"},
+        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "gender": "male", "nationality": "Afghan"},
         "medical_education": [{"degree": "MD", "verified": True}],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},
         "clinical_experience": {"years": 2},
         "preferences": {"locations": ["Kabul", "Afghanistan"]},
-        "languages": [{"name": "Dari", "level": "Native"}, {"name": "Pashto", "level": "Fluent"}, {"name": "English", "level": "Professional"}],
+        "languages": [
+            {"name": "Dari", "level": "Native", "verified": True},
+            {"name": "Pashto", "level": "Fluent", "verified": True},
+            {"name": "English", "level": "Professional", "verified": True},
+        ],
     }
     profile.update(updates)
     return profile

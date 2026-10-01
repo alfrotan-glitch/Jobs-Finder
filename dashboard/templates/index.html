@@ -47,18 +47,24 @@
     <section id="profile" class="panel">
       <h2>My Profile</h2>
       <div id="profileBox" class="card"></div>
+
+      <div class="card">
+        <h3>Import a CV (optional)</h3>
+        <p class="muted">Creates a draft profile from your CV. Nothing is marked verified automatically — review and confirm each fact below before scanning or applying.</p>
+        <input type="file" id="cvFile" accept=".pdf,.txt,.md,.markdown,.rst,.csv">
+        <button id="importCvBtn" class="secondary">Import CV</button>
+      </div>
+
+      <div class="card">
+        <h3>Verification review</h3>
+        <p class="muted">These statuses control matching and documents. “Needs verification” never counts as met until you confirm it.</p>
+        <div id="profileReview"></div>
+      </div>
     </section>
 
     <section id="settings" class="panel">
       <h2>Settings</h2>
-      <div class="card">
-        <h3>Active sources</h3>
-        <ul>
-          <li><strong>ACBAR</strong> — Tier A core source.</li>
-          <li><strong>ReliefWeb</strong> — Tier B secondary source.</li>
-        </ul>
-        <p>Automatic background scanning is disabled by default. Use “Find Jobs” when you want a scan.</p>
-      </div>
+      <div id="settingsBox" class="card">Loading current configuration…</div>
     </section>
 
     <section id="advanced" class="panel">

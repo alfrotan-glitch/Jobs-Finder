@@ -54,7 +54,7 @@ The launcher:
 - opens <http://localhost:8080>
 - does not run background scanning or submit applications
 
-Python support is intentionally conservative. The code was validated in this environment on Python 3.11. The dependency set is lightweight. Python 3.11 was used for validation in this environment; if installation fails on another Python version, use Python 3.11 or 3.12 and rerun the launcher.
+Python support is intentionally conservative. The code was validated in this (Linux) development environment on Python 3.11. The dependency set is lightweight. `run_jobs_finder.bat` itself has not been executed on an actual Windows machine as part of this validation (this development environment has no Windows host) -- its logic has only been reviewed, not run end-to-end on Windows. If installation fails on another Python version, use Python 3.11 or 3.12 and rerun the launcher.
 
 ## Manual setup
 
@@ -102,11 +102,14 @@ python main.py jobs
 Dashboard:
 
 1. Open the app.
-2. Press **Find Jobs**.
-3. Review **Recommended**.
-4. Select a vacancy and press **Prepare package**.
-5. Review the generated files.
-6. Open the official route and apply manually.
+2. Optionally use **My Profile → Import a CV** to generate a draft profile, then review each field under **Verification review** and press **Mark verified** only for facts you personally confirm. Nothing from a CV import is ever shown as verified until you explicitly confirm it.
+3. Press **Find Jobs**.
+4. Review **Recommended**.
+5. Select a vacancy and press **Prepare package**.
+6. Review the generated files.
+7. Open the official route and apply manually.
+
+The **Settings** tab shows the current, non-editable system configuration (active sources, ACBAR scan budget, and the fact that background scanning and automatic submission are both disabled) -- it has no fake controls.
 
 ## Source status semantics
 
@@ -124,7 +127,7 @@ A result of zero jobs is never used to claim the Afghanistan market is empty whe
 
 Maintained active sources are intentionally few:
 
-- **Tier A: ACBAR Jobs** — core Afghanistan NGO/INGO job board.
+- **Tier A: ACBAR Jobs** — core Afghanistan NGO/INGO job board. Each scan walks listing pages with bounded, documented pagination (`job_sources.acbar.max_pages`, default 6) and stops automatically once a page returns no new vacancies; detail pages are fetched with a bounded concurrency limit (`max_detail_concurrency`, default 5) and a per-request timeout. This is a deliberate performance/safety budget, not a claim that the entire ACBAR archive is scanned on every run. See `profile.yaml.example` to adjust it.
 - **Tier B: ReliefWeb Afghanistan jobs** — secondary humanitarian source filtered for health/medical/public-health terms.
 
 Other official employer and UN routes are treated as trusted application routes when discovered, but not claimed as active parser-backed sources unless maintained.
@@ -145,7 +148,11 @@ Each package includes:
 
 ## Eligibility and package review
 
-`READY_TO_APPLY` describes vacancy eligibility based on the available verified evidence. It does not mean that an application has been prepared or submitted. Generated packages have their own review status, such as `READY_FOR_REVIEW` or `NEEDS_USER_INPUT`, and must be reviewed by the user.
+Three separate states are tracked and never confused with each other:
+
+- **Eligibility** (`READY_TO_APPLY` / `NEEDS_VERIFICATION` / `NOT_ELIGIBLE`): whether the vacancy's requirements are currently met by verified evidence. It does not mean a package has been prepared.
+- **Package state** (`NOT_CREATED` / `READY_FOR_REVIEW` / `NEEDS_USER_INPUT`): whether a generated application package still has unresolved blockers (e.g. missing contact info or unresolved evidence). A package is never reported ready when it actually needs user input.
+- **Application progress** (`FOUND` / `REVIEWED` / `PACKAGE_READY` / `PACKAGE_NEEDS_INPUT` / `APPLIED_MANUALLY`): the simple progress shown in the Applications tab. `PACKAGE_READY` is only ever used when the package state is `READY_FOR_REVIEW`; otherwise `PACKAGE_NEEDS_INPUT` is used so the UI never claims a package is ready when it still needs your input.
 
 ## Safety rules
 

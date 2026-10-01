@@ -4,6 +4,24 @@ The product tracks only what it needs: discovered vacancies, deterministic match
 results, generated package metadata, and whether the user says they applied
 manually. It is not an ATS and does not model interviews, offers, follow-ups, or
 submission automation.
+
+Three distinct concepts are tracked and must never be confused:
+
+* Eligibility (``readiness`` column): READY_TO_APPLY / NEEDS_VERIFICATION /
+  NOT_ELIGIBLE -- produced by the deterministic matcher from verified
+  evidence. This never changes just because a document package was created.
+* Package state (``package_status`` column): NOT_CREATED / READY_FOR_REVIEW /
+  NEEDS_USER_INPUT -- the literal ``package_status`` produced by
+  ``utils.documents.generate_application_package``. This reflects whether the
+  generated package still has unresolved blockers (missing contact info,
+  unresolved license/experience evidence, etc.), independent of eligibility.
+* Application progress (``status`` column): FOUND / REVIEWED / PACKAGE_READY /
+  PACKAGE_NEEDS_INPUT / APPLIED_MANUALLY / NEEDS_VERIFICATION / NOT_ELIGIBLE --
+  a simple progress indicator for the Jobs/Applications views. It is
+  intentionally coarse (not a full state machine) but PACKAGE_READY is never
+  used when the generated package itself reports NEEDS_USER_INPUT -- that
+  case uses PACKAGE_NEEDS_INPUT instead, so the UI/API never claims a package
+  is ready when it still needs user input.
 """
 
 from __future__ import annotations
@@ -19,9 +37,15 @@ DB_PATH = Path(__file__).resolve().parent.parent / "applications.db"
 FOUND = "FOUND"
 REVIEWED = "REVIEWED"
 PACKAGE_READY = "PACKAGE_READY"
+PACKAGE_NEEDS_INPUT = "PACKAGE_NEEDS_INPUT"
 APPLIED_MANUALLY = "APPLIED_MANUALLY"
 NEEDS_VERIFICATION = "NEEDS_VERIFICATION"
 NOT_ELIGIBLE = "NOT_ELIGIBLE"
+
+# Package-state vocabulary (kept separate from the two above).
+PACKAGE_NOT_CREATED = "NOT_CREATED"
+PACKAGE_READY_FOR_REVIEW = "READY_FOR_REVIEW"
+PACKAGE_STATUS_NEEDS_USER_INPUT = "NEEDS_USER_INPUT"
 
 
 def now_iso() -> str:
@@ -46,6 +70,7 @@ def get_db() -> sqlite3.Connection:
             description TEXT DEFAULT '',
             status TEXT DEFAULT 'FOUND',
             readiness TEXT DEFAULT '',
+            package_status TEXT DEFAULT 'NOT_CREATED',
             metadata_json TEXT DEFAULT '{}',
             match_json TEXT DEFAULT '',
             package_json TEXT DEFAULT '',
@@ -55,6 +80,9 @@ def get_db() -> sqlite3.Connection:
         )
         """
     )
+    existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(vacancies)").fetchall()}
+    if "package_status" not in existing_columns:
+        conn.execute("ALTER TABLE vacancies ADD COLUMN package_status TEXT DEFAULT 'NOT_CREATED'")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_status ON vacancies(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_readiness ON vacancies(readiness)")
     conn.commit()
@@ -162,15 +190,25 @@ def log_medical_match(job_id: str, report: dict[str, Any]) -> None:
 
 
 def update_tailored_resume(job_id: str, documents: dict[str, Any]) -> None:
+    """Store a generated application package and reflect its real state.
+
+    The ``status`` column must never claim PACKAGE_READY when the generated
+    package itself reports ``NEEDS_USER_INPUT`` -- that case is recorded as
+    PACKAGE_NEEDS_INPUT instead, and the literal package_status is also
+    stored in its own column so callers never have to guess.
+    """
     package = documents.get("application_package") or {}
+    package_status = str(package.get("package_status") or PACKAGE_READY_FOR_REVIEW)
+    status = PACKAGE_NEEDS_INPUT if package_status == PACKAGE_STATUS_NEEDS_USER_INPUT else PACKAGE_READY
     conn = get_db()
     try:
         conn.execute(
-            "UPDATE vacancies SET documents_json=?, package_json=?, status=?, updated_at=? WHERE id=?",
+            "UPDATE vacancies SET documents_json=?, package_json=?, package_status=?, status=?, updated_at=? WHERE id=?",
             (
                 json.dumps(documents, ensure_ascii=False),
                 json.dumps(package, ensure_ascii=False),
-                PACKAGE_READY,
+                package_status,
+                status,
                 now_iso(),
                 job_id,
             ),
@@ -263,6 +301,6 @@ def print_stats() -> None:
     if not data.get("TOTAL"):
         print("No vacancies stored yet.")
         return
-    for key in [FOUND, REVIEWED, NEEDS_VERIFICATION, PACKAGE_READY, APPLIED_MANUALLY, NOT_ELIGIBLE, "TOTAL"]:
+    for key in [FOUND, REVIEWED, NEEDS_VERIFICATION, PACKAGE_READY, PACKAGE_NEEDS_INPUT, APPLIED_MANUALLY, NOT_ELIGIBLE, "TOTAL"]:
         if key in data:
             print(f"{key}: {data[key]}")

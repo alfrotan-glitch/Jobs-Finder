@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from utils.medical_matcher import MET, NEEDS_VERIFICATION, NOT_ELIGIBLE_STATUS, NOT_MET
-from utils.profile import build_profile_evidence
+from utils.profile import build_profile_evidence, is_unresolved_value, is_verified_flag
 
 
 def _full_name(profile: dict[str, Any]) -> str:
@@ -45,20 +45,32 @@ def _safe_contact_value(personal: dict[str, Any], key: str) -> str:
     return "CONFIRM BEFORE SUBMISSION"
 
 
-def _language_lines(profile: dict[str, Any]) -> list[str]:
+def _language_lines(profile: dict[str, Any], *, verified_only: bool = False) -> list[str]:
+    """Return human-readable language lines for CV/cover-letter display.
+
+    Placeholder proficiency levels (e.g. "Needs verification") are never
+    shown verbatim in a document sent to an employer -- the language name is
+    shown alone instead, which is honest without leaking internal review
+    jargon. When ``verified_only`` is set, only languages with an explicit
+    ``verified: true`` flag (and a resolved level) are included.
+    """
     values = []
     for item in profile.get("languages") or []:
         if not isinstance(item, dict):
+            if verified_only:
+                continue
             text = str(item).strip()
             if text and text not in values:
                 values.append(text)
             continue
         name = str(item.get("name") or item.get("language") or "").strip()
         level = str(item.get("level") or item.get("proficiency") or "").strip()
-        if not name:
+        verified = is_verified_flag(item.get("verified")) and not is_unresolved_value(level)
+        if not name or (verified_only and not verified):
             continue
         label = "Dari/Persian" if name.lower() in {"dari", "persian", "dari / persian"} else name
-        text = f"{label} — {level}" if level else label
+        shown_level = level if level and not is_unresolved_value(level) else ""
+        text = f"{label} — {shown_level}" if shown_level else label
         if text not in values:
             values.append(text)
     order = {"dari/persian": 0, "dari": 0, "persian": 0, "english": 1, "pashto": 2}
@@ -96,10 +108,14 @@ def _stringify_item(item: Any) -> str:
     if isinstance(item, dict):
         parts = []
         for key in ["degree", "title", "name", "institution", "organization", "employer", "location", "start", "end", "year", "level"]:
-            if item.get(key):
-                parts.append(str(item[key]))
+            value = item.get(key)
+            # Skip unresolved placeholder values ("Needs verification",
+            # "Unknown", "Pending", ...) so they never get printed into a
+            # document as if they were a confirmed institution/date/etc.
+            if value and not is_unresolved_value(value):
+                parts.append(str(value))
         desc = item.get("description") or item.get("duties")
-        if desc:
+        if desc and not is_unresolved_value(desc):
             parts.append(str(desc))
         return " — ".join(parts)
     return str(item)
@@ -278,6 +294,27 @@ def _requirement_matches(match_report: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in match_report.get("requirement_matches", []) if isinstance(item, dict)]
 
 
+def _requirement_met(match_report: dict[str, Any], key: str) -> bool:
+    """True only when the authoritative matcher marked this requirement MET.
+
+    MET is only produced by the matcher from genuinely verified evidence, so
+    this is the single safe source of truth for "did we actually meet this
+    requirement" -- document generation must not reconstruct this itself from
+    raw evidence presence.
+    """
+    return any(item.get("key") == key and item.get("status") == MET for item in _requirement_matches(match_report))
+
+
+def _verified_dict_items(items: list[Any]) -> list[Any]:
+    """Keep only dict entries explicitly confirmed with ``verified: true``.
+
+    Plain (non-dict) entries carry no verification field and are therefore
+    never treated as confirmed facts suitable for an EDUCATION-style
+    credential section.
+    """
+    return [item for item in items if isinstance(item, dict) and is_verified_flag(item.get("verified"))]
+
+
 def _focus_labels(match_report: dict[str, Any], *, limit: int = 8) -> list[str]:
     labels: list[str] = []
     for item in _requirement_matches(match_report):
@@ -427,7 +464,12 @@ def generate_tailored_documents(
     matched_sentence = ", ".join(focus_phrases[:5]) if focus_phrases else _requirement_summary_phrase(match_report)
     vacancy_highlights = _vacancy_fit_highlights(profile, job, match_report, limit=6)
 
-    education = _safe_bullets(_profile_list(profile, "medical_education") + _profile_list(profile, "medical.education") + _profile_list(profile, "medical.degrees"), limit=4)
+    # Credential-style facts (education, license, exam) require explicit
+    # verification before they can be printed as a confirmed section in a
+    # document that may be sent to an employer; unverified CV mentions are
+    # surfaced only as review warnings, never as a confirmed EDUCATION entry.
+    raw_education_items = _profile_list(profile, "medical_education") + _profile_list(profile, "medical.education") + _profile_list(profile, "medical.degrees")
+    education = _safe_bullets(_verified_dict_items(raw_education_items), limit=4)
     work_entries = [item for item in (_profile_list(profile, "work_history") + _profile_list(profile, "experience")) if isinstance(item, dict)]
     work = _safe_bullets(_profile_list(profile, "work_history") + _profile_list(profile, "experience"), limit=6)
     certs = _safe_bullets(_profile_list(profile, "certificates") + _profile_list(profile, "certifications") + _profile_list(profile, "training"), limit=8)
@@ -491,10 +533,10 @@ def generate_tailored_documents(
         cv_lines.extend(["PROFESSIONAL EXPERIENCE", *[f"- {item}" for item in work], ""])
     if education:
         cv_lines.extend(["EDUCATION", *[f"- {item}" for item in education], ""])
-    if evidence.has("license_registration"):
-        cv_lines.extend(["LICENSE / REGISTRATION", *[f"- {item}" for item in evidence.evidence_text("license_registration")[:3]], ""])
-    if evidence.has("medical_exit_exam"):
-        cv_lines.extend(["MEDICAL EXIT EXAM", *[f"- {item}" for item in evidence.evidence_text("medical_exit_exam")[:2]], ""])
+    if evidence.has_verified("license_registration"):
+        cv_lines.extend(["LICENSE / REGISTRATION", *[f"- {item}" for item in evidence.evidence_text("license_registration", verified_only=True)[:3]], ""])
+    if evidence.has_verified("medical_exit_exam"):
+        cv_lines.extend(["MEDICAL EXIT EXAM", *[f"- {item}" for item in evidence.evidence_text("medical_exit_exam", verified_only=True)[:2]], ""])
     if certs:
         cv_lines.extend(["CERTIFICATIONS & TRAINING", *[f"- {item}" for item in certs], ""])
     if languages:
@@ -530,12 +572,21 @@ def generate_tailored_documents(
         cover_lines.append("I have reviewed the vacancy requirements and would like to be considered for the role.")
     if education:
         cover_lines.append(f"My medical education includes {education[0]}.")
-    if evidence.has("license_registration") and any(item.get("key") == "license_registration" for item in _requirement_matches(match_report)):
+    # Only claim these requirements are met when the authoritative matcher
+    # marked them MET (which itself only happens from verified evidence) --
+    # never reconstruct this claim from evidence presence alone.
+    if _requirement_met(match_report, "license_registration"):
         cover_lines.append("I also meet the professional medical registration/license requirement stated for the role.")
-    if evidence.has("medical_exit_exam") and any(item.get("key") == "medical_exit_exam" for item in _requirement_matches(match_report)):
+    if _requirement_met(match_report, "medical_exit_exam"):
         cover_lines.append("My profile also includes verified completion of the required Medical Exit Exam.")
-    if languages:
-        cover_lines.append(f"My verified language profile is {', '.join(languages)}.")
+    verified_languages = _language_lines(profile, verified_only=True)
+    if verified_languages:
+        cover_lines.append(f"My verified language profile is {', '.join(verified_languages)}.")
+    elif languages:
+        # Languages are listed in the CV as ordinary self-reported content,
+        # but the cover letter must not claim they are verified when they are
+        # not; use neutral wording instead of fabricated certainty.
+        cover_lines.append(f"My language skills include {', '.join(languages)}; proficiency levels should be confirmed before submission.")
     cover_lines.extend([
         "",
         "I would welcome the opportunity to discuss how my experience can support your health program and the communities served by this position.",

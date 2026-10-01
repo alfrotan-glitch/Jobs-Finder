@@ -72,28 +72,62 @@ SOURCE_STATUS_FAILED = "FAILED"
 
 @dataclass(slots=True)
 class SourceScanMetrics:
-    """Structured per-source scan metrics retained for user audit."""
+    """Authoritative source accounting.
+
+    ``listings_seen`` counts raw cards on successful listing pages. A card has
+    exactly one terminal outcome: parse failure, budget deferral, one canonical
+    exclusion, or retention. ``vacancies_parsed`` counts valid minimum vacancy
+    objects that entered the canonical exclusion pipeline; detail success is
+    deliberately reported separately.
+    """
 
     source_url: str = ""
     official_source_id: str = ""
     status: str = SOURCE_STATUS_UNAVAILABLE
-    pages_attempted: int = 0
-    listings_attempted: int = 0
-    listings_checked: int = 0
-    vacancies_discovered: int = 0
+    pages_requested: int = 0
+    pages_succeeded: int = 0
+    pages_failed: int = 0
+    pagination_stop_reason: str = "UNKNOWN"
+    listings_seen: int = 0
+    listing_parse_failures: int = 0
     vacancies_parsed: int = 0
+    not_processed_due_to_budget: int = 0
+    detail_pages_attempted: int = 0
+    detail_pages_succeeded: int = 0
+    detail_pages_failed: int = 0
+    listing_fallback_used: int = 0
     duplicates_removed: int = 0
-    expired_stale_excluded: int = 0
+    expired_excluded: int = 0
     irrelevant_excluded: int = 0
-    incompatible_professional_role_excluded: int = 0
+    incompatible_role_classification_excluded: int = 0
     source_validation_excluded: int = 0
     relevant_retained: int = 0
-    application_routes_discovered: int = 0
-    partial: bool = False
+    application_routes_found: int = 0
+    application_routes_unavailable: int = 0
+    partial_reasons: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
+    # Backward-compatible serialized aliases. New producers only write the
+    # canonical fields above.
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data.update({
+            "pages_attempted": self.pages_requested,
+            "listings_attempted": self.listings_seen,
+            "listings_checked": self.listings_seen,
+            "vacancies_discovered": self.listings_seen - self.listing_parse_failures,
+            "expired_stale_excluded": self.expired_excluded,
+            "incompatible_professional_role_excluded": self.incompatible_role_classification_excluded,
+            "application_routes_discovered": self.application_routes_found,
+            "partial": self.status == SOURCE_STATUS_PARTIAL,
+        })
+        return data
+
+    def add_partial_reason(self, reason: str, error: str = "") -> None:
+        if reason and reason not in self.partial_reasons:
+            self.partial_reasons.append(reason)
+        if error and error not in self.errors:
+            self.errors.append(error)
 
 
 @dataclass(slots=True)
@@ -113,18 +147,27 @@ class SourceReport:
     source_url: str = ""
     official_source_id: str = ""
     status: str = SOURCE_STATUS_UNAVAILABLE
-    pages_attempted: int = 0
-    listings_attempted: int = 0
-    listings_checked: int = 0
-    vacancies_discovered: int = 0
+    pages_requested: int = 0
+    pages_succeeded: int = 0
+    pages_failed: int = 0
+    pagination_stop_reason: str = "UNKNOWN"
+    listings_seen: int = 0
+    listing_parse_failures: int = 0
     vacancies_parsed: int = 0
+    not_processed_due_to_budget: int = 0
+    detail_pages_attempted: int = 0
+    detail_pages_succeeded: int = 0
+    detail_pages_failed: int = 0
+    listing_fallback_used: int = 0
     duplicates_removed: int = 0
-    expired_stale_excluded: int = 0
+    expired_excluded: int = 0
     irrelevant_excluded: int = 0
-    incompatible_professional_role_excluded: int = 0
+    incompatible_role_classification_excluded: int = 0
     source_validation_excluded: int = 0
     relevant_retained: int = 0
-    application_routes_discovered: int = 0
+    application_routes_found: int = 0
+    application_routes_unavailable: int = 0
+    partial_reasons: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
     def apply_metrics(self, metrics: SourceScanMetrics | dict[str, Any] | None) -> None:
@@ -132,15 +175,44 @@ class SourceReport:
             return
         data = metrics.to_dict() if hasattr(metrics, "to_dict") else dict(metrics)
         for key, value in data.items():
-            if hasattr(self, key):
+            if key in self.__dataclass_fields__:
                 setattr(self, key, value)
-        if data.get("partial") and self.status == SOURCE_STATUS_SCANNED:
-            self.status = SOURCE_STATUS_PARTIAL
         if self.errors and not self.error:
             self.error = "; ".join(self.errors[:2])
 
+    @property
+    def incompatible_professional_role_excluded(self) -> int:
+        return self.incompatible_role_classification_excluded
+
+    @property
+    def expired_stale_excluded(self) -> int:
+        return self.expired_excluded
+
+    @property
+    def application_routes_discovered(self) -> int:
+        return self.application_routes_found
+
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data.update({
+            "pages_attempted": self.pages_requested,
+            "listings_attempted": self.listings_seen,
+            "listings_checked": self.listings_seen,
+            "vacancies_discovered": self.listings_seen - self.listing_parse_failures,
+            "expired_stale_excluded": self.expired_excluded,
+            "incompatible_professional_role_excluded": self.incompatible_role_classification_excluded,
+            "application_routes_discovered": self.application_routes_found,
+        })
+        return data
+
+
+SUMMARY_COUNTERS = (
+    "pages_requested", "pages_succeeded", "pages_failed", "listings_seen",
+    "listing_parse_failures", "vacancies_parsed", "not_processed_due_to_budget",
+    "duplicates_removed", "expired_excluded", "irrelevant_excluded",
+    "incompatible_role_classification_excluded", "source_validation_excluded",
+    "relevant_retained", "application_routes_found", "application_routes_unavailable",
+)
 
 
 @dataclass(slots=True)
@@ -151,6 +223,10 @@ class ScanResult:
     started_at: str
     finished_at: str
     message: str
+    recommended_from_scan: int = 0
+    ready_to_apply_from_scan: int = 0
+    needs_verification_from_scan: int = 0
+    not_eligible_from_scan: int = 0
 
     @property
     def successful_sources(self) -> int:
@@ -160,17 +236,38 @@ class ScanResult:
     def failed_sources(self) -> int:
         return sum(1 for report in self.source_reports if report.attempted and not report.ok)
 
+    def record_match_results(self, results: list[dict[str, Any]]) -> None:
+        """Attach matcher outcomes for only the jobs retained by this scan."""
+        statuses = [str(item.get("readiness_status") or "") for item in results]
+        self.ready_to_apply_from_scan = statuses.count("READY_TO_APPLY")
+        self.needs_verification_from_scan = statuses.count("NEEDS_VERIFICATION")
+        self.not_eligible_from_scan = statuses.count("NOT_ELIGIBLE")
+        self.recommended_from_scan = self.ready_to_apply_from_scan + self.needs_verification_from_scan
+
+    def summary(self) -> dict[str, int]:
+        data = {key: sum(int(getattr(r, key, 0) or 0) for r in self.source_reports) for key in SUMMARY_COUNTERS}
+        data.update({
+            "sources_attempted": sum(1 for r in self.source_reports if r.attempted),
+            "sources_scanned": sum(1 for r in self.source_reports if r.status == SOURCE_STATUS_SCANNED),
+            "sources_partial": sum(1 for r in self.source_reports if r.status == SOURCE_STATUS_PARTIAL),
+            "sources_unavailable": sum(1 for r in self.source_reports if r.status == SOURCE_STATUS_UNAVAILABLE),
+            "sources_failed": sum(1 for r in self.source_reports if r.status == SOURCE_STATUS_FAILED),
+            "recommended_from_scan": self.recommended_from_scan,
+            "ready_to_apply_from_scan": self.ready_to_apply_from_scan,
+            "needs_verification_from_scan": self.needs_verification_from_scan,
+            "not_eligible_from_scan": self.not_eligible_from_scan,
+        })
+        return data
+
     def to_dict(self) -> dict[str, Any]:
         return {
-            "status": self.status,
-            "message": self.message,
-            "started_at": self.started_at,
-            "finished_at": self.finished_at,
+            "status": self.status, "message": self.message,
+            "started_at": self.started_at, "finished_at": self.finished_at,
             "jobs": [job.to_dict() for job in self.jobs],
             "source_reports": [report.to_dict() for report in self.source_reports],
             "successful_sources": self.successful_sources,
-            "failed_sources": self.failed_sources,
-            "job_count": len(self.jobs),
+            "failed_sources": self.failed_sources, "job_count": len(self.jobs),
+            "summary": self.summary(),
         }
 
 
@@ -228,7 +325,7 @@ def deduplicate_jobs_with_stats(jobs: list[Job], *, today: date | None = None) -
         bucket[key] = bucket.get(key, 0) + 1
 
     for job in jobs:
-        source_id = str(job.platform or "").lower()
+        source_id = str((job.metadata or {}).get("_scan_source_id") or job.platform or "").lower()
         if is_expired(job, today=today):
             inc(source_id, "expired_stale_excluded")
             continue
@@ -325,23 +422,22 @@ def _role_classification(job: Job) -> str:
 
 
 async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: date | None = None) -> ScanResult:
+    """Run adapters then apply the one mutually-exclusive terminal lifecycle.
+
+    Precedence is deliberately fixed: duplicate, expired, irrelevant,
+    incompatible role classification, source validation, retained. Once an
+    item enters a terminal bucket it is never evaluated for a later bucket.
+    Operational budget deferrals happen in adapters and never masquerade as a
+    semantic exclusion.
+    """
     profile = profile or {}
     today = today or date.today()
     started = utc_now()
-    source_reports: list[SourceReport] = []
-    jobs: list[Job] = []
-
+    reports: list[SourceReport] = []
+    candidates: list[Job] = []
     enabled = _enabled_sources(profile)
     if not enabled:
-        finished = utc_now()
-        return ScanResult(
-            status=SCAN_FAILED,
-            jobs=[],
-            source_reports=[],
-            started_at=started,
-            finished_at=finished,
-            message="No active discovery sources are enabled.",
-        )
+        return ScanResult(SCAN_FAILED, [], [], started, utc_now(), "No active discovery sources are enabled.")
 
     for source_id in enabled:
         spec = SOURCE_REGISTRY[source_id]
@@ -352,104 +448,107 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
                 found = await fetcher(profile, today=today)
             except TypeError:
                 found = await fetcher(profile)
+            metrics = getattr(found, "metrics", None)
             report.ok = True
-            report.status = SOURCE_STATUS_SCANNED
-            report.apply_metrics(getattr(found, "metrics", None))
-            # SourceJobs lets a source report every valid listing item parsed,
-            # even though only relevant enriched vacancies leave the fetcher.
-            report.jobs_found = int(getattr(found, "parsed_count", len(found)))
-            if not report.vacancies_discovered:
-                report.vacancies_discovered = report.jobs_found
-            if not report.listings_checked:
-                report.listings_checked = report.jobs_found
-            if not report.vacancies_parsed:
-                report.vacancies_parsed = len(found)
-            if getattr(found, "metrics", None) and getattr(found.metrics, "partial", False):
-                report.status = SOURCE_STATUS_PARTIAL
-            jobs.extend(found)
-        except Exception as exc:  # source isolation is mandatory
+            if metrics:
+                report.apply_metrics(metrics)
+                report.ok = report.status not in {SOURCE_STATUS_UNAVAILABLE, SOURCE_STATUS_FAILED}
+            else:
+                # Compatibility for simple/custom fetchers: each returned item
+                # is one encountered listing and malformed items are explicit.
+                report.listings_seen = len(found)
+                report.listing_parse_failures = sum(not isinstance(item, Job) for item in found)
+                report.vacancies_parsed = report.listings_seen - report.listing_parse_failures
+                report.pagination_stop_reason = "END_REACHED"
+                report.status = SOURCE_STATUS_SCANNED
+            report.jobs_found = report.vacancies_parsed
+            for item in found:
+                if isinstance(item, Job):
+                    item.metadata = dict(item.metadata or {})
+                    item.metadata["_scan_source_id"] = source_id
+                    candidates.append(item)
+        except Exception as exc:  # complete source isolation remains mandatory
             reason = _concise_error(exc)
             report.ok = False
             report.status = SOURCE_STATUS_UNAVAILABLE
+            report.pagination_stop_reason = "REQUEST_FAILED"
             report.error = reason
             report.errors.append(reason)
         report.finished_at = utc_now()
-        source_reports.append(report)
+        reports.append(report)
 
-    reports_by_source = {report.id.lower(): report for report in source_reports}
-    normalized: list[Job] = []
-    per_source_candidates: dict[str, int] = {}
-    for job in jobs:
-        source_id = str(getattr(job, "platform", "") or "").lower()
-        report = reports_by_source.get(source_id)
+    by_source = {r.id.lower(): r for r in reports}
+    retained: list[Job] = []
+    seen: set[str] = set()
+    for job in candidates:
+        source_id = str((job.metadata or {}).get("_scan_source_id") or job.platform or "").lower()
+        report = by_source.get(source_id)
+        if not report:
+            continue
         try:
-            if not isinstance(job, Job):
-                if report:
-                    report.errors.append("Malformed vacancy item ignored.")
+            # Canonical terminal precedence starts here. Cross-source identity
+            # uses the normalized official vacancy URL where possible.
+            key = _vacancy_identity(job.url or job.apply_url or "") or _canonical(f"{job.title} {job.company} {job.location}")
+            if not key or key in seen:
+                report.duplicates_removed += 1
+                continue
+            seen.add(key)
+            if is_expired(job, today=today):
+                report.expired_excluded += 1
                 continue
             if not _job_is_relevant(job):
-                if report:
-                    report.irrelevant_excluded += 1
+                report.irrelevant_excluded += 1
                 continue
             enriched = enrich_job(job, today=today)
-            if enriched.application_method in {"EMAIL", "WEB"} and report:
-                report.application_routes_discovered += 1
-            role_classification = _role_classification(enriched)
-            if role_classification == "incompatible_professional_role":
-                if report:
-                    report.incompatible_professional_role_excluded += 1
+            if _role_classification(enriched) == "incompatible_professional_role":
+                report.incompatible_role_classification_excluded += 1
                 continue
             if not has_actionable_source(enriched.to_dict()):
-                if report:
-                    report.source_validation_excluded += 1
+                report.source_validation_excluded += 1
                 continue
-            normalized.append(enriched)
-            per_source_candidates[source_id] = per_source_candidates.get(source_id, 0) + 1
+            retained.append(enriched)
         except (AttributeError, TypeError, ValueError, KeyError) as exc:
-            # A malformed item must not discard valid vacancies or crash the scan.
-            if report:
-                report.errors.append(f"Vacancy parse skipped: {_concise_error(exc)}")
-            continue
+            # This is a parse failure rather than an invented semantic outcome.
+            report.listing_parse_failures += 1
+            report.vacancies_parsed = max(0, report.vacancies_parsed - 1)
+            if "LISTING_PARSE_FAILURE" not in report.partial_reasons:
+                report.partial_reasons.append("LISTING_PARSE_FAILURE")
+            report.errors.append(f"Vacancy parse skipped: {_concise_error(exc)}")
 
-    deduped, dedupe_stats = deduplicate_jobs_with_stats(normalized, today=today)
-    for report in source_reports:
-        source_id = report.id.lower()
-        report.relevant_candidates = per_source_candidates.get(source_id, 0)
-        report.final_retained = sum(1 for job in deduped if job.platform.lower() == source_id)
-        report.relevant_retained = report.final_retained
-        report.duplicates_removed += dedupe_stats.get(source_id, {}).get("duplicates_removed", 0)
-        report.expired_stale_excluded += dedupe_stats.get(source_id, {}).get("expired_stale_excluded", 0)
-        # Keep the legacy jobs_found field useful but do not use it to imply a
-        # failed/unavailable source found zero jobs; source status is always
-        # displayed alongside counts.
+    for report in reports:
+        source_jobs = [job for job in retained if str((job.metadata or {}).get("_scan_source_id") or job.platform).lower() == report.id.lower()]
+        report.relevant_candidates = len(source_jobs)
+        report.final_retained = report.relevant_retained = len(source_jobs)
+        report.application_routes_found = sum(job.application_method in {"EMAIL", "WEB"} for job in source_jobs)
+        report.application_routes_unavailable = report.relevant_retained - report.application_routes_found
+        # Legacy jobs_found historically meant post duplicate/expiry candidates.
+        report.jobs_found = max(0, report.vacancies_parsed - report.duplicates_removed - report.expired_excluded)
+        # Every parsed item must have exactly one semantic terminal outcome.
+        terminal = (report.duplicates_removed + report.expired_excluded + report.irrelevant_excluded
+                    + report.incompatible_role_classification_excluded + report.source_validation_excluded
+                    + report.relevant_retained)
+        if terminal != report.vacancies_parsed:
+            report.errors.append(f"Accounting invariant failed: {report.vacancies_parsed} parsed != {terminal} terminal outcomes.")
+            if "LISTING_PARSE_FAILURE" not in report.partial_reasons:
+                report.partial_reasons.append("LISTING_PARSE_FAILURE")
+        if report.ok:
+            report.status = SOURCE_STATUS_PARTIAL if report.partial_reasons else SOURCE_STATUS_SCANNED
         if report.errors and not report.error:
             report.error = "; ".join(dict.fromkeys(report.errors[:2]))
-        if report.ok and (report.errors or report.status == SOURCE_STATUS_PARTIAL):
-            report.status = SOURCE_STATUS_PARTIAL
 
-    successful = sum(1 for report in source_reports if report.ok)
-    failed = sum(1 for report in source_reports if report.attempted and not report.ok)
-    partial = sum(1 for report in source_reports if report.ok and report.status == SOURCE_STATUS_PARTIAL)
-    retained = len(deduped)
+    successful = sum(r.ok for r in reports)
+    unavailable = sum(r.status in {SOURCE_STATUS_UNAVAILABLE, SOURCE_STATUS_FAILED} for r in reports)
+    partial = sum(r.status == SOURCE_STATUS_PARTIAL for r in reports)
     if successful == 0:
-        status = SOURCES_UNAVAILABLE
-        message = "Live scan incomplete. Job sources could not be reached."
-    elif failed or partial:
+        status, message = SOURCES_UNAVAILABLE, "Live scan incomplete. Job sources could not be reached."
+    elif unavailable or partial:
         status = PARTIAL_SCAN
-        issues = failed + partial
-        issue_word = "source" if issues == 1 else "sources"
-        if retained:
-            message = f"Partial market scan. {retained} relevant current vacancies retained from scanned portions; {issues} {issue_word} unavailable or partial."
-        else:
-            message = f"Partial market scan. No relevant current vacancies were retained from scanned portions; {issues} {issue_word} unavailable or partial."
-    elif not deduped:
-        status = NO_RELEVANT_JOBS_FOUND
-        message = "Scan completed. No relevant current vacancies were found in the reachable sources."
+        message = f"Partial market scan. {len(retained)} relevant current vacancies retained; {unavailable + partial} source(s) unavailable or partial."
+    elif not retained:
+        status, message = NO_RELEVANT_JOBS_FOUND, "Scan completed. No relevant current vacancies were found in the reachable sources."
     else:
-        status = SCAN_COMPLETE
-        message = f"Scan completed. {retained} relevant current vacancies found."
-
-    return ScanResult(status=status, jobs=deduped, source_reports=source_reports, started_at=started, finished_at=utc_now(), message=message)
+        status, message = SCAN_COMPLETE, f"Scan completed. {len(retained)} relevant current vacancies found."
+    return ScanResult(status, retained, reports, started, utc_now(), message)
 
 
 def _job_is_relevant(job: Job) -> bool:
@@ -478,20 +577,7 @@ def _job_is_relevant(job: Job) -> bool:
 
 
 async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = None) -> list[Job]:
-    """Scan ACBAR's listing pages with bounded, documented pagination.
-
-    Coverage: this walks ACBAR listing pages starting at page 1 and keeps
-    requesting the next page only while it keeps finding new, not-yet-seen
-    vacancy links, up to ``max_pages`` (default
-    :data:`ACBAR_DEFAULT_MAX_PAGES`). This is a deliberate, bounded budget --
-    not a claim that the entire ACBAR archive is scanned every time. An
-    explicit ``job_sources.acbar.urls`` list in profile.yaml overrides this
-    auto-pagination entirely and is fetched as-is (useful for pinning a
-    specific page range). Detail pages are fetched with bounded concurrency
-    (``max_detail_concurrency``) for relevant vacancies up to ``detail_limit``
-    so a slow network cannot turn one scan into a very long sequential wait;
-    the overall HTTP timeout still applies per request via ``timeout_seconds``.
-    """
+    """Fetch ACBAR with exact page/detail/budget accounting."""
     spec = SOURCE_REGISTRY["acbar"]
     defaults = spec.get("defaults") or {}
     cfg = ((profile.get("job_sources") or {}).get("acbar") or {}) if isinstance(profile, dict) else {}
@@ -499,76 +585,94 @@ async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = N
     timeout = float(cfg.get("timeout_seconds", defaults.get("timeout_seconds", ACBAR_DEFAULT_TIMEOUT_SECONDS)))
     detail_limit = max(1, int(cfg.get("detail_limit", defaults.get("detail_limit", ACBAR_DEFAULT_DETAIL_LIMIT))))
     max_pages = max(1, int(cfg.get("max_pages", defaults.get("max_pages", ACBAR_DEFAULT_MAX_PAGES))))
-    max_detail_concurrency = max(1, int(cfg.get("max_detail_concurrency", defaults.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY))))
-    base_listing_url = str(spec.get("listing_url") or spec.get("official_url") or "")
-    metrics = SourceScanMetrics(source_url=base_listing_url, official_source_id=str(spec.get("official_name") or source_display_name(spec)))
+    concurrency = max(1, int(cfg.get("max_detail_concurrency", defaults.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY))))
+    base = str(spec.get("listing_url") or spec.get("official_url") or "")
+    metrics = SourceScanMetrics(source_url=base, official_source_id=str(spec.get("official_name") or source_display_name(spec)))
+    summaries: list[Job] = []
+    seen_page_urls: set[str] = set()
 
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
-        summaries: list[Job] = []
-        reached_configured_limit = False
-        if explicit_urls:
-            for url in explicit_urls:
-                metrics.pages_attempted += 1
+        urls = list(explicit_urls or [base if n == 1 else f"{base}?page={n}" for n in range(1, max_pages + 1)])
+        for index, url in enumerate(urls):
+            metrics.pages_requested += 1
+            try:
                 response = await client.get(url)
                 response.raise_for_status()
-                page_jobs = _parse_acbar_listing(response.text, url)
-                metrics.listings_attempted += len(page_jobs)
+                metrics.pages_succeeded += 1
+            except Exception as exc:
+                metrics.pages_failed += 1
+                metrics.pagination_stop_reason = "REQUEST_FAILED"
+                metrics.add_partial_reason("LISTING_PAGE_FAILURE", f"Listing page could not be read: {_concise_error(exc)}")
+                metrics.add_partial_reason("REQUEST_FAILURE")
+                break
+            selector = ", ".join(((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/en/jobs/details/"]', 'a[href^="/jobs/"]']))
+            raw_count = len(BeautifulSoup(response.text or "", "html.parser").select(selector))
+            page_jobs = _parse_acbar_listing(response.text, url)
+            metrics.listings_seen += raw_count
+            failures = max(0, raw_count - len(page_jobs))
+            metrics.listing_parse_failures += failures
+            if failures:
+                metrics.add_partial_reason("LISTING_PARSE_FAILURE")
+            if explicit_urls:
                 summaries.extend(page_jobs)
+                continue
+            if not page_jobs:
+                metrics.pagination_stop_reason = "END_REACHED"
+                break
+            new_jobs = [job for job in page_jobs if job.url not in seen_page_urls]
+            summaries.extend(page_jobs)  # every encountered valid card gets an outcome
+            if not new_jobs:
+                # A repeated non-empty page is not proof of source exhaustion.
+                metrics.pagination_stop_reason = "REPEATED_PAGE"
+                metrics.add_partial_reason("REPEATED_PAGE")
+                break
+            seen_page_urls.update(job.url for job in new_jobs)
+            if index == len(urls) - 1:
+                metrics.pagination_stop_reason = "PAGE_LIMIT_REACHED"
+                metrics.add_partial_reason("PAGE_LIMIT_REACHED")
+                metrics.add_partial_reason("PAGINATION_NOT_EXHAUSTED")
         else:
-            seen_urls: set[str] = set()
-            for page in range(1, max_pages + 1):
-                url = base_listing_url if page == 1 else f"{base_listing_url}?page={page}"
-                metrics.pages_attempted += 1
-                response = await client.get(url)
-                response.raise_for_status()
-                page_jobs = _parse_acbar_listing(response.text, url)
-                metrics.listings_attempted += len(page_jobs)
-                new_jobs = [job for job in page_jobs if job.url not in seen_urls]
-                if not new_jobs:
-                    # No new vacancies on this page: either the last page was
-                    # reached or the site stopped returning distinct results.
-                    break
-                seen_urls.update(job.url for job in new_jobs)
-                summaries.extend(new_jobs)
-                reached_configured_limit = page == max_pages and bool(new_jobs)
+            metrics.pagination_stop_reason = "EXPLICIT_URL_SET_COMPLETE" if explicit_urls else "PAGE_LIMIT_REACHED"
 
-        metrics.vacancies_discovered = len(summaries)
-        deduped, dedupe_stats = _deduplicate_source_vacancies_with_stats(summaries, today=today)
-        metrics.duplicates_removed = dedupe_stats["duplicates_removed"]
-        metrics.expired_stale_excluded = dedupe_stats["expired_stale_excluded"]
-        metrics.listings_checked = len(deduped)
-        # Obvious medical titles are fetched first, but relevance is decided
-        # only after detail enrichment. Remaining budget is spent on cards
-        # whose short listing text may omit the professional requirements.
-        obvious = [job for job in deduped if _job_is_relevant(job)]
-        other = [job for job in deduped if job not in obvious]
-        candidates = (obvious + other)[:detail_limit]
-        if len(deduped) > len(candidates) or reached_configured_limit:
-            metrics.partial = True
+        unique_summaries: list[Job] = []
+        seen_identities: set[str] = set()
+        for job in summaries:
+            identity = _vacancy_identity(job.url)
+            if not identity or identity in seen_identities:
+                metrics.duplicates_removed += 1
+            else:
+                seen_identities.add(identity)
+                unique_summaries.append(job)
+        obvious = [job for job in unique_summaries if _job_is_relevant(job)]
+        other = [job for job in unique_summaries if job not in obvious]
+        processable = (obvious + other)[:detail_limit]
+        metrics.not_processed_due_to_budget = max(0, len(unique_summaries) - len(processable))
+        if metrics.not_processed_due_to_budget:
+            metrics.add_partial_reason("DETAIL_LIMIT_REACHED")
+        semaphore = asyncio.Semaphore(concurrency)
 
-        semaphore = asyncio.Semaphore(max_detail_concurrency)
-        detail_error_count = 0
-
-        async def fetch_detail(job: Job) -> Job:
-            nonlocal detail_error_count
+        async def detail(job: Job) -> Job:
+            metrics.detail_pages_attempted += 1
             async with semaphore:
                 try:
-                    detail = await client.get(job.url)
-                    detail.raise_for_status()
-                    return _parse_acbar_detail(detail.text, job)
+                    response = await client.get(job.url)
+                    response.raise_for_status()
+                    parsed = _parse_acbar_detail(response.text, job)
+                    metrics.detail_pages_succeeded += 1
+                    return parsed
                 except Exception:
-                    detail_error_count += 1
+                    metrics.detail_pages_failed += 1
+                    metrics.listing_fallback_used += 1
                     return job
 
-        detailed = await asyncio.gather(*(fetch_detail(job) for job in candidates))
-        metrics.vacancies_parsed = len(detailed)
-        if detail_error_count:
-            metrics.partial = True
-            metrics.errors.append(f"{detail_error_count} detail page(s) could not be read; listing data was used where possible.")
-        relevant = [job for job in detailed if _job_is_relevant(job)]
-        metrics.irrelevant_excluded = max(0, len(detailed) - len(relevant))
-        metrics.status = SOURCE_STATUS_PARTIAL if metrics.partial or metrics.errors else SOURCE_STATUS_SCANNED
-        return SourceJobs(relevant, parsed_count=len(deduped), metrics=metrics)
+        detailed = await asyncio.gather(*(detail(job) for job in processable))
+    if metrics.detail_pages_failed:
+        metrics.add_partial_reason("DETAIL_FETCH_FAILURE", f"{metrics.detail_pages_failed} detail page(s) failed; valid listing fallback was used.")
+    metrics.vacancies_parsed = len(detailed) + metrics.duplicates_removed
+    usable = metrics.pages_succeeded > 0
+    metrics.status = (SOURCE_STATUS_UNAVAILABLE if not usable else
+                      SOURCE_STATUS_PARTIAL if metrics.partial_reasons else SOURCE_STATUS_SCANNED)
+    return SourceJobs(detailed, parsed_count=len(detailed), metrics=metrics)
 
 
 def _vacancy_identity(url: str) -> str:
@@ -742,7 +846,7 @@ def _parse_acbar_detail(html: str, job: Job) -> Job:
 
 
 async def discover_reliefweb_jobs(profile: dict[str, Any], *, today: date | None = None) -> list[Job]:
-    """Discover ReliefWeb cards and enrich them before medical relevance."""
+    """Fetch ReliefWeb using the same card/detail semantics as ACBAR."""
     spec = SOURCE_REGISTRY["reliefweb"]
     defaults = spec.get("defaults") or {}
     cfg = ((profile.get("job_sources") or {}).get("reliefweb") or {}) if isinstance(profile, dict) else {}
@@ -750,44 +854,69 @@ async def discover_reliefweb_jobs(profile: dict[str, Any], *, today: date | None
     limit = max(1, int(cfg.get("limit", defaults.get("limit", RELIEFWEB_DEFAULT_LIMIT))))
     url = cfg.get("url") or spec.get("listing_url") or spec.get("official_url")
     metrics = SourceScanMetrics(source_url=str(url or ""), official_source_id=str(spec.get("official_name") or source_display_name(spec)))
+    summaries: list[Job] = []
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
-        metrics.pages_attempted = 1
-        response = await client.get(url)
-        response.raise_for_status()
-        summaries = _parse_reliefweb_listing(response.text, url, limit=limit)
-        metrics.vacancies_discovered = len(summaries)
-        metrics.listings_attempted = len(summaries)
-        metrics.listings_checked = len(summaries)
-        if len(summaries) >= limit:
-            metrics.partial = True
+        metrics.pages_requested = 1
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+            metrics.pages_succeeded = 1
+        except Exception as exc:
+            metrics.pages_failed = 1
+            metrics.pagination_stop_reason = "REQUEST_FAILED"
+            metrics.add_partial_reason("REQUEST_FAILURE", _concise_error(exc))
+            metrics.status = SOURCE_STATUS_UNAVAILABLE
+            return SourceJobs([], parsed_count=0, metrics=metrics)
+        selector = ", ".join(((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/job/"]']))
+        raw_count = len(BeautifulSoup(response.text or "", "html.parser").select(selector))
+        parsed_all = _parse_reliefweb_listing(response.text, url, limit=max(raw_count, 1), deduplicate_result=False)
+        metrics.listings_seen = raw_count
+        metrics.listing_parse_failures = max(0, raw_count - len(parsed_all))
+        if metrics.listing_parse_failures:
+            metrics.add_partial_reason("LISTING_PARSE_FAILURE")
+        unique_summaries: list[Job] = []
+        seen_identities: set[str] = set()
+        for job in parsed_all:
+            identity = _vacancy_identity(job.url)
+            if not identity or identity in seen_identities:
+                metrics.duplicates_removed += 1
+            else:
+                seen_identities.add(identity)
+                unique_summaries.append(job)
+        summaries = unique_summaries[:limit]
+        metrics.not_processed_due_to_budget = max(0, len(unique_summaries) - len(summaries))
+        if metrics.not_processed_due_to_budget or raw_count >= limit:
+            metrics.pagination_stop_reason = "PAGE_LIMIT_REACHED"
+            metrics.add_partial_reason("PAGE_LIMIT_REACHED")
+            if metrics.not_processed_due_to_budget:
+                metrics.add_partial_reason("DETAIL_LIMIT_REACHED")
+        else:
+            # ReliefWeb's maintained adapter currently requests one bounded
+            # result page; fewer results than its limit is the observable end.
+            metrics.pagination_stop_reason = "END_REACHED"
 
-        detail_error_count = 0
-
-        async def fetch_detail(job: Job) -> Job:
-            nonlocal detail_error_count
+        async def detail(job: Job) -> Job:
+            metrics.detail_pages_attempted += 1
             try:
-                detail = await client.get(job.url)
-                detail.raise_for_status()
-                return _parse_reliefweb_detail(detail.text, job)
+                response = await client.get(job.url)
+                response.raise_for_status()
+                parsed = _parse_reliefweb_detail(response.text, job)
+                metrics.detail_pages_succeeded += 1
+                return parsed
             except Exception:
-                detail_error_count += 1
+                metrics.detail_pages_failed += 1
+                metrics.listing_fallback_used += 1
                 return job
 
-        detailed = await asyncio.gather(*(fetch_detail(job) for job in summaries))
-    metrics.vacancies_parsed = len(detailed)
-    if detail_error_count:
-        metrics.partial = True
-        metrics.errors.append(f"{detail_error_count} detail page(s) could not be read; listing data was used where possible.")
-    relevant = [job for job in detailed if _job_is_relevant(job)]
-    metrics.irrelevant_excluded = max(0, len(detailed) - len(relevant))
-    deduped, dedupe_stats = deduplicate_jobs_with_stats(relevant, today=today)
-    metrics.duplicates_removed = dedupe_stats.get("reliefweb", {}).get("duplicates_removed", 0)
-    metrics.expired_stale_excluded = dedupe_stats.get("reliefweb", {}).get("expired_stale_excluded", 0)
-    metrics.status = SOURCE_STATUS_PARTIAL if metrics.partial or metrics.errors else SOURCE_STATUS_SCANNED
-    return SourceJobs(deduped, parsed_count=len(summaries), metrics=metrics)
+        detailed = await asyncio.gather(*(detail(job) for job in summaries))
+    if metrics.detail_pages_failed:
+        metrics.add_partial_reason("DETAIL_FETCH_FAILURE", f"{metrics.detail_pages_failed} detail page(s) failed; valid listing fallback was used.")
+    metrics.vacancies_parsed = len(detailed) + metrics.duplicates_removed
+    metrics.status = SOURCE_STATUS_PARTIAL if metrics.partial_reasons else SOURCE_STATUS_SCANNED
+    return SourceJobs(detailed, parsed_count=len(detailed), metrics=metrics)
 
 
-def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int) -> list[Job]:
+def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int, deduplicate_result: bool = True) -> list[Job]:
     spec = SOURCE_REGISTRY.get("reliefweb", {})
     source_name = source_display_name(spec) or "reliefweb"
     selector_list = ((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/job/"]'])
@@ -802,7 +931,7 @@ def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int) -> list[Jo
             continue
         card = anchor.find_parent(["article", "li", "div"]) or anchor.parent
         context = normalize_space(card.get_text(" ", strip=True) if card else title)
-        if "afghanistan" not in context.lower() and "afghanistan" not in title.lower():
+        if deduplicate_result and "afghanistan" not in context.lower() and "afghanistan" not in title.lower():
             continue
         company = _guess_reliefweb_company(context)
         closing = parse_closing_date(context) or ""
@@ -835,7 +964,7 @@ def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int) -> list[Jo
         )
         if len(jobs) >= limit:
             break
-    return deduplicate_jobs(jobs)
+    return deduplicate_jobs(jobs) if deduplicate_result else jobs
 
 
 def _parse_reliefweb_detail(html: str, job: Job) -> Job:

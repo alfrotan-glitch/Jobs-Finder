@@ -115,15 +115,23 @@ function scanStatusLabel(status) {
 }
 
 function sourceSummaryLine(source) {
-  const parts = [];
-  if (Number.isFinite(Number(source.listings_checked))) parts.push(`${Number(source.listings_checked)} listings checked`);
-  if (Number(source.relevant_retained ?? source.final_retained ?? 0)) parts.push(`${Number(source.relevant_retained ?? source.final_retained)} relevant`);
-  if (Number(source.incompatible_professional_role_excluded || 0)) parts.push(`${Number(source.incompatible_professional_role_excluded)} excluded as incompatible`);
-  if (Number(source.expired_stale_excluded || 0)) parts.push(`${Number(source.expired_stale_excluded)} expired/stale`);
-  if (Number(source.duplicates_removed || 0)) parts.push(`${Number(source.duplicates_removed)} duplicates`);
-  if (Number(source.application_routes_discovered || 0)) parts.push(`${Number(source.application_routes_discovered)} application routes`);
-  if (!source.ok && source.status) parts.push("not counted as zero jobs");
-  return parts.join(" · ") || "No retained vacancies from this source.";
+  const n = (key) => Number(source[key] || 0);
+  const parts = [
+    `${n("listings_seen")} listings seen`,
+    `${n("listing_parse_failures")} parse failures`,
+    `${n("vacancies_parsed")} valid vacancies processed`,
+    `${n("not_processed_due_to_budget")} deferred by budget`,
+    `${n("duplicates_removed")} duplicates`,
+    `${n("expired_excluded")} expired`,
+    `${n("irrelevant_excluded")} irrelevant`,
+    `${n("incompatible_role_classification_excluded")} incompatible role classifications`,
+    `${n("source_validation_excluded")} source-invalid`,
+    `${n("relevant_retained")} retained`,
+    `${n("application_routes_found")} routes found / ${n("application_routes_unavailable")} unavailable`,
+  ];
+  if ((source.partial_reasons || []).length) parts.push(`Partial because: ${source.partial_reasons.join(", ")}`);
+  if (!source.ok && source.status) parts.push("Unavailable is not counted as zero market results");
+  return parts.join(" · ");
 }
 
 function requirementsByStatus(job, status) {
@@ -449,16 +457,22 @@ function renderAdvanced() {
       <div class="sourceRow">
         <strong>${escapeHtml(source.name)}</strong>
         <span class="statusBadge ${statusClass(source.status || (source.ok ? "SCANNED" : "UNAVAILABLE"))}">${escapeHtml(scanStatusLabel(source.status || (source.ok ? "SCANNED" : "UNAVAILABLE")))}</span>
-        <p>${escapeHtml(source.listings_checked || 0)} listings checked · ${escapeHtml(source.vacancies_parsed || source.jobs_found || 0)} parsed · ${escapeHtml(source.relevant_retained ?? source.final_retained ?? 0)} retained</p>
+        <p>${escapeHtml(source.pages_requested || 0)} pages requested · ${escapeHtml(source.pages_succeeded || 0)} succeeded · ${escapeHtml(source.pages_failed || 0)} failed · ${escapeHtml(source.pagination_stop_reason || "UNKNOWN")}</p>
         <p class="sectionHelp">${escapeHtml(sourceSummaryLine(source))}</p>
+        <p class="sectionHelp">Details: ${escapeHtml(source.detail_pages_attempted || 0)} attempted / ${escapeHtml(source.detail_pages_succeeded || 0)} succeeded / ${escapeHtml(source.detail_pages_failed || 0)} failed · ${escapeHtml(source.listing_fallback_used || 0)} listing fallbacks</p>
         ${source.source_url ? `<p class="sectionHelp">Official source: ${escapeHtml(source.source_url)}</p>` : ""}
         ${source.timestamp ? `<p class="sectionHelp">Checked ${escapeHtml(source.timestamp)}</p>` : ""}
       </div>`).join("") || `<p class="sectionHelp">No source report available.</p>`;
     const returnedJobs = scan.job_count ?? scan.jobs?.length ?? 0;
+    const total = scan.summary || {};
     $("advancedScan").innerHTML = `
       <p><strong>Status:</strong> ${escapeHtml(friendlyStatus(scan.status))}</p>
-      <p><strong>Returned this scan:</strong> ${escapeHtml(returnedJobs)}</p>
-      <p><strong>Successful sources:</strong> ${escapeHtml(scan.successful_sources ?? 0)} · <strong>Failed sources:</strong> ${escapeHtml(scan.failed_sources ?? 0)}</p>`;
+      <p><strong>Sources:</strong> ${escapeHtml(total.sources_attempted || 0)} attempted · ${escapeHtml(total.sources_scanned || 0)} scanned · ${escapeHtml(total.sources_partial || 0)} partial · ${escapeHtml(total.sources_unavailable || 0)} unavailable</p>
+      <p><strong>Pages:</strong> ${escapeHtml(total.pages_requested || 0)} requested · ${escapeHtml(total.pages_succeeded || 0)} succeeded · ${escapeHtml(total.pages_failed || 0)} failed</p>
+      <p><strong>Lifecycle:</strong> ${escapeHtml(total.listings_seen || 0)} listings · ${escapeHtml(total.listing_parse_failures || 0)} parse failures · ${escapeHtml(total.vacancies_parsed || 0)} parsed · ${escapeHtml(total.not_processed_due_to_budget || 0)} budget-deferred</p>
+      <p><strong>Outcomes:</strong> ${escapeHtml(total.duplicates_removed || 0)} duplicates · ${escapeHtml(total.expired_excluded || 0)} expired · ${escapeHtml(total.irrelevant_excluded || 0)} irrelevant · ${escapeHtml(total.incompatible_role_classification_excluded || 0)} incompatible · ${escapeHtml(total.source_validation_excluded || 0)} source-invalid · ${escapeHtml(returnedJobs)} retained</p>
+      <p><strong>Routes:</strong> ${escapeHtml(total.application_routes_found || 0)} found · ${escapeHtml(total.application_routes_unavailable || 0)} unavailable</p>
+      <p><strong>Recommended from this scan:</strong> ${escapeHtml(total.recommended_from_scan || 0)} · ${escapeHtml(total.ready_to_apply_from_scan || 0)} ready · ${escapeHtml(total.needs_verification_from_scan || 0)} needs verification · ${escapeHtml(total.not_eligible_from_scan || 0)} not eligible</p>`;
     const failedReports = reports.filter((source) => !source.ok || source.error);
     $("advancedFailures").innerHTML = failedReports.length
       ? failedReports.map((source) => `<div class="sourceRow"><strong>${escapeHtml(source.name)}</strong><p>${escapeHtml(source.error || "Source returned no successful response.")}</p></div>`).join("")

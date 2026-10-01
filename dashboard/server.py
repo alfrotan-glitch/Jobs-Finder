@@ -495,10 +495,13 @@ async def api_find():
     profile = load_profile(True)
     scan = await run_discovery_scan(profile)
     resume_text = extract_resume_text(profile.get("resume_path", ""))
+    match_results = []
     for job in scan.jobs:
         log_discovered(job)
         report = match_job_against_profile(job.to_dict(), profile, resume_text=resume_text).to_dict()
+        match_results.append(report)
         log_medical_match(job.id, report)
+    scan.record_match_results(match_results)
     result = scan.to_dict()
     log_scan_result(result)
     return result

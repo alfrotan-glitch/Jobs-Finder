@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from dashboard import server
 from utils import tracker
+from utils.discovery import ScanResult, SourceReport
 
 
 @pytest.fixture
@@ -214,3 +215,29 @@ def test_latest_scan_endpoint_returns_backend_persisted_scan(client):
 def test_find_requires_a_profile(client):
     response = client.post("/api/find")
     assert response.status_code == 400
+
+
+def test_find_returns_authoritative_complete_scan_summary(client, monkeypatch):
+    server.PROFILE_PATH.write_text("personal: {}\n", encoding="utf-8")
+    report = SourceReport(
+        id="acbar", name="ACBAR", tier="A", attempted=True, ok=True,
+        status="PARTIAL", pages_requested=2, pages_succeeded=1, pages_failed=1,
+        pagination_stop_reason="REQUEST_FAILED", listings_seen=4,
+        listing_parse_failures=1, vacancies_parsed=2,
+        not_processed_due_to_budget=1, irrelevant_excluded=1,
+        relevant_retained=1, application_routes_found=1,
+        application_routes_unavailable=0, partial_reasons=["LISTING_PAGE_FAILURE"],
+    )
+    scan = ScanResult("PARTIAL_SCAN", [], [report], "start", "finish", "Partial")
+
+    async def fake_scan(profile):
+        return scan
+
+    monkeypatch.setattr(server, "run_discovery_scan", fake_scan)
+    response = client.post("/api/find")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source_reports"][0]["partial_reasons"] == ["LISTING_PAGE_FAILURE"]
+    assert body["summary"]["pages_requested"] == 2
+    assert body["summary"]["listings_seen"] == 4
+    assert body["summary"]["recommended_from_scan"] == 0

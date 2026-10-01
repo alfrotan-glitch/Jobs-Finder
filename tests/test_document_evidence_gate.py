@@ -199,11 +199,13 @@ def test_summary_never_hardcodes_applicant_identity_when_nothing_verified():
     assert "supervisory experience" not in summary
 
 
-def test_summary_claims_medical_doctor_only_with_verified_md():
+def test_summary_claims_medical_doctor_only_with_verified_md_without_decimal_year_claims():
     docs, _ = _docs(_mixed_profile())
     summary = docs["tailored_cv_text"].split("PROFESSIONAL SUMMARY", 1)[1].split("\n\n", 1)[0]
     assert "Medical Doctor" in summary
-    assert "years of clinical experience" in summary
+    assert "clinical" in summary.lower()
+    assert "years of clinical experience" not in summary
+    assert not __import__("re").search(r"\b\d+(?:\.\d+)?\s+years\b", summary, flags=__import__("re").I)
     assert "verified clinical" not in summary
 
 
@@ -352,4 +354,4 @@ def test_cv_import_draft_profile_produces_fully_gated_documents():
     # Draft contact data is displayed for review (never suppressed).
     assert "jane.doe@example.org" in docs["tailored_cv_text"]
     # Neutral summary, no credential headline without a verified MD.
-    assert "Applicant applying for the" in docs["tailored_cv_text"]
+    assert "Professional presenting verified qualifications" in docs["tailored_cv_text"]

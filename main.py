@@ -55,21 +55,61 @@ def _resume_text(profile: dict[str, Any]) -> str:
     return extract_resume_text(profile.get("resume_path", ""))
 
 
+def print_scan_accounting(scan: Any) -> None:
+    """Render backend-authoritative counters without reconstructing them."""
+    print("Source details:")
+    for report in scan.source_reports:
+        print(f"\nSource: {report.name}")
+        print(f"Status: {report.status}")
+        print(f"Pages: {report.pages_requested} requested / {report.pages_succeeded} succeeded / {report.pages_failed} failed")
+        print(f"Pagination: {report.pagination_stop_reason}")
+        print(f"Listings seen: {report.listings_seen}")
+        print(f"Parse failures: {report.listing_parse_failures}")
+        print(f"Vacancies parsed: {report.vacancies_parsed}")
+        print(f"Not processed due to budget: {report.not_processed_due_to_budget}")
+        print(f"Detail pages: {report.detail_pages_attempted} attempted / {report.detail_pages_succeeded} succeeded / {report.detail_pages_failed} failed")
+        print(f"Listing fallback used: {report.listing_fallback_used}")
+        print(f"Duplicates removed: {report.duplicates_removed}")
+        print(f"Expired: {report.expired_excluded}")
+        print(f"Irrelevant: {report.irrelevant_excluded}")
+        print(f"Incompatible role classification: {report.incompatible_role_classification_excluded}")
+        print(f"Source validation: {report.source_validation_excluded}")
+        print(f"Relevant retained: {report.relevant_retained}")
+        print(f"Application routes: {report.application_routes_found} found / {report.application_routes_unavailable} unavailable")
+        print(f"Partial reasons: {', '.join(report.partial_reasons) if report.partial_reasons else 'None'}")
+        if report.error:
+            print(f"Errors: {report.error}")
+    summary = scan.summary()
+    print("\nOVERALL")
+    print(f"Sources: {summary['sources_attempted']} attempted / {summary['sources_scanned']} scanned / {summary['sources_partial']} partial / {summary['sources_unavailable']} unavailable / {summary['sources_failed']} failed")
+    print(f"Pages: {summary['pages_requested']} requested / {summary['pages_succeeded']} succeeded / {summary['pages_failed']} failed")
+    for label, key in [
+        ("Listings seen", "listings_seen"), ("Parse failures", "listing_parse_failures"),
+        ("Vacancies parsed", "vacancies_parsed"), ("Not processed due to budget", "not_processed_due_to_budget"),
+        ("Duplicates removed", "duplicates_removed"), ("Expired", "expired_excluded"),
+        ("Irrelevant", "irrelevant_excluded"), ("Incompatible role classification", "incompatible_role_classification_excluded"),
+        ("Source validation", "source_validation_excluded"), ("Relevant retained", "relevant_retained"),
+    ]:
+        print(f"{label}: {summary[key]}")
+    print(f"Application routes: {summary['application_routes_found']} found / {summary['application_routes_unavailable']} unavailable")
+    print(f"Recommended from this scan: {summary['recommended_from_scan']}")
+    print(f"Readiness: {summary['ready_to_apply_from_scan']} ready / {summary['needs_verification_from_scan']} needs verification / {summary['not_eligible_from_scan']} not eligible")
+
+
 async def cmd_scan(profile: dict[str, Any]) -> dict[str, Any]:
     print("Finding Afghanistan health/medical vacancies...")
     scan = await run_discovery_scan(profile)
     resume_text = _resume_text(profile)
+    match_results = []
     for job in scan.jobs:
         log_discovered(job)
         report = match_job_against_profile(job.to_dict(), profile, resume_text=resume_text).to_dict()
+        match_results.append(report)
         log_medical_match(job.id, report)
+    scan.record_match_results(match_results)
     log_scan_result(scan.to_dict())
     print(scan.message)
-    if scan.status in {PARTIAL_SCAN, SOURCES_UNAVAILABLE}:
-        print("Source details:")
-        for report in scan.source_reports:
-            if report.error:
-                print(f"- {report.name}: {report.error}")
+    print_scan_accounting(scan)
     if scan.jobs:
         print("\nRecommended vacancies:")
         print_recommended()

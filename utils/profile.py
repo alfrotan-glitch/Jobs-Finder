@@ -440,7 +440,9 @@ def _add_license(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
             )
             if document:
                 evidence.add("license_document", document, "profile.license_registration", str(document), verified=verified)
-            elif is_verified_flag(candidate.get("document_verified")) or (verified and candidate.get("copy_available")):
+            elif is_verified_flag(candidate.get("document_verified")) or (verified and parse_tristate(candidate.get("copy_available")) is True):
+                # parse_tristate, not truthiness: copy_available: "no"/"Needs
+                # verification" must never count as an available document.
                 evidence.add("license_document", True, "profile.license_registration", "License/registration document marked available in profile", verified=verified)
         else:
             if is_unresolved_value(text):

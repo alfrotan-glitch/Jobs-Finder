@@ -95,3 +95,17 @@ def test_package_json_contains_review_warnings_for_verification(tmp_path):
 
     assert package["missing_items"]
     assert any("Clinical" in item or "experience" in item for item in package["missing_items"])
+
+
+def test_design_fonts_are_always_renderable_on_this_platform():
+    """Regression (Windows CI): _register_fonts previously returned font names
+    whose registration had silently failed on non-Linux hosts, crashing every
+    PDF export. The returned names must always be either actually registered
+    TTF fonts or ReportLab built-in standard fonts."""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.pdfmetrics import standardFonts
+
+    from utils.document_design import _register_fonts
+
+    for name in _register_fonts():
+        assert name in set(pdfmetrics.getRegisteredFontNames()) | set(standardFonts)

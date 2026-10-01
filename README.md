@@ -54,7 +54,7 @@ The launcher:
 - opens <http://localhost:8080>
 - does not run background scanning or submit applications
 
-Python support is intentionally conservative. The code was validated in this (Linux) development environment on Python 3.11. The dependency set is lightweight. `run_jobs_finder.bat` itself has not been executed on an actual Windows machine as part of this validation (this development environment has no Windows host) -- its logic has only been reviewed, not run end-to-end on Windows. If installation fails on another Python version, use Python 3.11 or 3.12 and rerun the launcher.
+Python support is intentionally conservative: Python 3.11 and 3.12. The full test suite runs in GitHub Actions CI on both Linux (`ubuntu-latest`) and Windows (`windows-latest`) for both Python versions. `run_jobs_finder.bat` itself (the venv-creating launcher script) is not executed by CI -- its logic is reviewed and covered by assertions in the test suite, but it has not been run end-to-end on an interactive Windows desktop as part of this validation. If installation fails on another Python version, use Python 3.11 or 3.12 and rerun the launcher.
 
 ## Manual setup
 
@@ -80,10 +80,12 @@ pip install -r requirements.txt -r requirements-dev.txt
 python -m pytest -q
 ```
 
-This has been run and verified on Linux. It has not been executed on Windows
-in this repository's development; the Windows one-click start script is
-reviewed for correctness but is not a substitute for actually running it on
-a Windows machine.
+The same suite also runs automatically in GitHub Actions CI
+(`.github/workflows/tests.yml`) on `ubuntu-latest` and `windows-latest`
+with Python 3.11 and 3.12 for every push and pull request to `main`, so
+test execution is verified on both Linux and Windows. The Windows one-click
+start script (`run_jobs_finder.bat`) is reviewed and assertion-covered but
+is not itself executed by CI.
 
 ## Profile/CV setup
 
@@ -179,6 +181,14 @@ The matching and document systems use:
 Vacancies classified `NOT_ELIGIBLE` do not receive an application package.
 
 Vacancies classified `NEEDS_VERIFICATION` keep visible warnings in the package so the user can verify facts before applying.
+
+### Document evidence gate
+
+Employer-facing generated documents (tailored CV and cover letter — TXT, and the DOCX/PDF renders of the same text) only print explicitly verified facts in factual sections: professional summary, experience, competencies, certifications/training, education, license/registration, Medical Exit Exam, languages, and vacancy-fit highlights. There is no hardcoded applicant description. Unverified profile/CV items are never silently promoted into factual content — they are listed in the package's review warnings instead, so nothing is lost and nothing unconfirmed is claimed.
+
+### Contact/identity rule
+
+Contact data (name, email, phone, location) from `profile.personal` is display data for the applicant's own application: it is printed in generated documents even while still a draft (for example right after a CV import), so the user can review it in place and legitimate contact data is never suppressed or invented. Display never implies verification — contact/identity facts only become verified evidence for matching via an explicit `personal.verified: true`. Known placeholder values are replaced with `CONFIRM BEFORE SUBMISSION`, and while `personal.verified` is not `true`, the application package keeps a visible "confirm identity/contact" blocker.
 
 ## Troubleshooting
 

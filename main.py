@@ -25,6 +25,7 @@ from utils.tracker import (
     list_actionable_jobs,
     log_discovered,
     log_medical_match,
+    log_scan_result,
     mark_applied_manually,
     print_stats,
     update_tailored_resume,
@@ -62,6 +63,7 @@ async def cmd_scan(profile: dict[str, Any]) -> dict[str, Any]:
         log_discovered(job)
         report = match_job_against_profile(job.to_dict(), profile, resume_text=resume_text).to_dict()
         log_medical_match(job.id, report)
+    log_scan_result(scan.to_dict())
     print(scan.message)
     if scan.status in {PARTIAL_SCAN, SOURCES_UNAVAILABLE}:
         print("Source details:")

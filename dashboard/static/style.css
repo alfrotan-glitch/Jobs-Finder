@@ -303,7 +303,26 @@ input:focus-visible { outline: 3px solid rgba(31, 95, 104, .28); outline-offset:
 .statusBadge.verified { background: var(--success-bg); border-color: rgba(47,111,82,.18); color: var(--success); }
 .statusBadge.needs_verification { background: var(--warning-bg); border-color: rgba(154,106,22,.18); color: var(--warning); }
 .statusBadge.not_eligible,
-.statusBadge.missing { background: var(--danger-bg); border-color: rgba(157,59,59,.18); color: var(--danger); }
+.statusBadge.missing,
+.statusBadge.unavailable,
+.statusBadge.failed,
+.statusBadge.sources_unavailable,
+.statusBadge.scan_failed { background: var(--danger-bg); border-color: rgba(157,59,59,.18); color: var(--danger); }
+.statusBadge.scanned,
+.statusBadge.scan_complete,
+.statusBadge.no_relevant_jobs_found { background: var(--success-bg); border-color: rgba(47,111,82,.18); color: var(--success); }
+.statusBadge.partial,
+.statusBadge.partial_scan { background: var(--warning-bg); border-color: rgba(154,106,22,.18); color: var(--warning); }
+
+.scanActivityBlock { margin: 1rem 0; }
+.scanSummaryBox { display: grid; gap: .85rem; }
+.scanOverview { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+.scanOverview p { margin: 0; color: var(--muted); line-height: 1.5; }
+.scanSourceList { display: grid; gap: .65rem; }
+.scanSourceItem { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .35rem .75rem; padding: .85rem; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-soft); }
+.scanSourceItem strong { display: block; }
+.scanSourceItem span:not(.statusBadge) { display: block; margin-top: .2rem; color: var(--muted); font-size: .82rem; overflow-wrap: anywhere; }
+.scanSourceItem p { grid-column: 1 / -1; margin: .2rem 0 0; color: var(--muted); line-height: 1.45; }
 
 .nextStepBox { min-height: 220px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
 .nextStepIcon,

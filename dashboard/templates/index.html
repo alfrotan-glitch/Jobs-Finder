@@ -38,7 +38,7 @@
           <div id="sidebarAvatar" class="avatar" aria-hidden="true">JF</div>
           <div>
             <strong id="sidebarName">Profile not loaded</strong>
-            <span id="sidebarTitle">Medical Doctor</span>
+            <span id="sidebarTitle">Professional profile</span>
           </div>
         </div>
       </div>
@@ -68,7 +68,7 @@
             <div>
               <p class="microLabel">Welcome</p>
               <h2 id="dashboardTitle">Good morning<span id="welcomeName"></span></h2>
-              <p class="heroMeta" id="welcomeMeta">Medical Doctor · Kabul, Afghanistan</p>
+              <p class="heroMeta" id="welcomeMeta">Professional profile · Location not listed</p>
               <p class="heroCopy">Find suitable opportunities, prepare stronger applications, and keep your applications organized.</p>
             </div>
             <button id="findJobs" class="primary largeAction">Find Jobs</button>
@@ -80,6 +80,17 @@
             <article class="metricCard"><span>Ready to Apply</span><strong id="metricReady">0</strong></article>
             <article class="metricCard"><span>Applications</span><strong id="metricApplications">0</strong></article>
           </div>
+
+          <section class="surfaceBlock scanActivityBlock" aria-labelledby="scanActivityTitle">
+            <div class="sectionHeader">
+              <div>
+                <p class="microLabel">Scan Activity</p>
+                <h3 id="scanActivityTitle">Last scan summary</h3>
+              </div>
+              <button class="textButton" data-tab-target="advanced">Advanced diagnostics</button>
+            </div>
+            <div id="scanSummaryBox" class="scanSummaryBox"></div>
+          </section>
 
           <div class="twoColumn dashboardGrid">
             <section class="surfaceBlock">

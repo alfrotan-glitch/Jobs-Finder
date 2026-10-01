@@ -147,12 +147,12 @@ def test_structured_education_evidence_never_leaks_internal_verified_flag_text()
         assert "Needs verification" not in quote
 
 
-def test_personal_identity_fields_require_explicit_personal_verified_flag():
+def test_personal_identity_fields_require_explicit_personal_verification():
     """CV-derived identity/contact data (name, email, phone) must not become
     verified evidence just because it is present and non-placeholder --
-    profile_builder.py extracts these directly from CV text with no
-    `personal.verified` flag, so they must stay unverified until the owner
-    explicitly confirms the whole personal block.
+    profile_builder.py extracts these directly from CV text with no verified
+    flags, so they must stay unverified until the owner explicitly confirms
+    each field (or a legacy whole personal block).
     """
     profile = {
         "personal": {
@@ -171,7 +171,26 @@ def test_personal_identity_fields_require_explicit_personal_verified_flag():
         assert not evidence.has_verified(key), f"{key} must not be verified without personal.verified: true"
 
 
-def test_personal_identity_fields_verify_once_personal_block_is_confirmed():
+def test_personal_identity_fields_verify_individually():
+    profile = {
+        "personal": {
+            "first_name": "Jane",
+            "last_name": "Doe",
+            "email": "jane.doe@example.org",
+            "gender": "female",
+            "nationality": "Afghan",
+            "location": "Kabul",
+            "verification": {"gender": True, "email": True},
+        }
+    }
+    evidence = build_profile_evidence(profile)
+    assert evidence.has_verified("gender")
+    assert evidence.has_verified("email")
+    assert not evidence.has_verified("nationality")
+    assert not evidence.has_verified("location")
+
+
+def test_personal_identity_fields_verify_once_legacy_personal_block_is_confirmed():
     profile = {
         "personal": {
             "first_name": "Jane",

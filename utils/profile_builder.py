@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from utils.resume_parser import extract_resume_text
+from utils.source_registry import source_defaults
 
 
 def _email(text: str) -> str:
@@ -82,9 +83,20 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
             "linkedin": "",
             # Explicit and unconditional: a CV import can propose a name,
             # email, and phone number, but it can never confirm them. Only
-            # the profile owner reviewing and setting this to true (by hand,
-            # or via the dashboard's confirm action) verifies this block.
-            "verified": False,
+            # the profile owner reviewing and setting a specific
+            # personal.verification.<field> flag to true verifies that fact.
+            "verified": False,  # Legacy block flag kept false; new workflow uses the per-field map below.
+            "verification": {
+                "first_name": False,
+                "last_name": False,
+                "email": False,
+                "phone": False,
+                "location": False,
+                "nationality": False,
+                "gender": False,
+                "linkedin": False,
+                "professional_title": False,
+            },
         },
         "resume_path": resume_path,
         "medical_education": [
@@ -126,8 +138,8 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
         },
         "sources": {"enabled": [], "disabled": []},
         "job_sources": {
-            "acbar": {"timeout_seconds": 25, "detail_limit": 30, "max_pages": 6, "max_detail_concurrency": 5},
-            "reliefweb": {"timeout_seconds": 25, "limit": 20},
+            "acbar": source_defaults("acbar"),
+            "reliefweb": source_defaults("reliefweb"),
         },
         "source_cv_note": "Drafted from a supplied CV. Review every field before matching or applying; missing facts remain Needs verification.",
     }

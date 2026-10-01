@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from utils import discovery
-from utils.discovery import NO_RELEVANT_JOBS_FOUND, PARTIAL_SCAN, SCAN_COMPLETE, SOURCES_UNAVAILABLE
+from utils.discovery import NO_RELEVANT_JOBS_FOUND, PARTIAL_SCAN, SOURCES_UNAVAILABLE
 
 FIXTURES = Path(__file__).parent / "fixtures" / "discovery"
 
@@ -109,7 +109,8 @@ async def test_pipeline_reports_parsed_before_relevance(monkeypatch):
         today=date(2026, 10, 1),
     )
     report = result.source_reports[0]
-    assert result.status == SCAN_COMPLETE
+    assert result.status == PARTIAL_SCAN
+    assert report.status == "PARTIAL"
     assert report.jobs_found == 6
     assert report.relevant_candidates >= 1
     assert report.final_retained == len(result.jobs)

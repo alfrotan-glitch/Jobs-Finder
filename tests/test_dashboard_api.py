@@ -105,11 +105,9 @@ def test_confirm_endpoint_flips_only_the_requested_verified_flag(client):
     assert updated["license_registration"]["verified"] is False
 
 
-def test_confirm_endpoint_supports_confirming_the_personal_block(client):
-    """personal (identity/contact/nationality/location) has no per-field
-    verified flag of its own -- one explicit confirm sets personal.verified
-    for the whole block, and review surfaces nationality/location as
-    confirmable via that same "personal" field, never auto-verified."""
+def test_confirm_endpoint_supports_confirming_one_personal_field(client):
+    """Identity/contact/nationality/location are confirmed per field so one
+    explicit click cannot silently verify unrelated personal facts."""
     profile = {
         "personal": {
             "first_name": "Jane",
@@ -125,19 +123,23 @@ def test_confirm_endpoint_supports_confirming_the_personal_block(client):
     nationality_row = next(f for f in review["fields"] if f["key"] == "nationality")
     location_row = next(f for f in review["fields"] if f["key"] == "location")
     assert nationality_row["status"] == "Needs verification"
-    assert nationality_row["confirm_field"] == "personal"
+    assert nationality_row["confirm_field"] == "personal:nationality"
     assert location_row["status"] == "Needs verification"
-    assert location_row["confirm_field"] == "personal"
+    assert location_row["confirm_field"] == "personal:location"
 
-    response = client.post("/api/profile/confirm", json={"field": "personal"})
+    response = client.post("/api/profile/confirm", json={"field": "personal:nationality"})
     assert response.status_code == 200
 
     updated = yaml.safe_load(server.PROFILE_PATH.read_text(encoding="utf-8"))
-    assert updated["personal"]["verified"] is True
+    assert updated["personal"]["verification"]["nationality"] is True
+    assert updated["personal"]["verification"].get("location") is not True
+    assert updated["personal"].get("verified") is not True
 
     review_after = client.get("/api/profile/review").json()
     nationality_row_after = next(f for f in review_after["fields"] if f["key"] == "nationality")
+    location_row_after = next(f for f in review_after["fields"] if f["key"] == "location")
     assert nationality_row_after["status"] == "Verified"
+    assert location_row_after["status"] == "Needs verification"
 
 
 def test_confirm_endpoint_supports_confirming_a_specific_language_with_level(client):
@@ -187,8 +189,26 @@ def test_settings_endpoint_reflects_acbar_budget_not_a_toggle(client):
     body = response.json()
     assert body["acbar"]["max_pages"] > 0
     assert body["acbar"]["max_detail_concurrency"] > 0
+    assert body["sources"]
+    assert all(source.get("official_url") for source in body["sources"])
     assert body["background_scanning"] is False
     assert body["automatic_submission"] is False
+
+
+def test_latest_scan_endpoint_returns_backend_persisted_scan(client):
+    assert client.get("/api/scan/latest").json()["scan"] is None
+    tracker.log_scan_result({
+        "status": "PARTIAL_SCAN",
+        "message": "Partial market scan.",
+        "started_at": "2026-10-01T00:00:00+00:00",
+        "finished_at": "2026-10-01T00:00:01+00:00",
+        "jobs": [],
+        "source_reports": [{"id": "acbar", "name": "ACBAR", "status": "PARTIAL", "listings_checked": 12}],
+        "job_count": 0,
+    })
+    body = client.get("/api/scan/latest").json()
+    assert body["scan"]["status"] == "PARTIAL_SCAN"
+    assert body["scan"]["source_reports"][0]["status"] == "PARTIAL"
 
 
 def test_find_requires_a_profile(client):

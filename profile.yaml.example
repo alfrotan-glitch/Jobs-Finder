@@ -21,12 +21,12 @@
 #     never printed as a confirmed credential in a generated CV/cover letter.
 #
 # There are TWO kinds of `verified: true` fields below:
-#   (A) A flag that sits beside ONE specific block and confirms every claim
-#       inside that block (e.g. `personal.verified`, `medical_education[].
-#       verified`, `license_registration.verified`, `medical_exit_exam.
-#       verified`, each `languages[].verified`, each `work_history[].
-#       verified`). Setting it to `true` confirms exactly that block's facts
-#       and nothing else.
+#   (A) A flag that sits beside ONE specific claim or block and confirms only
+#       that claim/block (e.g. `personal.verification.gender`,
+#       `personal.verification.email`, `medical_education[].verified`,
+#       `license_registration.verified`, `medical_exit_exam.verified`, each
+#       `languages[].verified`, each `work_history[].verified`). Setting it
+#       to `true` confirms exactly that fact/block and nothing else.
 #   (B) A small number of plain scalar number fields that have NO sibling
 #       `verified` flag at all (`clinical_experience.years`,
 #       `ngo_humanitarian_experience.years`). These are the one deliberate
@@ -45,15 +45,24 @@ personal:
   nationality: Afghan
   gender: ""   # Optional; only used for explicit gender-restricted vacancies.
   linkedin: ""
-  # `verified: true` here confirms every field in THIS personal: block above
-  # (name, email, phone, location, nationality, gender) as your own
-  # self-reported, reviewed identity/contact facts. Importing a CV fills in
-  # name/email/phone automatically but ALWAYS leaves this at `false` --
-  # only you setting it to `true` (by hand, or via the dashboard's "Mark
-  # verified" action) lets nationality/location/gender be used to satisfy a
-  # vacancy's nationality/residency/gender requirement, and lets a generated
-  # document reference these details as reviewed rather than draft.
-  verified: false   # Set to true only once you have personally confirmed this.
+  professional_title: ""  # e.g. your current reviewed professional identity/title.
+  # Confirm personal facts one field at a time. Importing a CV can fill in
+  # name/email/phone automatically, but it NEVER sets these flags. Only the
+  # specific fields below with literal `true` can be used as verified evidence
+  # for hard requirements such as gender, nationality, location/residency, or
+  # contact readiness. Confirming email does not verify gender; confirming
+  # nationality does not verify phone, etc.
+  verified: false   # Legacy block flag; leave false in new profiles and use per-field flags below.
+  verification:
+    first_name: false
+    last_name: false
+    email: false
+    phone: false
+    location: false
+    nationality: false
+    gender: false
+    linkedin: false
+    professional_title: false
 
 resume_path: ""  # Optional local CV/PDF path; profile.yaml remains source of truth.
 
@@ -179,13 +188,15 @@ sources:
   disabled: []
 
 job_sources:
+  # Optional per-source overrides. Leave empty to use the canonical defaults
+  # from utils/source_registry.py. Add only values you intentionally want to
+  # override locally.
   acbar:
-    timeout_seconds: 25
-    detail_limit: 30        # Maximum vacancy detail pages fetched per scan.
-    max_pages: 6             # Bounded pagination budget (not the whole site).
-    max_detail_concurrency: 5  # Bounded concurrent detail fetches per scan.
-    # Optional: set `urls` to pin an exact set of listing pages instead of
-    # auto-pagination, e.g. ["https://www.acbar.org/en/jobs?page=2"].
+    # timeout_seconds:
+    # detail_limit:        # Maximum vacancy detail pages fetched per scan.
+    # max_pages:           # Bounded pagination budget (not the whole site).
+    # max_detail_concurrency:
+    # urls: []             # Optional pinned listing pages instead of auto-pagination.
   reliefweb:
-    timeout_seconds: 25
-    limit: 20
+    # timeout_seconds:
+    # limit:

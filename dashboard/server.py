@@ -24,20 +24,25 @@ from utils.discovery import (
     ACBAR_DEFAULT_DETAIL_LIMIT,
     ACBAR_DEFAULT_MAX_PAGES,
     ACBAR_DEFAULT_TIMEOUT_SECONDS,
-    SOURCE_REGISTRY,
+    RELIEFWEB_DEFAULT_LIMIT,
+    RELIEFWEB_DEFAULT_TIMEOUT_SECONDS,
     run_discovery_scan,
 )
 from utils.documents import prepare_application_bundle
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
-from utils.profile import build_profile_evidence, is_unresolved_value, save_profile
+from utils.profile import PERSONAL_VERIFICATION_FIELDS, build_profile_evidence, is_unresolved_value, save_profile
+from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
 from utils.profile_builder import build_profile_from_cv_file
 from utils.resume_parser import extract_resume_text
 from utils.tracker import (
     get_job_by_id,
+    get_latest_scan,
     get_recommended_jobs,
     list_actionable_jobs,
+    list_recent_scans,
     log_discovered,
     log_medical_match,
+    log_scan_result,
     mark_applied_manually,
     stats,
     update_tailored_resume,
@@ -62,10 +67,12 @@ def load_profile(required: bool = False) -> dict[str, Any]:
 
 def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
-    professional_title = personal.get("professional_title") or profile.get("professional_title") or "Medical Doctor"
+    professional_title: Any = personal.get("professional_title") or profile.get("professional_title") or ""
+    if isinstance(professional_title, dict):
+        professional_title = professional_title.get("text") or professional_title.get("value") or professional_title.get("title") or ""
     return {
         "name": " ".join(str(personal.get(key, "")).strip() for key in ["first_name", "last_name"]).strip(),
-        "title": professional_title if isinstance(professional_title, str) else "Medical Doctor",
+        "title": professional_title if isinstance(professional_title, str) else "",
         "email": personal.get("email", ""),
         "phone": personal.get("phone", ""),
         "location": personal.get("location", ""),
@@ -197,34 +204,35 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
 # or None when no one-click confirm is available for it yet (those facts
 # still require editing profile.yaml directly).
 REVIEW_FIELDS: list[tuple[str, str, str | None]] = [
+    ("professional_title", "Professional identity/title", "professional_title"),
+    ("first_name", "First name", "personal:first_name"),
+    ("last_name", "Last name", "personal:last_name"),
+    ("email", "Email address", "personal:email"),
+    ("phone", "Phone number", "personal:phone"),
+    ("gender", "Gender", "personal:gender"),
+    ("nationality", "Nationality", "personal:nationality"),
+    ("location", "Current location", "personal:location"),
     ("md_degree", "Medical degree (MD)", "medical_education"),
     ("license_registration", "Medical license / registration", "license_registration"),
     ("medical_exit_exam", "Medical Exit Exam", "medical_exit_exam"),
     ("language_english", "English language", "language:English"),
     ("language_dari", "Dari language", "language:Dari"),
     ("language_pashto", "Pashto language", "language:Pashto"),
-    ("nationality", "Nationality", "personal"),
-    ("location", "Current location", "personal"),
     ("willing_to_relocate", "Willing to relocate", None),
     ("field_deployment", "Field deployment availability", None),
 ]
 
 # Allow-listed fields a user can explicitly confirm from the browser. Each
 # entry mutates only the matching `verified` flag inside profile.yaml -- it
-# never invents a value, a number, a date, or a document.
-#
-# "personal" confirms the whole personal: block in one action (name, email,
-# phone, gender, nationality, location) -- the same convention as
-# medical_education/license_registration/medical_exit_exam below, where one
-# explicit user click sets exactly one `verified: true` flag and nothing
-# else. willing_to_relocate/field_deployment remain intentionally outside
-# this list: they live under preferences as free-text tri-state answers with
-# no dedicated verified flag of their own, so they still require a direct
-# profile.yaml edit to resolve.
-CONFIRMABLE_FIELDS = {"medical_education", "license_registration", "medical_exit_exam", "personal"}
+# never invents a value, a number, a date, or a document. Personal fields are
+# confirmed one at a time under personal.verification.<field>, so confirming
+# an email cannot silently verify gender, nationality, or location.
+CONFIRMABLE_FIELDS = {"medical_education", "license_registration", "medical_exit_exam", "professional_title"}
 
 
 def _is_confirmable(field: str) -> bool:
+    if field.startswith("personal:"):
+        return field.split(":", 1)[1] in PERSONAL_VERIFICATION_FIELDS
     return field in CONFIRMABLE_FIELDS or field.startswith("language:")
 
 
@@ -239,16 +247,18 @@ def _field_status(evidence, key: str) -> str:
 def _profile_review_payload(profile: dict[str, Any]) -> dict[str, Any]:
     resume_text = extract_resume_text(profile.get("resume_path", ""))
     evidence = build_profile_evidence(profile, resume_text=resume_text)
-    fields = [
-        {
-            "key": key,
-            "label": label,
-            "status": _field_status(evidence, key),
-            "evidence": evidence.evidence_text(key)[:2],
-            "confirm_field": confirm_field,
-        }
-        for key, label, confirm_field in REVIEW_FIELDS
-    ]
+    fields = []
+    for key, label, confirm_field in REVIEW_FIELDS:
+        status = _field_status(evidence, key)
+        fields.append(
+            {
+                "key": key,
+                "label": label,
+                "status": status,
+                "evidence": evidence.evidence_text(key)[:2],
+                "confirm_field": confirm_field if status != "Missing" else None,
+            }
+        )
     return {
         "is_draft": str(profile.get("profile_status", "")).upper() == "DRAFT",
         "draft_note": profile.get("profile_status_note", ""),
@@ -347,6 +357,36 @@ async def api_profile_confirm(request: Request):
                     matched = True
         if not matched:
             raise HTTPException(status_code=400, detail=f"No '{name}' entry found in profile.yaml languages.")
+    elif field.startswith("personal:"):
+        key = field.split(":", 1)[1].strip()
+        personal = profile.setdefault("personal", {})
+        if not isinstance(personal, dict):
+            raise HTTPException(status_code=400, detail="personal is not a mapping in profile.yaml.")
+        value = personal.get(key)
+        if value in (None, "") or is_unresolved_value(value):
+            raise HTTPException(status_code=400, detail=f"personal.{key} has no resolved value to verify.")
+        verification = personal.setdefault("verification", {})
+        if not isinstance(verification, dict):
+            raise HTTPException(status_code=400, detail="personal.verification is not a mapping in profile.yaml.")
+        verification[key] = True
+    elif field == "professional_title":
+        personal = profile.get("personal") if isinstance(profile.get("personal"), dict) else {}
+        if personal.get("professional_title") and not is_unresolved_value(personal.get("professional_title")):
+            verification = personal.setdefault("verification", {})
+            if not isinstance(verification, dict):
+                raise HTTPException(status_code=400, detail="personal.verification is not a mapping in profile.yaml.")
+            verification["professional_title"] = True
+        else:
+            title = profile.get("professional_title")
+            if isinstance(title, dict):
+                value = title.get("text") or title.get("value") or title.get("title")
+                if not value or is_unresolved_value(value):
+                    raise HTTPException(status_code=400, detail="professional_title has no resolved value to verify.")
+                title["verified"] = True
+            elif title and not is_unresolved_value(title):
+                profile["professional_title"] = {"value": str(title), "verified": True}
+            else:
+                raise HTTPException(status_code=400, detail="professional_title has no resolved value to verify.")
     elif field == "medical_education":
         target = profile.get(field)
         if not isinstance(target, list) or not target:
@@ -408,17 +448,17 @@ def api_settings():
     acbar_cfg = ((profile.get("job_sources") or {}).get("acbar") or {}) if isinstance(profile, dict) else {}
     reliefweb_cfg = ((profile.get("job_sources") or {}).get("reliefweb") or {}) if isinstance(profile, dict) else {}
     return {
-        "sources": [{"id": source_id, "name": spec["name"], "tier": spec["tier"], "active": spec.get("active", False)} for source_id, spec in SOURCE_REGISTRY.items()],
+        "sources": source_registry_for_settings(),
         "acbar": {
             "max_pages": acbar_cfg.get("max_pages", ACBAR_DEFAULT_MAX_PAGES),
             "detail_limit": acbar_cfg.get("detail_limit", ACBAR_DEFAULT_DETAIL_LIMIT),
             "max_detail_concurrency": acbar_cfg.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY),
             "timeout_seconds": acbar_cfg.get("timeout_seconds", ACBAR_DEFAULT_TIMEOUT_SECONDS),
-            "note": "Bounded pagination budget -- not a claim that the entire ACBAR archive is scanned on every run.",
+            "note": (SOURCE_REGISTRY.get("acbar", {}).get("settings_note") or "Bounded scan budget -- not a claim that the entire source archive is scanned on every run."),
         },
         "reliefweb": {
-            "limit": reliefweb_cfg.get("limit", 20),
-            "timeout_seconds": reliefweb_cfg.get("timeout_seconds", 25),
+            "limit": reliefweb_cfg.get("limit", RELIEFWEB_DEFAULT_LIMIT),
+            "timeout_seconds": reliefweb_cfg.get("timeout_seconds", RELIEFWEB_DEFAULT_TIMEOUT_SECONDS),
         },
         "background_scanning": False,
         "automatic_submission": False,
@@ -440,6 +480,16 @@ def api_stats():
     return stats()
 
 
+@app.get("/api/scan/latest")
+def api_scan_latest():
+    return {"scan": get_latest_scan()}
+
+
+@app.get("/api/scans")
+def api_scans(limit: int = 10):
+    return {"scans": list_recent_scans(limit=limit)}
+
+
 @app.post("/api/find")
 async def api_find():
     profile = load_profile(True)
@@ -449,7 +499,9 @@ async def api_find():
         log_discovered(job)
         report = match_job_against_profile(job.to_dict(), profile, resume_text=resume_text).to_dict()
         log_medical_match(job.id, report)
-    return scan.to_dict()
+    result = scan.to_dict()
+    log_scan_result(result)
+    return result
 
 
 @app.get("/api/jobs/{job_id}")

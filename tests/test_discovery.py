@@ -40,6 +40,33 @@ async def test_partial_scan_keeps_successful_jobs(monkeypatch):
     assert len(result.jobs) == 1
     assert result.failed_sources == 1
     assert result.successful_sources == 1
+    failed_report = next(report for report in result.source_reports if report.id == "bad")
+    assert failed_report.status == "UNAVAILABLE"
+    assert failed_report.error == "blocked"
+    assert "jobs" not in failed_report.error.lower()
+
+
+@pytest.mark.asyncio
+async def test_scan_report_counts_exclusions_without_calling_failure_zero_jobs(monkeypatch):
+    async def mixed(profile):
+        return [
+            Job("md", "Medical Officer", "Clinic", "Kabul", "https://example.org/md", "hr@example.org", "mixed", "MD required. Apply to hr@example.org by 2026-12-31.", metadata={"source_name": "ACBAR", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/md"}),
+            Job("ph", "Pharmacist", "Pharmacy", "Kabul", "https://example.org/ph", "hr@example.org", "mixed", "B.Sc. in Pharmacy required. Apply to hr@example.org by 2026-12-31.", metadata={"source_name": "ACBAR", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/ph"}),
+            Job("dup", "Medical Officer", "Clinic", "Kabul", "https://example.org/md?utm=1", "hr@example.org", "mixed", "MD required. Apply to hr@example.org by 2026-12-31.", metadata={"source_name": "ACBAR", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/md?utm=1"}),
+            Job("old", "Medical Officer", "Clinic", "Kabul", "https://example.org/old", "hr@example.org", "mixed", "MD required. Apply to hr@example.org by 2020-01-01.", metadata={"source_name": "ACBAR", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/old", "closing_date": "2020-01-01"}),
+        ]
+
+    monkeypatch.setitem(discovery.SOURCE_REGISTRY, "mixed", {"name": "Mixed", "tier": "A", "fetcher": "mixed", "active": True, "official_url": "https://example.org/jobs"})
+    monkeypatch.setattr(discovery, "mixed", mixed, raising=False)
+    result = await run_discovery_scan({"sources": {"enabled": ["mixed"]}})
+
+    report = result.source_reports[0]
+    assert report.status == "SCANNED"
+    assert report.incompatible_professional_role_excluded == 1
+    assert report.duplicates_removed == 1
+    assert report.expired_stale_excluded == 1
+    assert report.relevant_retained == 1
+    assert len(result.jobs) == 1
 
 
 @pytest.mark.asyncio

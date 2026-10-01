@@ -106,6 +106,26 @@ function methodDescription(job) {
   return "Application route unavailable";
 }
 
+function scanStatusLabel(status) {
+  if (status === "SCANNED") return "Scanned";
+  if (status === "PARTIAL") return "Partial";
+  if (status === "UNAVAILABLE") return "Unavailable";
+  if (status === "FAILED") return "Failed";
+  return friendlyStatus(status || "Not run");
+}
+
+function sourceSummaryLine(source) {
+  const parts = [];
+  if (Number.isFinite(Number(source.listings_checked))) parts.push(`${Number(source.listings_checked)} listings checked`);
+  if (Number(source.relevant_retained ?? source.final_retained ?? 0)) parts.push(`${Number(source.relevant_retained ?? source.final_retained)} relevant`);
+  if (Number(source.incompatible_professional_role_excluded || 0)) parts.push(`${Number(source.incompatible_professional_role_excluded)} excluded as incompatible`);
+  if (Number(source.expired_stale_excluded || 0)) parts.push(`${Number(source.expired_stale_excluded)} expired/stale`);
+  if (Number(source.duplicates_removed || 0)) parts.push(`${Number(source.duplicates_removed)} duplicates`);
+  if (Number(source.application_routes_discovered || 0)) parts.push(`${Number(source.application_routes_discovered)} application routes`);
+  if (!source.ok && source.status) parts.push("not counted as zero jobs");
+  return parts.join(" · ") || "No retained vacancies from this source.";
+}
+
 function requirementsByStatus(job, status) {
   return (job.match?.requirement_matches || []).filter((item) => item.status === status);
 }
@@ -204,13 +224,41 @@ function renderMetrics() {
   $("metricApplications").textContent = applications;
 }
 
+function renderScanSummary() {
+  const box = $("scanSummaryBox");
+  if (!box) return;
+  const scan = state.lastScan;
+  if (!scan) {
+    box.innerHTML = `<p class="sectionHelp">No scan has run yet. Run Find Jobs to see source-by-source activity.</p>`;
+    return;
+  }
+  const reports = scan.source_reports || [];
+  const timeRange = [scan.started_at, scan.finished_at].filter(Boolean).join(" → ");
+  const rows = reports.map((source) => `
+    <div class="scanSourceItem">
+      <div>
+        <strong>${escapeHtml(source.name || source.id || "Source")}</strong>
+        <span>${escapeHtml(source.source_url || "Official source URL not listed")}</span>
+      </div>
+      <span class="statusBadge ${statusClass(source.status || (source.ok ? "SCANNED" : "UNAVAILABLE"))}">${escapeHtml(scanStatusLabel(source.status || (source.ok ? "SCANNED" : "UNAVAILABLE")))}</span>
+      <p>${escapeHtml(sourceSummaryLine(source))}</p>
+    </div>`).join("");
+  box.innerHTML = `
+    <div class="scanOverview">
+      <span class="statusBadge ${statusClass(scan.status)}">${escapeHtml(friendlyStatus(scan.status))}</span>
+      <p>${escapeHtml(scan.message || "Scan completed.")}</p>
+      ${timeRange ? `<p class="sectionHelp">${escapeHtml(timeRange)}</p>` : ""}
+    </div>
+    <div class="scanSourceList">${rows || `<p class="sectionHelp">No source reports were returned by the backend.</p>`}</div>`;
+}
+
 function renderNextStep() {
   const box = $("nextStepBox");
   if (state.lastScan?.status === "SOURCES_UNAVAILABLE" || state.lastScan?.status === "PARTIAL_SCAN") {
     box.innerHTML = `
       <div class="nextStepIcon warn" aria-hidden="true">!</div>
       <h4>Job sources could not be reached</h4>
-      <p>ACBAR and/or ReliefWeb could not be contacted during the last scan. This does not mean there are no jobs.</p>
+      <p>One or more configured job sources could not be contacted during the last scan. This does not mean there are no jobs.</p>
       <button class="secondary" data-tab-target="advanced">View details</button>`;
     return;
   }
@@ -284,8 +332,8 @@ function renderApplications() {
 function renderProfileIdentity() {
   const summary = state.profile?.summary || {};
   const name = summary.name || "Profile not loaded";
-  const title = summary.title || "Medical Doctor";
-  const location = summary.location || "Kabul, Afghanistan";
+  const title = summary.title || "Professional profile";
+  const location = summary.location || "Location not listed";
   const avatarText = initials(name);
   $("sidebarName").textContent = name;
   $("sidebarTitle").textContent = title.split("|")[0].trim() || title;
@@ -313,7 +361,7 @@ function renderProfileDetails() {
     <div>
       <p class="microLabel">My Profile</p>
       <h2>${escapeHtml(summary.name || "Professional profile")}</h2>
-      <p>${escapeHtml(summary.title || "Medical Doctor")} · ${escapeHtml(summary.location || "Location not listed")}</p>
+      <p>${escapeHtml(summary.title || "Professional profile")} · ${escapeHtml(summary.location || "Location not listed")}</p>
       <div class="profileContact"><span>${escapeHtml(summary.email || "Email not set")}</span><span>${escapeHtml(summary.phone || "Phone not set")}</span></div>
     </div>`;
   $("profileSummaryBox").innerHTML = `<p>${escapeHtml(details.professional_summary || "No professional summary available.")}</p>`;
@@ -400,8 +448,10 @@ function renderAdvanced() {
     $("advancedSources").innerHTML = reports.map((source) => `
       <div class="sourceRow">
         <strong>${escapeHtml(source.name)}</strong>
-        <span class="statusBadge ${source.ok ? "ready_to_apply" : "not_eligible"}">${source.ok ? "Reachable" : "Failed"}</span>
-        ${source.error ? `<p>${escapeHtml(source.error)}</p>` : `<p>${escapeHtml(source.jobs_found || 0)} parsed · ${escapeHtml(source.relevant_candidates || 0)} relevant · ${escapeHtml(source.final_retained || 0)} retained</p>`}
+        <span class="statusBadge ${statusClass(source.status || (source.ok ? "SCANNED" : "UNAVAILABLE"))}">${escapeHtml(scanStatusLabel(source.status || (source.ok ? "SCANNED" : "UNAVAILABLE")))}</span>
+        <p>${escapeHtml(source.listings_checked || 0)} listings checked · ${escapeHtml(source.vacancies_parsed || source.jobs_found || 0)} parsed · ${escapeHtml(source.relevant_retained ?? source.final_retained ?? 0)} retained</p>
+        <p class="sectionHelp">${escapeHtml(sourceSummaryLine(source))}</p>
+        ${source.source_url ? `<p class="sectionHelp">Official source: ${escapeHtml(source.source_url)}</p>` : ""}
         ${source.timestamp ? `<p class="sectionHelp">Checked ${escapeHtml(source.timestamp)}</p>` : ""}
       </div>`).join("") || `<p class="sectionHelp">No source report available.</p>`;
     const returnedJobs = scan.job_count ?? scan.jobs?.length ?? 0;
@@ -423,6 +473,7 @@ function renderAdvanced() {
 function renderAll() {
   renderProfileIdentity();
   renderMetrics();
+  renderScanSummary();
   renderJobLists();
   renderApplications();
   renderProfileDetails();
@@ -563,13 +614,14 @@ async function apiJson(url, options = {}) {
 
 async function refresh() {
   setLoadingLists();
-  const [recommended, jobs, profile, details, review, settings] = await Promise.all([
+  const [recommended, jobs, profile, details, review, settings, latestScan] = await Promise.all([
     apiJson("/api/recommended"),
     apiJson("/api/jobs"),
     apiJson("/api/profile"),
     apiJson("/api/profile/details"),
     apiJson("/api/profile/review"),
     apiJson("/api/settings"),
+    apiJson("/api/scan/latest"),
   ]);
   state.recommended = recommended.jobs || [];
   state.jobs = jobs.jobs || [];
@@ -577,6 +629,7 @@ async function refresh() {
   state.profileDetails = details;
   state.profileReview = review;
   state.settings = settings;
+  state.lastScan = latestScan.scan || state.lastScan;
   renderAll();
 }
 
@@ -592,7 +645,8 @@ async function findJobs() {
     const data = await apiJson("/api/find", { method: "POST" });
     state.lastScan = data;
     $("advancedLog").textContent = JSON.stringify(data, null, 2);
-    const kind = data.status === "SCAN_COMPLETE" ? "ok" : data.status === "PARTIAL_SCAN" ? "warn" : "error";
+    const okStatuses = new Set(["SCAN_COMPLETE", "NO_RELEVANT_JOBS_FOUND"]);
+    const kind = okStatuses.has(data.status) ? "ok" : data.status === "PARTIAL_SCAN" ? "warn" : "error";
     const message = data.status === "SOURCES_UNAVAILABLE" ? "Job sources could not be reached. Details are available in Advanced." : (data.message || friendlyStatus(data.status));
     setStatus(message, kind);
     await refresh();

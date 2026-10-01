@@ -87,6 +87,20 @@ def get_db() -> sqlite3.Connection:
         conn.execute("ALTER TABLE vacancies ADD COLUMN package_status TEXT DEFAULT 'NOT_CREATED'")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_status ON vacancies(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_readiness ON vacancies(readiness)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS scan_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            status TEXT NOT NULL,
+            message TEXT DEFAULT '',
+            started_at TEXT DEFAULT '',
+            finished_at TEXT DEFAULT '',
+            result_json TEXT NOT NULL,
+            created_at TEXT DEFAULT ''
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_runs_created ON scan_runs(created_at)")
     conn.commit()
     return conn
 
@@ -126,6 +140,72 @@ def _json(value: Any) -> dict[str, Any]:
 
 def _job_dict(job: Any) -> dict[str, Any]:
     return job.to_dict() if hasattr(job, "to_dict") else dict(job)
+
+
+def log_scan_result(result: Any) -> int:
+    """Persist one backend-authoritative discovery scan summary."""
+    data = result.to_dict() if hasattr(result, "to_dict") else dict(result or {})
+    timestamp = now_iso()
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            """
+            INSERT INTO scan_runs (status, message, started_at, finished_at, result_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(data.get("status") or ""),
+                str(data.get("message") or ""),
+                str(data.get("started_at") or ""),
+                str(data.get("finished_at") or ""),
+                json.dumps(data, ensure_ascii=False),
+                timestamp,
+            ),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def _scan_row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    data = dict(row)
+    result = _json(data.pop("result_json", ""))
+    if result:
+        result.setdefault("scan_id", data.get("id"))
+        result.setdefault("created_at", data.get("created_at"))
+        return result
+    return {
+        "scan_id": data.get("id"),
+        "status": data.get("status", ""),
+        "message": data.get("message", ""),
+        "started_at": data.get("started_at", ""),
+        "finished_at": data.get("finished_at", ""),
+        "created_at": data.get("created_at", ""),
+        "source_reports": [],
+        "jobs": [],
+        "job_count": 0,
+    }
+
+
+def get_latest_scan() -> dict[str, Any] | None:
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1").fetchone()
+        return _scan_row_to_dict(row)
+    finally:
+        conn.close()
+
+
+def list_recent_scans(limit: int = 10) -> list[dict[str, Any]]:
+    conn = get_db()
+    try:
+        rows = conn.execute("SELECT * FROM scan_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [scan for row in rows if (scan := _scan_row_to_dict(row)) is not None]
+    finally:
+        conn.close()
 
 
 def readiness_to_status(readiness: str) -> str:
@@ -308,6 +388,7 @@ def delete_all() -> int:
     try:
         count = conn.execute("SELECT COUNT(*) FROM vacancies").fetchone()[0]
         conn.execute("DELETE FROM vacancies")
+        conn.execute("DELETE FROM scan_runs")
         conn.commit()
         return int(count)
     finally:

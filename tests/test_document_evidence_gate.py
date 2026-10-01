@@ -261,24 +261,24 @@ def test_placeholder_contact_data_is_replaced_with_review_marker():
     assert "CONFIRM BEFORE SUBMISSION" in cv
 
 
-def test_unconfirmed_personal_block_keeps_visible_package_blocker():
+def test_unconfirmed_personal_fields_keep_visible_package_blocker():
     profile = _mixed_profile()
     profile["personal"]["verified"] = False
     job = _job()
     report = match_job_against_profile(job, profile, today=date(2026, 10, 1)).to_dict()
     docs = generate_tailored_documents(job, profile, report)
     package = generate_application_package(job, profile, report, docs)
-    assert any("personal.verified" in item for item in package["missing_items"])
+    assert any("Identity/contact details reviewed and confirmed" in item for item in package["missing_items"])
     assert package["package_status"] == "NEEDS_USER_INPUT"
 
 
-def test_confirmed_personal_block_has_no_identity_blocker():
+def test_confirmed_personal_fields_have_no_identity_blocker():
     profile = _mixed_profile()
     job = _job()
     report = match_job_against_profile(job, profile, today=date(2026, 10, 1)).to_dict()
     docs = generate_tailored_documents(job, profile, report)
     package = generate_application_package(job, profile, report, docs)
-    assert not any("personal.verified" in item for item in package["missing_items"])
+    assert not any("Identity/contact details reviewed and confirmed" in item for item in package["missing_items"])
 
 
 # ---------------------------------------------------------------------------

@@ -170,6 +170,29 @@ def test_female_only_submission_guideline_blocks_verified_male():
     assert any(item["key"] == "gender_requirement" and item["status"] == "Not met" for item in report["requirement_matches"])
 
 
+def test_per_field_verified_gender_blocks_incompatible_gender_requirement():
+    profile = md_profile(
+        personal={
+            "first_name": "Jane",
+            "last_name": "Doe",
+            "email": "doctor@example.org",
+            "gender": "male",
+            "nationality": "Afghan",
+            "verification": {"gender": True, "nationality": True},
+        }
+    )
+    report = match_job_against_profile(
+        job(
+            "Job Requirements Graduated from recognized medical university. Apply to hr@example.org by 2026-10-08.",
+            title="Medical Doctor (Female)",
+        ),
+        profile,
+        today=TODAY,
+    ).to_dict()
+    assert report["readiness_status"] == NOT_ELIGIBLE_STATUS
+    assert any(item["key"] == "gender_requirement" and item["status"] == "Not met" for item in report["requirement_matches"])
+
+
 def test_unverified_gender_still_never_excludes():
     # Strictness must not flip the other way: with an UNVERIFIED gender the
     # same female-only vacancy is NEEDS_VERIFICATION, never NOT_MET/MET.

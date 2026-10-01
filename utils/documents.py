@@ -30,12 +30,13 @@ CONTACT/IDENTITY CONTRACT (single rule for employer-facing contact data):
   legitimate contact data must never be suppressed or invented.
 * Display never implies verification: contact/identity values only become
   verified evidence for matching (gender/nationality/location requirements)
-  via an explicit ``personal.verified: true`` (see utils.profile).
+  via explicit personal-field verification (``personal.verification.<field>:
+  true``; legacy ``personal.verified: true`` is still honored).
 * Known placeholder contact values are replaced with the explicit review
   marker ``CONFIRM BEFORE SUBMISSION`` so a fake address can never be sent.
-* While ``personal.verified`` is not ``true``, the application package keeps
-  a blocking "confirm identity/contact" item, so a draft import is visible
-  as unresolved and the package is never presented as fully ready.
+* While identity/contact fields are not explicitly verified, the application
+  package keeps a blocking "confirm identity/contact" item, so a draft import
+  is visible as unresolved and the package is never presented as fully ready.
 """
 
 from __future__ import annotations
@@ -47,7 +48,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from utils.medical_matcher import MET, NEEDS_VERIFICATION, NOT_ELIGIBLE_STATUS, NOT_MET
-from utils.profile import build_profile_evidence, is_unresolved_value, is_verified_flag, parse_profile_date
+from utils.profile import build_profile_evidence, is_unresolved_value, is_verified_flag, parse_profile_date, personal_field_is_verified
 
 
 def _full_name(profile: dict[str, Any]) -> str:
@@ -118,7 +119,7 @@ def _contact_lines(profile: dict[str, Any]) -> list[str]:
     in place, and legitimate contact data is never suppressed), but known
     placeholder values are replaced with the explicit CONFIRM BEFORE
     SUBMISSION marker, and nothing here ever counts as verified evidence --
-    only ``personal.verified: true`` does that (see utils.profile).
+    only explicit personal-field verification does that (see utils.profile).
     """
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     lines = []
@@ -650,7 +651,7 @@ def _verified_profile_title(profile: dict[str, Any], evidence) -> str:
     """Return a profile-owner-confirmed professional title, if available."""
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     candidates: list[tuple[Any, bool]] = []
-    candidates.append((personal.get("professional_title"), is_verified_flag(personal.get("verified"))))
+    candidates.append((personal.get("professional_title"), personal_field_is_verified(profile, "professional_title")))
     title = profile.get("professional_title")
     if isinstance(title, dict):
         candidates.append((title.get("text") or title.get("value") or title.get("title"), is_verified_flag(title.get("verified"))))
@@ -1346,11 +1347,14 @@ def generate_application_package(
     if not personal.get("phone") or _is_placeholder_contact(personal.get("phone"), "phone"):
         missing.append("Confirmed phone number")
     # CONTACT/IDENTITY CONTRACT: draft (e.g. CV-imported) contact data is
-    # displayed in the documents for review, but until the owner explicitly
-    # confirms the personal block it remains a visible blocker -- it never
-    # silently becomes confirmed application data.
-    if not is_verified_flag(personal.get("verified")):
-        missing.append("Identity/contact details reviewed and confirmed (set personal.verified: true after review)")
+    # displayed in the documents for review, but each identity/contact field
+    # stays a visible blocker until explicitly confirmed. A legacy
+    # personal.verified: true profile still satisfies this check, but new
+    # dashboard confirmations write personal.verification.<field>: true.
+    identity_fields = ["first_name", "last_name", "email", "phone"]
+    unverified_identity = [field for field in identity_fields if personal.get(field) and not personal_field_is_verified(profile, field)]
+    if unverified_identity:
+        missing.append("Identity/contact details reviewed and confirmed")
     for item in blocking_user_inputs + [m for m in missing if m not in blocking_user_inputs]:
         action = f"Provide/confirm: {item}"
         if action not in user_actions:

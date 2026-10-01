@@ -17,6 +17,8 @@ from datetime import date
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
+from utils.source_registry import canonical_source_name
+
 
 NUMBER_WORDS = {
     "one": 1,
@@ -803,11 +805,7 @@ def canonical_source_fields(job: Any) -> dict[str, Any]:
     metadata = _metadata_from_job(job)
     title = _first_string(_job_get(job, "title"), metadata.get("title"))
     employer = _first_string(_job_get(job, "company"), _job_get(job, "organization"), metadata.get("company"), metadata.get("organization"), metadata.get("employer"))
-    source_name = _first_string(_job_get(job, "source_name"), metadata.get("source_name"), metadata.get("source"), _job_get(job, "platform"), _job_get(job, "source"))
-    if source_name.lower() == "acbar":
-        source_name = "ACBAR"
-    elif source_name.lower() == "reliefweb":
-        source_name = "ReliefWeb"
+    source_name = canonical_source_name(_first_string(_job_get(job, "source_name"), metadata.get("source_name"), metadata.get("source"), _job_get(job, "platform"), _job_get(job, "source")))
 
     source_url = _first_valid_http(
         _job_get(job, "source_url"),

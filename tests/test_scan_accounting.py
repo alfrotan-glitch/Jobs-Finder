@@ -4,7 +4,7 @@ import pytest
 
 import main
 from utils import discovery
-from utils.discovery import Job, ScanResult, SourceReport, SourceScanMetrics, run_discovery_scan
+from utils.discovery import Job, ScanResult, SourceReport, run_discovery_scan
 
 
 def _job(identifier, title="Medical Officer", url=None, description="MD required. Apply to hr@example.org.", **metadata):

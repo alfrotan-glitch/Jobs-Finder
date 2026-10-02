@@ -633,7 +633,7 @@ def _source_overrides(profile: dict[str, Any], source_id: str) -> dict[str, Any]
     """
     raw = (profile.get("job_sources") or {}) if isinstance(profile, dict) else {}
     cfg = raw.get(source_id) if isinstance(raw, dict) else {}
-    if cfg in (None, {}):
+    if not cfg:  # missing, null, "", false, [] — historically: no overrides
         return {}
     if not isinstance(cfg, dict):
         raise ValueError(f"job_sources.{source_id} must be a mapping")

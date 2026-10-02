@@ -12,7 +12,7 @@ from typing import Any
 
 import yaml
 
-from utils.discovery import PARTIAL_SCAN, SOURCES_UNAVAILABLE, run_discovery_scan
+from utils.discovery import run_discovery_scan
 from utils.documents import prepare_application_bundle
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.profile import save_profile

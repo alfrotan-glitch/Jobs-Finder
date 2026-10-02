@@ -26,7 +26,6 @@ import pytest
 
 import main
 from utils import discovery
-from utils.discovery import Job
 from utils.profile_builder import build_profile_from_cv_text
 from utils.source_registry import (
     normalize_profile_source_budgets,
@@ -147,6 +146,16 @@ def test_verbatim_legacy_block_is_stripped_with_report():
     effective, removed = normalize_source_overrides("acbar", dict(LEGACY_ACBAR_BLOCK))
     assert "max_pages" not in effective and "detail_limit" not in effective
     assert removed == {"max_pages": 6, "detail_limit": 30}
+
+
+def test_falsy_override_forms_mean_no_overrides():
+    """Behavioral parity: `job_sources.acbar:` (null), "", false, [] never crash."""
+    for falsy in (None, "", False, []):
+        assert discovery._source_overrides({"job_sources": {"acbar": falsy}}, "acbar") == {}
+    assert discovery._source_overrides({}, "acbar") == {}
+    assert discovery._source_overrides({"personal": {}}, "acbar") == {}
+    with pytest.raises(ValueError):
+        discovery._source_overrides({"job_sources": {"acbar": "yes"}}, "acbar")
 
 
 def test_user_modified_block_is_never_touched():

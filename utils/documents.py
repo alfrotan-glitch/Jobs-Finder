@@ -875,7 +875,6 @@ def generate_tailored_documents(
 
     focus_labels = _focus_labels(match_report)
     focus_phrases = _job_focus_phrases(job, match_report)
-    matched_sentence = ", ".join(focus_phrases[:5]) if focus_phrases else _requirement_summary_phrase(match_report)
     vacancy_highlights = _vacancy_fit_highlights(profile, job, match_report, limit=6)
 
     # DOCUMENT EVIDENCE GATE: every factual section below is restricted to

@@ -20,7 +20,8 @@ import httpx
 from bs4 import BeautifulSoup
 
 from utils.medical_requirements import AFGHAN_PROVINCES, analyze_professional_role, canonical_source_fields, extract_requirements_from_job, has_actionable_source, looks_medical, parse_closing_date, strip_html
-from utils.source_registry import SOURCE_REGISTRY, source_defaults, source_display_name, source_official_url
+from utils.recommendations import collect_scan_recommendations, iter_match_pairs
+from utils.source_registry import SOURCE_REGISTRY, normalize_source_overrides, source_defaults, source_display_name, source_official_url
 
 SCAN_COMPLETE = "SCAN_COMPLETE"
 NO_RELEVANT_JOBS_FOUND = "NO_RELEVANT_JOBS_FOUND"
@@ -237,6 +238,11 @@ class ScanResult:
     ready_to_apply_from_scan: int = 0
     needs_verification_from_scan: int = 0
     not_eligible_from_scan: int = 0
+    # The single authoritative recommendation collection for this scan. The
+    # summary count, the CLI list, the dashboard view, and persisted scan
+    # activity are all derived from THIS list (utils/recommendations.py), so
+    # recommended_from_scan == len(recommendations) holds by construction.
+    recommendations: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def successful_sources(self) -> int:
@@ -246,13 +252,24 @@ class ScanResult:
     def failed_sources(self) -> int:
         return sum(1 for report in self.source_reports if report.attempted and not report.ok)
 
-    def record_match_results(self, results: list[dict[str, Any]]) -> None:
-        """Attach matcher outcomes for only the jobs retained by this scan."""
-        statuses = [str(item.get("readiness_status") or "") for item in results]
+    def record_match_results(self, results: list[Any]) -> None:
+        """Attach matcher outcomes for only the jobs retained by this scan.
+
+        ``results`` must be (job, match) pairs. Readiness counters count every
+        retained job, while ``recommendations`` is built once by the shared
+        recommendation authority (utils/recommendations.py): readiness in
+        {READY_TO_APPLY, NEEDS_VERIFICATION} AND a positively compatible
+        professional-role classification. ``recommended_from_scan`` is exactly
+        ``len(self.recommendations)`` — the same collection that is printed by
+        the CLI, served to the dashboard, and persisted with scan activity.
+        """
+        pairs = iter_match_pairs(results)
+        statuses = [str(match.get("readiness_status") or "") for _, match in pairs]
         self.ready_to_apply_from_scan = statuses.count("READY_TO_APPLY")
         self.needs_verification_from_scan = statuses.count("NEEDS_VERIFICATION")
         self.not_eligible_from_scan = statuses.count("NOT_ELIGIBLE")
-        self.recommended_from_scan = self.ready_to_apply_from_scan + self.needs_verification_from_scan
+        self.recommendations = collect_scan_recommendations(pairs)
+        self.recommended_from_scan = len(self.recommendations)
 
     def summary(self) -> dict[str, int]:
         data = {key: sum(int(getattr(r, key, 0) or 0) for r in self.source_reports) for key in SUMMARY_COUNTERS}
@@ -277,6 +294,9 @@ class ScanResult:
             "source_reports": [report.to_dict() for report in self.source_reports],
             "successful_sources": self.successful_sources,
             "failed_sources": self.failed_sources, "job_count": len(self.jobs),
+            # Persisted verbatim so scan activity and the dashboard render the
+            # exact collection the summary counted — no recomputation.
+            "recommendations": self.recommendations,
             "summary": self.summary(),
         }
 
@@ -600,6 +620,27 @@ def _job_is_relevant(job: Job) -> bool:
     return any(term in lower for term in strong_terms) or looks_medical(job.title)
 
 
+def _source_overrides(profile: dict[str, Any], source_id: str) -> dict[str, Any]:
+    """Return the effective ``job_sources.<id>`` block for a scan.
+
+    The block is the ONLY place an operational cap may come from — the
+    registry no longer carries page/detail budgets. Blocks that are untouched
+    builder artifacts from the bounded-defaults era (a CV import used to copy
+    ``source_defaults`` verbatim into profile.yaml, including ``max_pages: 6``
+    and ``detail_limit: 30``) are normalized here via the shared registry
+    rule, so a stale file cannot silently cap a live scan even when the
+    profile did not pass through the load-time migration.
+    """
+    raw = (profile.get("job_sources") or {}) if isinstance(profile, dict) else {}
+    cfg = raw.get(source_id) if isinstance(raw, dict) else {}
+    if not cfg:  # missing, null, "", false, [] — historically: no overrides
+        return {}
+    if not isinstance(cfg, dict):
+        raise ValueError(f"job_sources.{source_id} must be a mapping")
+    effective, _removed = normalize_source_overrides(source_id, cfg)
+    return effective
+
+
 def _configured_positive_limit(config: dict[str, Any], key: str) -> int | None:
     """Read an opt-in operational limit without manufacturing a default.
 
@@ -696,9 +737,7 @@ async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = N
     """
     spec = SOURCE_REGISTRY["acbar"]
     defaults = spec.get("defaults") or {}
-    cfg = ((profile.get("job_sources") or {}).get("acbar") or {}) if isinstance(profile, dict) else {}
-    if not isinstance(cfg, dict):
-        raise ValueError("job_sources.acbar must be a mapping")
+    cfg = _source_overrides(profile, "acbar")
     explicit_urls = cfg.get("urls")
     if explicit_urls is not None and (not isinstance(explicit_urls, list) or not all(isinstance(url, str) and url.strip() for url in explicit_urls)):
         raise ValueError("job_sources.acbar.urls must be a list of non-empty URLs")
@@ -1040,7 +1079,7 @@ async def discover_reliefweb_jobs(profile: dict[str, Any], *, today: date | None
     """Fetch ReliefWeb using the same card/detail semantics as ACBAR."""
     spec = SOURCE_REGISTRY["reliefweb"]
     defaults = spec.get("defaults") or {}
-    cfg = ((profile.get("job_sources") or {}).get("reliefweb") or {}) if isinstance(profile, dict) else {}
+    cfg = _source_overrides(profile, "reliefweb")
     timeout = float(cfg.get("timeout_seconds", defaults.get("timeout_seconds", RELIEFWEB_DEFAULT_TIMEOUT_SECONDS)))
     limit = max(1, int(cfg.get("limit", defaults.get("limit", RELIEFWEB_DEFAULT_LIMIT))))
     url = cfg.get("url") or spec.get("listing_url") or spec.get("official_url")

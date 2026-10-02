@@ -4,7 +4,7 @@ import pytest
 
 import main
 from utils import discovery
-from utils.discovery import Job, ScanResult, SourceReport, SourceScanMetrics, run_discovery_scan
+from utils.discovery import Job, ScanResult, SourceReport, run_discovery_scan
 
 
 def _job(identifier, title="Medical Officer", url=None, description="MD required. Apply to hr@example.org.", **metadata):
@@ -121,6 +121,16 @@ async def test_reliefweb_duplicate_and_detail_failure_metrics(monkeypatch):
     assert jobs.metrics.listing_fallback_used == 1
 
 
+def _matched_pair(identifier, readiness, *, title="Medical Officer", classification="md_physician_role", **metadata):
+    """One (job, match) outcome pair in the record_match_results contract."""
+    job = _job(identifier, title=title, **metadata).to_dict()
+    match = {
+        "readiness_status": readiness,
+        "facts": {"role_analysis": {"classification": classification}},
+    }
+    return (job, match)
+
+
 def test_route_and_scan_match_invariants_and_cli_output(capsys):
     report = SourceReport(id="x", name="Example", tier="A", attempted=True, ok=True, status="PARTIAL",
                           pages_requested=2, pages_succeeded=1, pages_failed=1,
@@ -130,11 +140,12 @@ def test_route_and_scan_match_invariants_and_cli_output(capsys):
                           application_routes_unavailable=1, partial_reasons=["LISTING_PAGE_FAILURE"])
     scan = ScanResult("PARTIAL_SCAN", [], [report], "start", "finish", "partial")
     scan.record_match_results([
-        {"readiness_status": "READY_TO_APPLY"},
-        {"readiness_status": "NOT_ELIGIBLE"},
+        _matched_pair("ready", "READY_TO_APPLY"),
+        _matched_pair("blocked", "NOT_ELIGIBLE", title="Pharmacist", classification="incompatible_professional_role"),
     ])
     assert report.application_routes_found + report.application_routes_unavailable == report.relevant_retained
-    assert scan.summary()["recommended_from_scan"] == 1
+    # The summary counter IS the recommendation collection length: structural.
+    assert scan.summary()["recommended_from_scan"] == 1 == len(scan.recommendations)
     main.print_scan_accounting(scan)
     output = capsys.readouterr().out
     assert "Source: Example" in output
@@ -147,10 +158,10 @@ def test_route_and_scan_match_invariants_and_cli_output(capsys):
 def test_scan_specific_recommendations_do_not_share_history():
     first = ScanResult("SCAN_COMPLETE", [], [], "", "", "")
     second = ScanResult("SCAN_COMPLETE", [], [], "", "", "")
-    first.record_match_results([{"readiness_status": "READY_TO_APPLY"}])
-    second.record_match_results([{"readiness_status": "NOT_ELIGIBLE"}])
-    assert first.summary()["recommended_from_scan"] == 1
-    assert second.summary()["recommended_from_scan"] == 0
+    first.record_match_results([_matched_pair("ready", "READY_TO_APPLY")])
+    second.record_match_results([_matched_pair("blocked", "NOT_ELIGIBLE", title="Pharmacist", classification="incompatible_professional_role")])
+    assert first.summary()["recommended_from_scan"] == 1 == len(first.recommendations)
+    assert second.summary()["recommended_from_scan"] == 0 == len(second.recommendations)
 
 @pytest.mark.asyncio
 async def test_pagination_end_page_limit_and_detail_budget_are_distinct(monkeypatch):

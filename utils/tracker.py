@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from utils.medical_requirements import canonical_source_fields, has_actionable_source
+from utils.recommendations import is_recommendable, recommendation_rank
 
 DB_PATH = Path(__file__).resolve().parent.parent / "applications.db"
 
@@ -365,22 +366,17 @@ def list_actionable_jobs(limit: int = 100) -> list[dict[str, Any]]:
 
 
 def get_recommended_jobs(limit: int = 20) -> list[dict[str, Any]]:
-    jobs = list_actionable_jobs(limit=500)
+    """Stored-history view of recommendations.
 
-    def rank(job: dict[str, Any]) -> tuple[int, str]:
-        readiness = job.get("readiness") or ""
-        metadata = job.get("metadata") or {}
-        closing = metadata.get("closing_date") or "9999-12-31"
-        if readiness == "READY_TO_APPLY":
-            bucket = 0
-        elif readiness == "NEEDS_VERIFICATION":
-            bucket = 1
-        else:
-            bucket = 3
-        if job.get("status") == NOT_ELIGIBLE or readiness == "NOT_ELIGIBLE":
-            bucket = 9
-        return (bucket, str(closing))
-    return [job for job in sorted(jobs, key=rank) if rank(job)[0] < 9][:limit]
+    The gate and the ordering come from the single recommendation authority
+    (utils/recommendations.py), exactly as for scan-time recommendations:
+    readiness in {READY_TO_APPLY, NEEDS_VERIFICATION} AND a positively
+    compatible professional-role classification. Generic roles kept in broad
+    discovery (ambiguous health wording, non-medical families) never pass.
+    """
+    jobs = [job for job in list_actionable_jobs(limit=500) if is_recommendable(job, job.get("match") or {})]
+    jobs.sort(key=recommendation_rank)
+    return jobs[:limit]
 
 
 def delete_all() -> int:

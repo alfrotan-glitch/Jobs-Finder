@@ -69,10 +69,6 @@ def print_scan_accounting(scan: Any) -> None:
         print(f"Pagination: {report.pagination_stop_reason}")
         if getattr(report, "source_listings_reported", None) is not None:
             print(f"Source listings reported: {report.source_listings_reported}")
-        page_limit = getattr(report, "configured_page_limit", None)
-        detail_limit = getattr(report, "configured_detail_limit", None)
-        if page_limit is not None or detail_limit is not None:
-            print(f"Configured limits: pages={page_limit if page_limit is not None else 'unbounded'}, details={detail_limit if detail_limit is not None else 'unbounded'}")
         print(f"Listings seen: {report.listings_seen}")
         print(f"Parse failures: {report.listing_parse_failures}")
         print(f"Vacancies parsed: {report.vacancies_parsed}")

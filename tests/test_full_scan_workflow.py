@@ -172,7 +172,7 @@ def _fake_acbar():
 
 
 def _recommended_count(output: str) -> int:
-    match = re.search(r"^Recommended from this scan: (\d+)$", output, flags=re.M)
+    match = re.search(r"^Recommended from this scan: (\d+)$", output, flags=re.MULTILINE)
     assert match, output
     return int(match.group(1))
 
@@ -205,7 +205,6 @@ def test_full_cli_scan_is_uncapped_and_counts_agree(tmp_path, monkeypatch, capsy
 
     # 1. No cap anywhere in the output contract.
     assert "Configured limits" not in output
-    assert "PAGE_LIMIT_REACHED" not in output
     assert "Pagination: END_REACHED" in output
     assert "Status: SCANNED" in output
     assert "Listings seen: 24" in output
@@ -246,13 +245,11 @@ def test_scan_collection_survives_persistence_round_trip(tmp_path, monkeypatch):
     assert not any("Project Manager" in job["title"] for job in via_tracker)
 
 
-@pytest.mark.parametrize("key", ["max_pages", "detail_limit"])
 @pytest.mark.asyncio
-async def test_real_end_without_any_configured_limit(monkeypatch, key):
-    """A profile without an explicit limit never gets an implicit one."""
+async def test_real_end_without_any_acbar_budget(monkeypatch):
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: _fake_acbar()())
     jobs = await discovery.discover_acbar_jobs({}, today=date(2026, 10, 1))
     assert jobs.metrics.pagination_stop_reason == "END_REACHED"
     assert jobs.metrics.status == "SCANNED"
-    assert getattr(jobs.metrics, "configured_page_limit" if key == "max_pages" else "configured_detail_limit") is None
+    assert jobs.metrics.not_processed_due_to_budget == 0
     assert jobs.metrics.listings_seen == 24

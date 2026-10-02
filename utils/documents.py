@@ -33,7 +33,7 @@ CONTACT/IDENTITY CONTRACT (single rule for employer-facing contact data):
   via explicit personal verification (``personal.verification.<field>:
   true``, one field at a time).
 * Known placeholder contact values are replaced with the explicit review
-  marker ``CONFIRM BEFORE SUBMISSION`` so a fake address can never be sent.
+  marker ``CONFIRM BEFORE SUBMISSION`` so unresolved contact data cannot be sent.
 * While identity/contact fields are not explicitly verified, the application
   package keeps a blocking "confirm identity/contact" item, so a draft import
   is visible as unresolved and the package is never presented as fully ready.
@@ -48,12 +48,18 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from utils.medical_matcher import MET, NEEDS_VERIFICATION, NOT_ELIGIBLE_STATUS, NOT_MET
-from utils.profile import build_profile_evidence, is_unresolved_value, is_verified_flag, parse_profile_date, personal_field_is_verified
+from utils.profile import (
+    build_profile_evidence,
+    is_unresolved_value,
+    is_verified_flag,
+    parse_profile_date,
+    personal_field_is_verified,
+)
 
 
 def _full_name(profile: dict[str, Any]) -> str:
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
-    return " ".join(part for part in [personal.get("first_name", ""), personal.get("last_name", "")] if part).strip() or "Applicant"
+    return " ".join(part for part in [personal.get("first_name", ""), personal.get("last_name", "")] if part).strip() or "CONFIRM BEFORE SUBMISSION"
 
 
 def _is_placeholder_contact(value: Any, key: str = "") -> bool:
@@ -96,8 +102,8 @@ def _language_lines(profile: dict[str, Any], *, verified_only: bool = False) -> 
             if text and text not in values:
                 values.append(text)
             continue
-        name = str(item.get("name") or item.get("language") or "").strip()
-        level = str(item.get("level") or item.get("proficiency") or "").strip()
+        name = str(item.get("name") or "").strip()
+        level = str(item.get("level") or "").strip()
         verified = is_verified_flag(item.get("verified")) and not is_unresolved_value(level)
         if not name or (verified_only and not verified):
             continue
@@ -152,7 +158,7 @@ def _profile_list(profile: dict[str, Any], path: str) -> list[Any]:
 def _stringify_item(item: Any) -> str:
     if isinstance(item, dict):
         parts = []
-        for key in ["degree", "title", "name", "institution", "organization", "employer", "location", "start", "end", "year", "level"]:
+        for key in ["degree", "title", "name", "institution", "organization", "location", "start", "end", "graduation_year", "level"]:
             value = item.get(key)
             # Skip unresolved placeholder values ("Needs verification",
             # "Unknown", "Pending", ...) so they never get printed into a
@@ -180,7 +186,7 @@ def _safe_bullets(items: list[Any], limit: int | None = None) -> list[str]:
             continue
         if text in bullets or norm in normalized:
             continue
-        # Avoid ATS-noisy repetitions such as a broad competency
+        # Avoid noisy repetitions such as a broad competency
         # "BPHS/EPHS & IMAM/CMAM" followed by separate "BPHS", "EPHS".
         words = set(norm.split())
         if any(
@@ -206,11 +212,11 @@ def _resolved_entry_value(entry: dict[str, Any], *keys: str) -> str:
 
 
 def _experience_header(entry: dict[str, Any]) -> str:
-    title = _resolved_entry_value(entry, "title", "role")
-    organization = _resolved_entry_value(entry, "organization", "employer")
+    title = _resolved_entry_value(entry, "title")
+    organization = _resolved_entry_value(entry, "organization")
     location = _resolved_entry_value(entry, "location")
-    start = _resolved_entry_value(entry, "start", "start_date")
-    end = _resolved_entry_value(entry, "end", "end_date")
+    start = _resolved_entry_value(entry, "start")
+    end = _resolved_entry_value(entry, "end")
     parts = [part for part in [title, organization, location] if part]
     header = " | ".join(parts)
     if start or end:
@@ -219,11 +225,11 @@ def _experience_header(entry: dict[str, Any]) -> str:
 
 
 def _entry_sort_key(entry: dict[str, Any]) -> tuple[date, date, str]:
-    end_raw = entry.get("end") or entry.get("end_date") or entry.get("to") or "present"
-    start_raw = entry.get("start") or entry.get("start_date") or entry.get("from") or "1900-01"
+    end_raw = entry.get("end") or "present"
+    start_raw = entry.get("start") or "1900-01"
     end_date = parse_profile_date(end_raw, today=date.today()) or date.today()
     start_date = parse_profile_date(start_raw, today=date.today()) or date(1900, 1, 1)
-    return (end_date, start_date, _resolved_entry_value(entry, "title", "role"))
+    return (end_date, start_date, _resolved_entry_value(entry, "title"))
 
 
 def _reverse_chronological_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -300,7 +306,7 @@ def _split_work_entries(profile: dict[str, Any]) -> tuple[list[dict[str, Any]], 
     as factual employer-facing experience; they land in the unverified bucket
     together with dict entries lacking an explicit ``verified: true``.
     """
-    entries = _profile_list(profile, "work_history") + _profile_list(profile, "experience")
+    entries = _profile_list(profile, "work_history")
     verified = [entry for entry in entries if _is_verified_entry(entry)]
     unverified = [entry for entry in entries if not _is_verified_entry(entry)]
     return verified, unverified
@@ -347,7 +353,7 @@ def _skills_by_verification(profile: dict[str, Any]) -> tuple[list[str], list[st
 def _certificates_by_verification(profile: dict[str, Any]) -> tuple[list[str], list[str]]:
     verified: list[str] = []
     unverified: list[str] = []
-    for key in ["certificates", "certifications", "training"]:
+    for key in ["certificates"]:
         v, u = _named_items_by_verification(profile.get(key))
         verified.extend(item for item in v if item not in verified)
         unverified.extend(item for item in u if item not in unverified and item not in verified)
@@ -484,11 +490,11 @@ def _verified_dict_items(items: list[Any]) -> list[Any]:
 def _education_lines(items: list[Any], *, limit: int | None = None) -> list[str]:
     lines: list[str] = []
     for item in _verified_dict_items(items):
-        degree = _resolved_entry_value(item, "degree", "title", "name")
-        institution = _resolved_entry_value(item, "institution", "school", "university", "organization")
-        start = _resolved_entry_value(item, "start", "start_date", "from")
-        end = _resolved_entry_value(item, "end", "end_date", "to")
-        year = _resolved_entry_value(item, "year")
+        degree = _resolved_entry_value(item, "degree")
+        institution = _resolved_entry_value(item, "institution")
+        start = _resolved_entry_value(item, "start")
+        end = _resolved_entry_value(item, "end")
+        year = _resolved_entry_value(item, "graduation_year")
         years = f"{start}–{end}" if start and end else year
         parts = [part for part in [degree, institution, years] if part]
         line = " — ".join(parts).strip()
@@ -717,7 +723,7 @@ def _professional_title(profile: dict[str, Any], evidence, job: dict[str, Any], 
     if profile_title:
         return profile_title
     if not evidence.has_verified("md_degree"):
-        return "Applicant"
+        return "Professional"
     focus = " ".join(_focus_labels(match_report, limit=8) + _job_focus_phrases(job, match_report, limit=8)).lower()
     has_public_health = any(
         evidence.has_verified(key)
@@ -741,7 +747,7 @@ def _verified_profile_summary(profile: dict[str, Any]) -> str:
 
 
 def _has_verified_md(profile: dict[str, Any]) -> bool:
-    raw_education_items = _profile_list(profile, "medical_education") + _profile_list(profile, "medical.education") + _profile_list(profile, "medical.degrees") + _profile_list(profile, "education")
+    raw_education_items = _profile_list(profile, "medical_education")
     return any("MD" in line or "Medical Doctor" in line or "Doctor of Medicine" in line for line in _education_lines(raw_education_items))
 
 
@@ -759,14 +765,6 @@ def _professional_background_sentence(profile: dict[str, Any]) -> str:
     if not _has_verified_md(profile):
         return ""
     haystack = _verified_work_haystack(profile)
-    has_acf = "action against hunger" in haystack or "acf" in haystack
-    has_tfu = "tfu doctor" in haystack or "therapeutic feeding unit" in haystack
-    has_health_nutrition = "health & nutrition supervisor" in haystack or "health and nutrition supervisor" in haystack
-    if has_acf and has_tfu and has_health_nutrition:
-        return (
-            "I am a Medical Doctor with clinical, health and nutrition program experience in humanitarian and public-health settings in Afghanistan, "
-            "including experience as a TFU Doctor and Safeguarding/PSEA Focal Point and as a Health & Nutrition Supervisor with Action Against Hunger."
-        )
     if any(term in haystack for term in ["clinical", "patient", "treatment", "diagnosis", "public health", "nutrition", "hmis"]):
         return "I am a Medical Doctor with clinical, health-program and public-health experience in Afghanistan."
     return ""
@@ -794,8 +792,8 @@ def _verified_summary_sentence(
     return f"{headline} presenting verified qualifications for professional consideration."
 
 def _experience_dates(entry: dict[str, Any]) -> str:
-    start = _resolved_entry_value(entry, "start", "start_date", "from")
-    end = _resolved_entry_value(entry, "end", "end_date", "to")
+    start = _resolved_entry_value(entry, "start")
+    end = _resolved_entry_value(entry, "end")
     return f"{start} – {end}" if start and end else start or end
 
 
@@ -813,7 +811,7 @@ def _language_pairs(lines: list[str]) -> list[tuple[str, str]]:
 
 def _render_canonical_cv_text(model: dict[str, Any]) -> str:
     """Serialize the one tailored CV model used by TXT, PDF and DOCX."""
-    lines = [str(model.get("name") or "Applicant"), str(model.get("headline") or "Professional")]
+    lines = [str(model.get("name") or "CONFIRM BEFORE SUBMISSION"), str(model.get("headline") or "Professional")]
     lines.extend(str(item) for item in model.get("contact_lines") or [] if str(item).strip())
     lines.extend(["", "PROFESSIONAL SUMMARY", str(model.get("profile") or ""), ""])
     if model.get("strengths"):
@@ -876,7 +874,7 @@ def generate_tailored_documents(
     # governs work history, skills, certificates/training, languages, and the
     # professional summary. Unverified items are collected into review
     # warnings instead of being printed as employer-facing facts.
-    raw_education_items = _profile_list(profile, "medical_education") + _profile_list(profile, "medical.education") + _profile_list(profile, "medical.degrees") + _profile_list(profile, "education")
+    raw_education_items = _profile_list(profile, "medical_education")
     education = _education_lines(raw_education_items)
     unverified_education = [item for item in raw_education_items if not _is_verified_entry(item)]
 
@@ -927,8 +925,8 @@ def generate_tailored_documents(
         for entry in most_relevant + remaining:
             ordered_work.append(
                 {
-                    "role": _resolved_entry_value(entry, "title", "role"),
-                    "org": _resolved_entry_value(entry, "organization", "employer"),
+                    "role": _resolved_entry_value(entry, "title"),
+                    "org": _resolved_entry_value(entry, "organization"),
                     "loc": _resolved_entry_value(entry, "location"),
                     "dates": _experience_dates(entry),
                     "bullets": _entry_bullets_for_job(entry, job, match_report),
@@ -990,7 +988,7 @@ def generate_tailored_documents(
     if background_sentence:
         cover_lines.append(background_sentence)
     else:
-        cover_lines.append("I am interested in this role because it aligns with my medical training and qualifications.")
+        cover_lines.append("I have reviewed the role and am presenting only the qualifications shown in my CV for consideration.")
     if vacancy_highlights:
         strongest = []
         for item in vacancy_highlights[:3]:
@@ -1058,7 +1056,7 @@ def generate_tailored_documents(
 def _extract_email(value: str | None) -> str:
     if not value:
         return ""
-    match = re.search(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", str(value), flags=re.I)
+    match = re.search(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", str(value), flags=re.IGNORECASE)
     return match.group(0) if match else ""
 
 
@@ -1571,7 +1569,7 @@ def _write_text_docx_pdf(
 ) -> dict[str, str]:
     """Write TXT plus globally designed DOCX/PDF exports.
 
-    The TXT file remains the canonical ATS/plain-text source.  DOCX/PDF are
+    The TXT file remains the canonical plain-text source.  DOCX/PDF are
     rendered through the shared Jobs-Finder document design system so every
     application package receives the same professional visual language.  Export
     failures are surfaced in sidecar text files instead of silently losing the

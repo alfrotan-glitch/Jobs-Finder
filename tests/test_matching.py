@@ -1,6 +1,11 @@
 from datetime import date
 
-from utils.medical_matcher import NEEDS_VERIFICATION_STATUS, NOT_ELIGIBLE_STATUS, READY_TO_APPLY, match_job_against_profile
+from utils.medical_matcher import (
+    NEEDS_VERIFICATION_STATUS,
+    NOT_ELIGIBLE_STATUS,
+    READY_TO_APPLY,
+    match_job_against_profile,
+)
 from utils.profile import build_profile_evidence
 
 

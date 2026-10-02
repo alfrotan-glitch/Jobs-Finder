@@ -19,9 +19,23 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 import httpx
 from bs4 import BeautifulSoup
 
-from utils.medical_requirements import AFGHAN_PROVINCES, analyze_professional_role, canonical_source_fields, extract_requirements_from_job, has_actionable_source, looks_medical, parse_closing_date, strip_html
+from utils.medical_requirements import (
+    AFGHAN_PROVINCES,
+    analyze_professional_role,
+    canonical_source_fields,
+    extract_requirements_from_job,
+    has_actionable_source,
+    looks_medical,
+    parse_closing_date,
+    strip_html,
+)
 from utils.recommendations import collect_scan_recommendations, iter_match_pairs
-from utils.source_registry import SOURCE_REGISTRY, source_defaults, source_display_name, source_official_url
+from utils.source_registry import (
+    SOURCE_REGISTRY,
+    source_defaults,
+    source_display_name,
+    source_official_url,
+)
 
 SCAN_COMPLETE = "SCAN_COMPLETE"
 NO_RELEVANT_JOBS_FOUND = "NO_RELEVANT_JOBS_FOUND"
@@ -85,8 +99,6 @@ class SourceScanMetrics:
     # The total published by the source (when present) is retained as a
     # discovery-completeness cross-check, not used to fabricate listings.
     source_listings_reported: int | None = None
-    configured_page_limit: int | None = None
-    configured_detail_limit: int | None = None
     status: str = SOURCE_STATUS_UNAVAILABLE
     pages_requested: int = 0
     pages_succeeded: int = 0
@@ -139,8 +151,6 @@ class SourceReport:
     # The total published by the source (when present) is retained as a
     # discovery-completeness cross-check, not used to fabricate listings.
     source_listings_reported: int | None = None
-    configured_page_limit: int | None = None
-    configured_detail_limit: int | None = None
     status: str = SOURCE_STATUS_UNAVAILABLE
     pages_requested: int = 0
     pages_succeeded: int = 0
@@ -321,7 +331,7 @@ def deduplicate_jobs_with_stats(jobs: list[Job], *, today: date | None = None) -
         if is_expired(job, today=today):
             inc(source_id, "expired_stale_excluded")
             continue
-        key = _canonical(job.url or job.apply_url) or _canonical(f"{job.title} {job.company} {job.location}")
+        key = _canonical(job.url or job.apply_url or "") or _canonical(f"{job.title} {job.company} {job.location}")
         if not key or key in seen:
             inc(source_id, "duplicates_removed")
             continue
@@ -473,28 +483,28 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
     seen: set[str] = set()
     for job in candidates:
         source_id = str((job.metadata or {}).get("_scan_source_id") or job.platform or "").lower()
-        report = by_source.get(source_id)
-        if not report:
+        report_for_job = by_source.get(source_id)
+        if not report_for_job:
             continue
         try:
             # Canonical terminal precedence starts here. Cross-source identity
             # uses the normalized official vacancy URL where possible.
             key = _vacancy_identity(job.url or job.apply_url or "") or _canonical(f"{job.title} {job.company} {job.location}")
             if not key or key in seen:
-                report.duplicates_removed += 1
+                report_for_job.duplicates_removed += 1
                 # An adapter may have earmarked an item for a detail budget,
                 # but cross-source canonical deduplication wins the lifecycle
                 # precedence; do not count one listing in two terminal buckets.
                 if (job.metadata or {}).get("deferred_due_to_budget"):
-                    report.not_processed_due_to_budget = max(0, report.not_processed_due_to_budget - 1)
+                    report_for_job.not_processed_due_to_budget = max(0, report_for_job.not_processed_due_to_budget - 1)
                 continue
             seen.add(key)
             if is_expired(job, today=today):
-                report.expired_excluded += 1
+                report_for_job.expired_excluded += 1
                 # Expiry is a higher-priority terminal result than an adapter's
                 # planned detail deferral, so preserve one-outcome accounting.
                 if (job.metadata or {}).get("deferred_due_to_budget"):
-                    report.not_processed_due_to_budget = max(0, report.not_processed_due_to_budget - 1)
+                    report_for_job.not_processed_due_to_budget = max(0, report_for_job.not_processed_due_to_budget - 1)
                 continue
             if (job.metadata or {}).get("deferred_due_to_budget"):
                 # It was discovered and parsed, but an explicitly configured
@@ -502,23 +512,23 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
                 # irrelevant vacancy or a recommendation.
                 continue
             if not _job_is_relevant(job):
-                report.irrelevant_excluded += 1
+                report_for_job.irrelevant_excluded += 1
                 continue
             enriched = enrich_job(job, today=today)
             if _role_classification(enriched) == "incompatible_professional_role":
-                report.incompatible_role_classification_excluded += 1
+                report_for_job.incompatible_role_classification_excluded += 1
                 continue
             if not has_actionable_source(enriched.to_dict()):
-                report.source_validation_excluded += 1
+                report_for_job.source_validation_excluded += 1
                 continue
             retained.append(enriched)
         except (AttributeError, TypeError, ValueError, KeyError) as exc:
             # This is a parse failure rather than an invented semantic outcome.
-            report.listing_parse_failures += 1
-            report.vacancies_parsed = max(0, report.vacancies_parsed - 1)
-            if "LISTING_PARSE_FAILURE" not in report.partial_reasons:
-                report.partial_reasons.append("LISTING_PARSE_FAILURE")
-            report.errors.append(f"Vacancy parse skipped: {_concise_error(exc)}")
+            report_for_job.listing_parse_failures += 1
+            report_for_job.vacancies_parsed = max(0, report_for_job.vacancies_parsed - 1)
+            if "LISTING_PARSE_FAILURE" not in report_for_job.partial_reasons:
+                report_for_job.partial_reasons.append("LISTING_PARSE_FAILURE")
+            report_for_job.errors.append(f"Vacancy parse skipped: {_concise_error(exc)}")
 
     for report in reports:
         source_jobs = [job for job in retained if str((job.metadata or {}).get("_scan_source_id") or job.platform).lower() == report.id.lower()]
@@ -579,11 +589,7 @@ def _job_is_relevant(job: Job) -> bool:
 
 
 def _source_overrides(profile: dict[str, Any], source_id: str) -> dict[str, Any]:
-    """Return the ``job_sources.<id>`` block for a scan.
-
-    This block is the ONLY place an operational cap may come from: the
-    registry carries connection defaults, never page/detail budgets.
-    """
+    """Return the explicit ``job_sources.<id>`` block for a scan."""
     raw = (profile.get("job_sources") or {}) if isinstance(profile, dict) else {}
     cfg = raw.get(source_id) if isinstance(raw, dict) else {}
     if not cfg:  # missing, null, "", false, [] — no overrides
@@ -593,22 +599,23 @@ def _source_overrides(profile: dict[str, Any], source_id: str) -> dict[str, Any]
     return dict(cfg)
 
 
-def _configured_positive_limit(config: dict[str, Any], key: str) -> int | None:
-    """Read an opt-in operational limit without manufacturing a default.
+def _validate_source_keys(config: dict[str, Any], source_id: str, allowed: set[str]) -> None:
+    """Reject non-canonical source settings instead of interpreting them."""
+    unknown = sorted(key for key in config if key not in allowed)
+    if unknown:
+        joined = ", ".join(f"job_sources.{source_id}.{key}" for key in unknown)
+        raise ValueError(f"Unsupported source setting(s): {joined}")
 
-    ``None``/an omitted setting means *unbounded*. A zero or malformed explicit
-    value is a configuration error instead of being silently converted into a
-    small, misleading scan.
-    """
-    if key not in config or config.get(key) in (None, ""):
-        return None
+
+def _configured_positive_int(config: dict[str, Any], source_id: str, key: str, default: int) -> int:
+    value = config.get(key, default)
     try:
-        value = int(config[key])
+        result = int(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"job_sources.acbar.{key} must be a positive integer or omitted") from exc
-    if value < 1:
-        raise ValueError(f"job_sources.acbar.{key} must be a positive integer or omitted")
-    return value
+        raise ValueError(f"job_sources.{source_id}.{key} must be a positive integer") from exc
+    if result < 1:
+        raise ValueError(f"job_sources.{source_id}.{key} must be a positive integer")
+    return result
 
 
 def _acbar_page_url(base: str, page_number: int) -> str:
@@ -624,7 +631,7 @@ def _acbar_page_url(base: str, page_number: int) -> str:
 def _acbar_reported_listing_count(html: str) -> int | None:
     """Read ACBAR's visible aggregate count, e.g. ``234 jobs found``."""
     text = BeautifulSoup(html or "", "html.parser").get_text(" ", strip=True)
-    match = re.search(r"\b([\d,]+)\s+jobs?\s+found\b", text, flags=re.I)
+    match = re.search(r"\b([\d,]+)\s+jobs?\s+found\b", text, flags=re.IGNORECASE)
     if not match:
         return None
     try:
@@ -636,13 +643,13 @@ def _acbar_reported_listing_count(html: str) -> int | None:
 def _acbar_listing_anchors(soup: BeautifulSoup) -> list[Any]:
     """One listing-title anchor per card; secondary 'More locations' links do not count."""
     spec = SOURCE_REGISTRY.get("acbar", {})
-    selector = ", ".join(((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/en/jobs/details/"]', 'a[href^="/jobs/"]']))
+    selector = ", ".join((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/en/jobs/details/"]', 'a[href^="/jobs/"]'])
     path_pattern = ((spec.get("path_patterns") or {}).get("listing_path") or r"(?:/en/jobs/details/\d+(?:/[^/]+)?|/jobs/\d+/[^/]+\.jsp)$")
     anchors: list[Any] = []
     for anchor in soup.select(selector):
         href = str(anchor.get("href") or "")
         title = normalize_space(anchor.get_text(" ", strip=True))
-        if not href or not re.search(path_pattern, urlparse(href).path, flags=re.I):
+        if not href or not re.search(path_pattern, urlparse(href).path, flags=re.IGNORECASE):
             continue
         if title.lower() in {"more locations", "view all jobs"}:
             continue
@@ -681,28 +688,24 @@ def _acbar_listing_is_clearly_irrelevant(job: Job) -> bool:
 async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = None) -> list[Job]:
     """Discover all ACBAR listing pages, then enrich only plausible candidates.
 
-    Stage 1 has no normal page ceiling: it requests ``?page=N`` until ACBAR
-    returns a page with no listing cards. Stage 2 preserves every discovered
-    listing but opens detail pages only for titles that are not clearly outside
-    health/medical work. Optional page/detail limits are explicit configuration
-    and always make the source status ``PARTIAL``.
+    Stage 1 has no page ceiling: it requests ``?page=N`` until ACBAR returns
+    a page with no listing cards. Stage 2 preserves every discovered listing
+    but opens detail pages only for titles that are not clearly outside
+    health/medical work.
     """
     spec = SOURCE_REGISTRY["acbar"]
     defaults = spec.get("defaults") or {}
     cfg = _source_overrides(profile, "acbar")
+    _validate_source_keys(cfg, "acbar", {"timeout_seconds", "max_detail_concurrency", "urls"})
     explicit_urls = cfg.get("urls")
     if explicit_urls is not None and (not isinstance(explicit_urls, list) or not all(isinstance(url, str) and url.strip() for url in explicit_urls)):
         raise ValueError("job_sources.acbar.urls must be a list of non-empty URLs")
     timeout = float(cfg.get("timeout_seconds", defaults.get("timeout_seconds", ACBAR_DEFAULT_TIMEOUT_SECONDS)))
-    detail_limit = _configured_positive_limit(cfg, "detail_limit")
-    page_limit = _configured_positive_limit(cfg, "max_pages")
-    concurrency = max(1, int(cfg.get("max_detail_concurrency", defaults.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY))))
+    concurrency = _configured_positive_int(cfg, "acbar", "max_detail_concurrency", int(defaults.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY)))
     base = str(spec.get("listing_url") or spec.get("official_url") or "")
     metrics = SourceScanMetrics(
         source_url=base,
         official_source_id=str(spec.get("official_name") or source_display_name(spec)),
-        configured_page_limit=page_limit,
-        configured_detail_limit=detail_limit,
     )
     summaries: list[Job] = []
     seen_page_identities: set[str] = set()
@@ -737,11 +740,6 @@ async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = N
         else:
             page_number = 1
             while True:
-                if page_limit is not None and page_number > page_limit:
-                    metrics.pagination_stop_reason = "PAGE_LIMIT_REACHED"
-                    metrics.add_partial_reason("PAGE_LIMIT_REACHED")
-                    metrics.add_partial_reason("PAGINATION_NOT_EXHAUSTED")
-                    break
                 url = _acbar_page_url(base, page_number)
                 metrics.pages_requested += 1
                 try:
@@ -821,14 +819,7 @@ async def discover_acbar_jobs(profile: dict[str, Any], *, today: date | None = N
                 job.metadata["listing_relevance"] = "needs_detail_review"
                 enrichment_candidates.append(job)
 
-        processable = enrichment_candidates if detail_limit is None else enrichment_candidates[:detail_limit]
-        deferred = enrichment_candidates[len(processable):]
-        for job in deferred:
-            job.metadata["deferred_due_to_budget"] = True
-            job.metadata["detail_enrichment"] = "not_attempted_due_to_configured_budget"
-        metrics.not_processed_due_to_budget = len(deferred)
-        if deferred:
-            metrics.add_partial_reason("DETAIL_LIMIT_REACHED")
+        processable = enrichment_candidates
 
         semaphore = asyncio.Semaphore(concurrency)
 
@@ -907,7 +898,7 @@ def _parse_acbar_listing(html: str, base_url: str) -> list[Job]:
     # expansion link never inflates source accounting.
     for anchor in _acbar_listing_anchors(soup):
         title = normalize_space(anchor.get_text(" ", strip=True))
-        href = urljoin(base_url, anchor.get("href", ""))
+        href = str(urljoin(base_url, str(anchor.get("href") or "")))
         if not title or not href:
             continue
         card = _listing_card(anchor)
@@ -961,7 +952,7 @@ def _listing_card(anchor: Any) -> Any:
 
 
 def _labeled_value(text: str, label: str) -> str:
-    match = re.search(rf"(?:^|\n)\s*{label}\s*:?\s*([^\n]+)", text, flags=re.I)
+    match = re.search(rf"(?:^|\n)\s*{label}\s*:?\s*([^\n]+)", text, flags=re.IGNORECASE)
     return normalize_space(match.group(1)) if match else ""
 
 
@@ -1032,10 +1023,11 @@ async def discover_reliefweb_jobs(profile: dict[str, Any], *, today: date | None
     spec = SOURCE_REGISTRY["reliefweb"]
     defaults = spec.get("defaults") or {}
     cfg = _source_overrides(profile, "reliefweb")
+    _validate_source_keys(cfg, "reliefweb", {"timeout_seconds", "limit"})
     timeout = float(cfg.get("timeout_seconds", defaults.get("timeout_seconds", RELIEFWEB_DEFAULT_TIMEOUT_SECONDS)))
-    limit = max(1, int(cfg.get("limit", defaults.get("limit", RELIEFWEB_DEFAULT_LIMIT))))
-    url = cfg.get("url") or spec.get("listing_url") or spec.get("official_url")
-    metrics = SourceScanMetrics(source_url=str(url or ""), official_source_id=str(spec.get("official_name") or source_display_name(spec)))
+    limit = _configured_positive_int(cfg, "reliefweb", "limit", int(defaults.get("limit", RELIEFWEB_DEFAULT_LIMIT)))
+    url = str(spec.get("listing_url") or spec.get("official_url") or "")
+    metrics = SourceScanMetrics(source_url=url, official_source_id=str(spec.get("official_name") or source_display_name(spec)))
     summaries: list[Job] = []
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
         metrics.pages_requested = 1
@@ -1049,7 +1041,7 @@ async def discover_reliefweb_jobs(profile: dict[str, Any], *, today: date | None
             metrics.add_partial_reason("REQUEST_FAILURE", _concise_error(exc))
             metrics.status = SOURCE_STATUS_UNAVAILABLE
             return SourceJobs([], parsed_count=0, metrics=metrics)
-        selector = ", ".join(((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/job/"]']))
+        selector = ", ".join((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/job/"]'])
         raw_count = len(BeautifulSoup(response.text or "", "html.parser").select(selector))
         parsed_all = _parse_reliefweb_listing(response.text, url, limit=max(raw_count, 1), deduplicate_result=False)
         metrics.listings_seen = raw_count
@@ -1068,10 +1060,8 @@ async def discover_reliefweb_jobs(profile: dict[str, Any], *, today: date | None
         summaries = unique_summaries[:limit]
         metrics.not_processed_due_to_budget = max(0, len(unique_summaries) - len(summaries))
         if metrics.not_processed_due_to_budget or raw_count >= limit:
-            metrics.pagination_stop_reason = "PAGE_LIMIT_REACHED"
-            metrics.add_partial_reason("PAGE_LIMIT_REACHED")
-            if metrics.not_processed_due_to_budget:
-                metrics.add_partial_reason("DETAIL_LIMIT_REACHED")
+            metrics.pagination_stop_reason = "RESULT_LIMIT_REACHED"
+            metrics.add_partial_reason("RESULT_LIMIT_REACHED")
         else:
             # ReliefWeb's maintained adapter currently requests one bounded
             # result page; fewer results than its limit is the observable end.
@@ -1101,14 +1091,15 @@ async def discover_reliefweb_jobs(profile: dict[str, Any], *, today: date | None
 def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int, deduplicate_result: bool = True) -> list[Job]:
     spec = SOURCE_REGISTRY.get("reliefweb", {})
     source_name = source_display_name(spec) or "reliefweb"
-    selector_list = ((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/job/"]'])
+    raw_selector_list = ((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/job/"]'])
+    selector_list = [str(item) for item in raw_selector_list]
     selector = ", ".join(selector_list)
     provenance_label = (spec.get("provenance_labels") or {}).get("listing") or f"{source_name} listing"
     soup = BeautifulSoup(html or "", "html.parser")
     jobs: list[Job] = []
     for anchor in soup.select(selector):
         title = normalize_space(anchor.get_text(" ", strip=True))
-        href = urljoin(base_url, anchor.get("href", ""))
+        href = str(urljoin(base_url, str(anchor.get("href") or "")))
         if not title or not href:
             continue
         card = anchor.find_parent(["article", "li", "div"]) or anchor.parent
@@ -1193,17 +1184,17 @@ def _parse_reliefweb_detail(html: str, job: Job) -> Job:
 
 def _guess_company_from_listing_context(context: str, title: str) -> str:
     text = context.replace(title, " ", 1)
-    text = re.sub(r"\bNEW\b|\bFull Time\b|\bPart Time\b", " ", text, flags=re.I)
-    text = re.sub(r"\b\d+\s+(?:minutes?|hours?|days?|weeks?)\s+ago\b", " ", text, flags=re.I)
+    text = re.sub(r"\bNEW\b|\bFull Time\b|\bPart Time\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b\d+\s+(?:minutes?|hours?|days?|weeks?)\s+ago\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b", " ", text)
-    text = re.sub(r"\b(?:close|closing|deadline|expire)[^•\n]{0,40}", " ", text, flags=re.I)
+    text = re.sub(r"\b(?:close|closing|deadline|expire)[^•\n]{0,40}", " ", text, flags=re.IGNORECASE)
     provinces = _guess_location(text)
     if provinces:
         for province in provinces.split(","):
-            text = re.sub(rf"\b{re.escape(province.strip())}\b", " ", text, flags=re.I)
+            text = re.sub(rf"\b{re.escape(province.strip())}\b", " ", text, flags=re.IGNORECASE)
     parts = [normalize_space(p) for p in re.split(r"[•\n|]+", text) if normalize_space(p)]
     for part in parts:
-        cleaned = normalize_space(re.sub(r"\bAfghanistan\b|\bKabul\b", " ", part, flags=re.I))
+        cleaned = normalize_space(re.sub(r"\bAfghanistan\b|\bKabul\b", " ", part, flags=re.IGNORECASE))
         if cleaned and len(cleaned) <= 100:
             return cleaned
     return ""
@@ -1231,14 +1222,14 @@ def _guess_location(text: str) -> str:
 def _guess_reliefweb_company(context: str) -> str:
     patterns = [r"Organization\s*[:\-]\s*([^|]+)", r"Source\s*[:\-]\s*([^|]+)"]
     for pattern in patterns:
-        match = re.search(pattern, context, flags=re.I)
+        match = re.search(pattern, context, flags=re.IGNORECASE)
         if match:
             return normalize_space(match.group(1))[:100]
     return ""
 
 
 def _extract_email(text: str) -> str:
-    match = re.search(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", text or "", flags=re.I)
+    match = re.search(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", text or "", flags=re.IGNORECASE)
     return match.group(0) if match else ""
 
 
@@ -1251,12 +1242,12 @@ def _extract_application_url(text: str) -> str:
 
 
 def _extract_reference(text: str) -> str:
-    match = re.search(r"(?:Vacancy\s*(?:No\.?|Number)|Reference\s*(?:No\.?|Number))\s*[:#\-]?\s*([A-Z0-9_./\-]+)", text or "", flags=re.I)
+    match = re.search(r"(?:Vacancy\s*(?:No\.?|Number)|Reference\s*(?:No\.?|Number))\s*[:#\-]?\s*([A-Z0-9_./\-]+)", text or "", flags=re.IGNORECASE)
     return match.group(1) if match else ""
 
 
 def _extract_subject(text: str) -> str:
-    match = re.search(r"(?:subject line|email subject).*?(?:as|:)?\s*[\"“']?([^\n\"”']{4,120})", text or "", flags=re.I)
+    match = re.search(r"(?:subject line|email subject).*?(?:as|:)?\s*[\"“']?([^\n\"”']{4,120})", text or "", flags=re.IGNORECASE)
     if not match:
         return ""
     subject = normalize_space(match.group(1))

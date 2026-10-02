@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from utils.profile import build_profile_evidence
 from utils import tracker
+from utils.profile import build_profile_evidence
 
 
 def test_cv_claims_are_not_verified_and_unknown_language_stays_unverified():
@@ -31,7 +31,10 @@ def test_default_server_binding_is_local_only():
 
 
 def test_unverified_structured_degree_does_not_satisfy_match():
-    from utils.medical_matcher import NEEDS_VERIFICATION_STATUS, match_job_against_profile
+    from utils.medical_matcher import (
+        NEEDS_VERIFICATION_STATUS,
+        match_job_against_profile,
+    )
     report = match_job_against_profile(
         {"title": "Medical Officer", "description": "Medical Degree required. Apply to hr@example.org."},
         {"medical_education": [{"degree": "MD", "verified": False}]},

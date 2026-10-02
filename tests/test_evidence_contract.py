@@ -135,6 +135,23 @@ def test_skill_dict_item_verifies_only_with_explicit_flag():
     assert "Basic First Aid" not in verified_names
 
 
+def test_noncanonical_profile_aliases_do_not_create_verified_evidence():
+    profile = {
+        "education": [{"degree": "MD", "verified": True}],
+        "medical": {"education": [{"degree": "MD", "verified": True}], "registration": {"status": "Registered", "verified": True}},
+        "experience": [{"title": "Medical Doctor", "start": "2020", "end": "2022", "verified": True}],
+        "certifications": [{"name": "IMNCI", "verified": True}],
+        "languages": [{"language": "English", "proficiency": "Fluent", "verified": True}],
+    }
+    evidence = build_profile_evidence(profile)
+
+    assert not evidence.has_verified("md_degree")
+    assert not evidence.has_verified("license_registration")
+    assert not evidence.has_verified("clinical_experience_years")
+    assert not evidence.has_verified("certificates")
+    assert not evidence.has_verified("language_english")
+
+
 def test_structured_education_evidence_never_leaks_internal_verified_flag_text():
     profile = {"medical_education": [{"degree": "MD", "institution": "Needs verification", "verified": True}]}
     evidence = build_profile_evidence(profile)

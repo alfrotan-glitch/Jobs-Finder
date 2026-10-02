@@ -32,6 +32,11 @@ from utils.medical_requirements import analyze_professional_role
 RECOMMENDABLE_READINESS = (READY_TO_APPLY, NEEDS_VERIFICATION_STATUS)
 COMPATIBLE_ROLE_CLASSIFICATIONS = {"md_physician_role", "health_public_health_compatible"}
 
+
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 # Tracker-style progress mapping (mirrors utils.tracker.readiness_to_status;
 # kept local so this module stays import-safe for tracker itself).
 _PROGRESS_BY_READINESS = {
@@ -61,14 +66,14 @@ def role_classification_for(job: dict[str, Any], match: dict[str, Any] | None = 
     or the enrichment snapshot under ``metadata.requirements.facts``) and
     analyses the vacancy text only when neither snapshot is present.
     """
-    match = match if isinstance(match, dict) else {}
-    facts = match.get("facts") if isinstance(match.get("facts"), dict) else {}
+    match = _dict_or_empty(match)
+    facts = _dict_or_empty(match.get("facts"))
     role = facts.get("role_analysis")
     if isinstance(role, dict) and role.get("classification"):
         return str(role["classification"])
-    metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
-    requirements = metadata.get("requirements") if isinstance(metadata.get("requirements"), dict) else {}
-    req_facts = requirements.get("facts") if isinstance(requirements.get("facts"), dict) else {}
+    metadata = _dict_or_empty(job.get("metadata"))
+    requirements = _dict_or_empty(metadata.get("requirements"))
+    req_facts = _dict_or_empty(requirements.get("facts"))
     role = req_facts.get("role_analysis")
     if isinstance(role, dict) and role.get("classification"):
         return str(role["classification"])
@@ -86,7 +91,7 @@ def recommendation_rank(entry: dict[str, Any]) -> tuple[int, str, str]:
     """The one recommendation ordering: ready first, then by real deadline."""
     readiness = readiness_of(entry, entry.get("match"))
     bucket = 0 if readiness == READY_TO_APPLY else 1
-    metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+    metadata = _dict_or_empty(entry.get("metadata"))
     closing = str(metadata.get("closing_date") or "9999-12-31")
     return (bucket, closing, str(entry.get("id") or ""))
 
@@ -100,8 +105,8 @@ def build_recommendation_entry(job: Any, match: dict[str, Any]) -> dict[str, Any
     report that is persisted to the vacancy row — never a recomputation.
     """
     data = _as_dict(job)
-    match = match if isinstance(match, dict) else {}
-    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    match = _dict_or_empty(match)
+    metadata = _dict_or_empty(data.get("metadata"))
     readiness = readiness_of(data, match)
     return {
         "id": str(data.get("id") or ""),
@@ -163,7 +168,9 @@ def evaluate_scan_jobs(scan: Any, profile: dict[str, Any], resume_text: str = ""
     match is persisted, and the scan's authoritative recommendation collection
     is derived from the same (job, match) pairs.
     """
-    from utils.medical_matcher import match_job_against_profile  # local import: no import cycle
+    from utils.medical_matcher import (
+        match_job_against_profile,  # local import: no import cycle
+    )
     from utils.tracker import log_discovered_and_medical_match
 
     pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []

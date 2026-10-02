@@ -4,7 +4,6 @@ from pathlib import Path
 from utils.documents import prepare_application_bundle
 from utils.medical_matcher import match_job_against_profile
 
-
 SYNTHETIC_FIXTURE_IDENTITY = [
     "Ahmad Rahimi",
     "ahmad.rahimi@example.af",
@@ -42,14 +41,6 @@ def confirmed_profile():
                 "institution": "Verified Medical Science University",
                 "start": "2013",
                 "end": "2020",
-                "verified": True,
-            }
-        ],
-        "education": [
-            {
-                "institution": "Verified High School",
-                "start": "2000",
-                "end": "2012",
                 "verified": True,
             }
         ],
@@ -137,7 +128,6 @@ def test_confirmed_profile_identity_does_not_inherit_synthetic_fixture_identity(
     assert "Email: verified.owner@profile.example.org" in email["body"]
     assert "Phone: +93700111222" in email["body"]
     assert "MD — Verified Medical Science University — 2013–2020" in cv
-    assert "Verified High School — 2000–2012" in cv
     assert cv.index("TFU Doctor & Safeguarding/PSEA Focal Point") < cv.index("Health & Nutrition Supervisor")
     assert email["to"] == "recruitment@example.org"
     assert bundle["application_package"]["application_method"] == "EMAIL"

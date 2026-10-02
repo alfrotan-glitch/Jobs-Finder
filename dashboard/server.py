@@ -29,11 +29,16 @@ from utils.discovery import (
 from utils.documents import prepare_application_bundle
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.paths import CANONICAL_DB_PATH, CANONICAL_PROFILE_PATH, PROJECT_ROOT
-from utils.profile import PERSONAL_VERIFICATION_FIELDS, build_profile_evidence, is_unresolved_value, save_profile
-from utils.recommendations import evaluate_scan_jobs
-from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
+from utils.profile import (
+    PERSONAL_VERIFICATION_FIELDS,
+    build_profile_evidence,
+    is_unresolved_value,
+    save_profile,
+)
 from utils.profile_builder import build_profile_from_cv_file
+from utils.recommendations import evaluate_scan_jobs
 from utils.resume_parser import extract_resume_text
+from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
 from utils.tracker import (
     get_job_by_id,
     get_latest_scan,
@@ -89,8 +94,8 @@ def _clean_value(value: Any) -> str:
 
 
 def _date_range(item: dict[str, Any]) -> str:
-    start = _clean_value(item.get("start") or item.get("start_date") or item.get("from"))
-    end = _clean_value(item.get("end") or item.get("end_date") or item.get("to"))
+    start = _clean_value(item.get("start"))
+    end = _clean_value(item.get("end"))
     return f"{start} – {end}" if start and end else start or end
 
 
@@ -128,7 +133,7 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
         return deduped
 
     experience = []
-    for item in profile.get("work_history") or profile.get("experience") or []:
+    for item in profile.get("work_history") or []:
         if not isinstance(item, dict):
             continue
         bullets = item.get("bullets") or item.get("responsibilities") or []
@@ -136,8 +141,8 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
             bullets = [bullets]
         experience.append(
             {
-                "title": _clean_value(item.get("title") or item.get("role")),
-                "organization": _clean_value(item.get("organization") or item.get("employer")),
+                "title": _clean_value(item.get("title")),
+                "organization": _clean_value(item.get("organization")),
                 "location": _clean_value(item.get("location")),
                 "dates": _date_range(item),
                 "bullets": [_clean_value(bullet) for bullet in bullets if _clean_value(bullet)],
@@ -145,29 +150,32 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
         )
 
     education = []
-    for item in (profile.get("medical_education") or []) + (profile.get("education") or []):
+    for item in (profile.get("medical_education") or []):
         if isinstance(item, dict):
             education.append(
                 {
-                    "degree": _clean_value(item.get("degree") or item.get("title") or item.get("name")),
-                    "institution": _clean_value(item.get("institution") or item.get("school") or item.get("university")),
+                    "degree": _clean_value(item.get("degree")),
+                    "institution": _clean_value(item.get("institution")),
                     "location": _clean_value(item.get("country") or item.get("location")),
                     "dates": _date_range(item),
                 }
             )
 
-    registration = profile.get("license_registration") if isinstance(profile.get("license_registration"), dict) else {}
-    exit_exam = profile.get("medical_exit_exam") if isinstance(profile.get("medical_exit_exam"), dict) else {}
+    raw_registration = profile.get("license_registration")
+    registration: dict[str, Any] = raw_registration if isinstance(raw_registration, dict) else {}
+    raw_exit_exam = profile.get("medical_exit_exam")
+    exit_exam: dict[str, Any] = raw_exit_exam if isinstance(raw_exit_exam, dict) else {}
     languages = []
     for item in profile.get("languages") or []:
         if isinstance(item, dict):
-            name = _clean_value(item.get("name") or item.get("language"))
-            level = _clean_value(item.get("level") or item.get("proficiency"))
+            name = _clean_value(item.get("name"))
+            level = _clean_value(item.get("level"))
             if name:
                 languages.append({"name": name, "level": level})
 
     skills = []
-    raw_skills = profile.get("skills") if isinstance(profile.get("skills"), dict) else {}
+    raw_skills_value = profile.get("skills")
+    raw_skills: dict[str, Any] = raw_skills_value if isinstance(raw_skills_value, dict) else {}
     for group, values in raw_skills.items():
         items = named_items(values)
         if items:
@@ -183,7 +191,7 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
             "status": _clean_value(registration.get("status")),
         },
         "medical_exit_exam": {"status": _clean_value(exit_exam.get("status"))},
-        "training": named_items(profile.get("certificates") or profile.get("certifications") or profile.get("training") or []),
+        "training": named_items(profile.get("certificates") or []),
         "skills": skills,
         "languages": languages,
     }
@@ -431,11 +439,9 @@ def api_settings():
     return {
         "sources": source_registry_for_settings(),
         "acbar": {
-            "max_pages": acbar_cfg.get("max_pages"),
-            "detail_limit": acbar_cfg.get("detail_limit"),
             "max_detail_concurrency": acbar_cfg.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY),
             "timeout_seconds": acbar_cfg.get("timeout_seconds", ACBAR_DEFAULT_TIMEOUT_SECONDS),
-            "note": (SOURCE_REGISTRY.get("acbar", {}).get("settings_note") or "ACBAR pagination is followed to the real end unless an explicit limit is configured; a limit makes the scan partial."),
+            "note": (SOURCE_REGISTRY.get("acbar", {}).get("settings_note") or "ACBAR pagination is followed to the source's real end and every relevant detail page is processed."),
         },
         "reliefweb": {
             "limit": reliefweb_cfg.get("limit", RELIEFWEB_DEFAULT_LIMIT),

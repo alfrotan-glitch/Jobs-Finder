@@ -3,7 +3,14 @@ import asyncio
 import pytest
 
 from utils import discovery
-from utils.discovery import Job, NO_RELEVANT_JOBS_FOUND, PARTIAL_SCAN, SOURCES_UNAVAILABLE, deduplicate_jobs, run_discovery_scan
+from utils.discovery import (
+    NO_RELEVANT_JOBS_FOUND,
+    PARTIAL_SCAN,
+    SOURCES_UNAVAILABLE,
+    Job,
+    deduplicate_jobs,
+    run_discovery_scan,
+)
 
 
 @pytest.mark.asyncio
@@ -205,10 +212,8 @@ def _non_medical_acbar_card(index: int) -> str:
 
 
 @pytest.mark.asyncio
-async def test_acbar_relevant_vacancy_after_detail_limit_is_discovered(monkeypatch):
-    """A medical vacancy appearing after detail_limit non-medical vacancies
-    must still be discovered; detail fetches must only be spent on relevant jobs."""
-    # 35 non-medical vacancies followed by 2 medical vacancies.
+async def test_acbar_relevant_vacancy_after_many_non_medical_pages_is_discovered(monkeypatch):
+    """Full ACBAR pagination must find relevant vacancies after irrelevant pages."""
     page1 = "".join(_non_medical_acbar_card(i) for i in range(10))
     page2 = "".join(_non_medical_acbar_card(i) for i in range(10, 20))
     page3 = "".join(_non_medical_acbar_card(i) for i in range(20, 30))
@@ -218,20 +223,15 @@ async def test_acbar_relevant_vacancy_after_detail_limit_is_discovered(monkeypat
         "https://www.acbar.org/en/jobs?page=2": page2,
         "https://www.acbar.org/en/jobs?page=3": page3,
         "https://www.acbar.org/en/jobs?page=4": page4,
+        "https://www.acbar.org/en/jobs?page=5": "",
     }
     fake_client = _FakeAcbarClient(pages)
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: fake_client)
 
-    # A detail budget must never truncate listing discovery: with
-    # detail_limit=10 the medical vacancies on page 4 must still be found.
-    jobs = await discovery.discover_acbar_jobs({
-        "job_sources": {"acbar": {"max_pages": 4, "detail_limit": 10}}
-    })
+    jobs = await discovery.discover_acbar_jobs({})
 
-    # Stage 1 preserves all 37 listing cards. Stage 2 spends no detail budget
-    # on titles that are unmistakably finance work, so the two medical cards on
-    # page four are still enriched even though they appear after 35 others.
     assert len(jobs) == 37
+    assert jobs.metrics.pagination_stop_reason == "END_REACHED"
     assert {
         "https://www.acbar.org/en/jobs/details/1001/medical-officer-1",
         "https://www.acbar.org/en/jobs/details/1002/medical-officer-2",
@@ -242,30 +242,25 @@ async def test_acbar_relevant_vacancy_after_detail_limit_is_discovered(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_acbar_detail_fetches_are_bounded_by_detail_limit(monkeypatch):
-    """When there are more relevant vacancies than detail_limit, network fetches
-    are strictly capped at detail_limit."""
+async def test_acbar_fetches_all_relevant_details_without_detail_budget(monkeypatch):
     page1 = "".join(_acbar_card(i) for i in range(10))
     page2 = "".join(_acbar_card(i) for i in range(10, 20))
     pages = {
         "https://www.acbar.org/en/jobs": page1,
         "https://www.acbar.org/en/jobs?page=2": page2,
+        "https://www.acbar.org/en/jobs?page=3": "",
     }
     fake_client = _FakeAcbarClient(pages)
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: fake_client)
 
-    jobs = await discovery.discover_acbar_jobs({
-        "job_sources": {"acbar": {"max_pages": 2, "detail_limit": 5}}
-    })
+    jobs = await discovery.discover_acbar_jobs({})
 
-    # A configured cap only limits enrichment; discovery retains every parsed
-    # listing and marks the omitted candidate detail reviews explicitly.
     assert len(jobs) == 20
     assert jobs.metrics.vacancies_parsed == 20
-    assert jobs.metrics.not_processed_due_to_budget == 15
-    assert jobs.metrics.status == "PARTIAL"
+    assert jobs.metrics.not_processed_due_to_budget == 0
+    assert jobs.metrics.status == "SCANNED"
     detail_calls = [c for c in fake_client.get_calls if c not in pages]
-    assert len(detail_calls) == 5
+    assert len(detail_calls) == 20
 
 
 @pytest.mark.asyncio
@@ -290,35 +285,24 @@ async def test_acbar_pagination_stops_when_a_page_has_no_new_vacancies(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_acbar_pagination_respects_configured_max_pages(monkeypatch):
-    pages = {}
-    for page in range(1, 6):
-        url = "https://www.acbar.org/en/jobs" if page == 1 else f"https://www.acbar.org/en/jobs?page={page}"
-        pages[url] = "".join(_acbar_card(i) for i in range((page - 1) * 2, page * 2))
+async def test_acbar_rejects_removed_page_budget_setting(monkeypatch):
+    pages = {"https://www.acbar.org/en/jobs": ""}
     fake_client = _FakeAcbarClient(pages)
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: fake_client)
 
-    jobs = await discovery.discover_acbar_jobs({"job_sources": {"acbar": {"max_pages": 3}}})
-
-    listing_calls = [c for c in fake_client.get_calls if c in pages]
-    assert listing_calls == [
-        "https://www.acbar.org/en/jobs",
-        "https://www.acbar.org/en/jobs?page=2",
-        "https://www.acbar.org/en/jobs?page=3",
-    ]
-    assert "https://www.acbar.org/en/jobs?page=4" not in fake_client.get_calls
-    assert len(jobs) == 6
+    with pytest.raises(ValueError, match="job_sources.acbar.max_pages"):
+        await discovery.discover_acbar_jobs({"job_sources": {"acbar": {"max_pages": 3}}})
 
 
 @pytest.mark.asyncio
 async def test_acbar_detail_fetch_concurrency_is_bounded(monkeypatch):
     listing_html = "".join(_acbar_card(i) for i in range(6))
-    pages = {"https://www.acbar.org/en/jobs": listing_html}
+    pages = {"https://www.acbar.org/en/jobs": listing_html, "https://www.acbar.org/en/jobs?page=2": ""}
     probe = _ConcurrencyProbe()
     fake_client = _FakeAcbarClient(pages, sleep=0.03, concurrency_probe=probe)
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: fake_client)
 
-    jobs = await discovery.discover_acbar_jobs({"job_sources": {"acbar": {"max_pages": 1, "max_detail_concurrency": 2}}})
+    jobs = await discovery.discover_acbar_jobs({"job_sources": {"acbar": {"max_detail_concurrency": 2}}})
 
     assert len(jobs) == 6
     assert probe.max_seen <= 2
@@ -343,7 +327,7 @@ async def test_acbar_default_discovery_follows_real_end_and_matches_reported_tot
     """Default discovery runs to ACBAR's real end.
 
     ACBAR publishes a count and twenty cards per full page. Without a
-    configured budget the adapter walks a 234-card source across twelve
+    page budget the adapter walks a 234-card source across twelve
     non-empty pages plus the authoritative empty end page.
     """
     reported_total = 234

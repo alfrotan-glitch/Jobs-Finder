@@ -37,12 +37,12 @@
 # ---------------------------------------------------------------------------
 
 personal:
-  first_name: Jane         # Placeholder -- replace with your own details.
-  last_name: Doe
-  email: applicant@example.org
-  phone: "+93 00 000 0000"
-  location: Kabul, Afghanistan
-  nationality: Afghan
+  first_name: ""         # Enter your own verified details.
+  last_name: ""
+  email: ""
+  phone: ""
+  location: ""
+  nationality: ""
   gender: ""   # Optional; only used for explicit gender-restricted vacancies.
   linkedin: ""
   professional_title: ""  # Your professional identity/title; confirm it with personal.verification.professional_title.
@@ -65,14 +65,14 @@ personal:
 
 resume_path: ""  # Optional local CV/PDF path; profile.yaml remains source of truth.
 
-medical_education:
-  - degree: "Needs verification"
-    institution: "Needs verification"
-    graduation_year: "Needs verification"
-    # `verified: true` confirms this ONE medical_education entry (the degree
-    # claim above, and only that claim) -- it does not confirm
-    # institution/graduation_year if you leave those as placeholders.
-    verified: false   # Set to true only once you have personally confirmed this.
+medical_education: []
+# Add entries only after review. `verified: true` confirms one education entry.
+# Example shape, not a live profile claim:
+#   - degree: MD
+#     institution: Your medical university
+#     start: "2013"
+#     end: "2020"
+#     verified: true
 
 license_registration:
   authority: "Needs verification"   # e.g. your medical registration authority. Do not invent.
@@ -106,13 +106,13 @@ clinical_experience:
 # never printed as factual experience in an employer-facing CV/cover letter
 # and never satisfies an experience requirement -- it stays visible as a
 # review warning until you confirm it.
-# Example (left empty by default):
-#   - title: Medical Doctor
-#     organization: Example Clinic
-#     location: Kabul
-#     start: "2022-01"
+# Entry shape (left empty by default):
+#   - title: Your confirmed title
+#     organization: Your confirmed organization
+#     location: Your confirmed location
+#     start: "YYYY-MM"
 #     end: Present
-#     bullets: ["Clinical consultations and patient assessment"]
+#     bullets: ["Confirmed responsibility copied from your reviewed CV"]
 #     verified: true
 
 work_history: []
@@ -124,9 +124,7 @@ work_history: []
 # listed in review warnings when excluded), never printed as a confirmed CV
 # competency and never used to satisfy a requirement.
 skills:
-  medical:
-    - name: "Needs verification"
-      verified: false   # Set true only for skills you personally confirm.
+  medical: []
   public_health: []
   management: []
 
@@ -139,22 +137,17 @@ skills:
 # resolved AND verified is true, a language is NOT listed in employer-facing
 # documents at all; it remains a review warning (no placeholder level text
 # is ever printed, and no unverified language is claimed to an employer).
-languages:
-  - name: Dari
-    level: "Needs verification"
-    verified: false
-  - name: Pashto
-    level: "Needs verification"
-    verified: false
-  - name: English
-    level: "Needs verification"
-    verified: false
+languages: []
+# Add entries only when you know the level. Example shape, not a live claim:
+#   - name: English
+#     level: Fluent
+#     verified: true
 
 # Certificates/training follow the same rule as skills: only
 # `{name: ..., verified: true}` items are printed as confirmed credentials
 # in employer-facing documents. Plain strings stay draft/review-only.
-# Example:
-#   - name: IMNCI training
+# Entry shape:
+#   - name: Confirmed training name
 #     verified: true
 certificates: []
 
@@ -164,21 +157,13 @@ ngo_humanitarian_experience:
   organizations: []
 
 preferences:
-  roles:
-    - Medical Officer
-    - Medical Doctor
-    - Physician
-    - Public Health Officer
-    - Nutrition / TSFP health roles
-    - Quality of Care / Capacity Building health roles
+  roles: []
   # These locations have no separate `verified` flag either: typing a real
   # location here (not left as "Needs verification") is itself your
   # confirmation that it is a genuine current/preferred location. A CV
   # import never fills in a real location here -- it always leaves this as
   # "Needs verification" until you edit it yourself.
-  locations:
-    - Kabul
-    - Afghanistan
+  locations: []
   willing_to_relocate: "Needs verification"   # Yes / No / Needs verification
   field_deployment: "Needs verification"      # Yes / No / Needs verification
 
@@ -187,20 +172,15 @@ sources:
   disabled: []
 
 job_sources:
-  # Optional per-source overrides. Leave empty to use the canonical defaults
-  # from utils/source_registry.py. Add only values you intentionally want to
-  # override locally.
-  #
-  # Every key here is read exactly as written. `max_pages` and `detail_limit`
-  # have no default: set one only to cap a scan on purpose, and the scan is
-  # then correctly reported as PARTIAL.
+  # Optional per-source operational overrides. Leave empty to use the
+  # canonical defaults from utils/source_registry.py. Add only values you
+  # intentionally want to override locally.
   acbar:
     # timeout_seconds:
-    # detail_limit:        # Optional explicit detail-page cap. If set, deferred candidates make the scan PARTIAL.
-    # max_pages:           # Optional explicit listing-page cap. If set before ACBAR's end, the scan is PARTIAL.
     # max_detail_concurrency:
     # urls: []             # Optional pinned listing pages; this intentionally scoped scan is reported PARTIAL.
-    # Leave detail_limit and max_pages unset for normal full discovery through ACBAR's real END_REACHED.
+    # Normal ACBAR discovery follows pagination to the source's real END_REACHED
+    # and processes every relevant detail page.
   reliefweb:
     # timeout_seconds:
-    # limit:
+    # limit:               # Current ReliefWeb result-page bound.

@@ -2,8 +2,7 @@
 
 The product tracks only what it needs: discovered vacancies, deterministic match
 results, generated package metadata, and whether the user says they applied
-manually. It is not an ATS and does not model interviews, offers, follow-ups, or
-submission automation.
+manually. It does not model post-submission workflows or submission automation.
 
 Three distinct concepts are tracked and must never be confused:
 
@@ -33,10 +32,11 @@ import stat
 import sys
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from utils.medical_requirements import canonical_source_fields, has_actionable_source
 from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
@@ -419,7 +419,7 @@ def log_scan_result(result: Any) -> int:
         _trace_database("log_scan_result", "before_commit", conn)
         conn.commit()
         _trace_database("log_scan_result", "after_commit", conn)
-        return int(cur.lastrowid)
+        return int(cur.lastrowid or 0)
 
 
 def _scan_row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -652,7 +652,8 @@ def list_jobs(limit: int = 100) -> list[dict[str, Any]]:
             "SELECT * FROM vacancies ORDER BY discovered_at DESC, updated_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
-        return [_to_dict(row) for row in rows if row is not None]
+        jobs = [_to_dict(row) for row in rows if row is not None]
+        return [job for job in jobs if job is not None]
     finally:
         _close_read_connection(conn)
 

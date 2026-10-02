@@ -93,7 +93,11 @@ def test_cv_import_location_preference_is_not_silently_verified():
 
 
 def test_cv_import_does_not_satisfy_matcher_requirements():
-    from utils.medical_matcher import NOT_ELIGIBLE_STATUS, READY_TO_APPLY, match_job_against_profile
+    from utils.medical_matcher import (
+        NOT_ELIGIBLE_STATUS,
+        READY_TO_APPLY,
+        match_job_against_profile,
+    )
 
     profile = build_profile_from_cv_text(SYNTHETIC_CV, resume_path="cv.txt")
     job = {

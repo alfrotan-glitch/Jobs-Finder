@@ -30,7 +30,7 @@ def extract_resume_text(resume_path: str) -> str:
         return ""
 
     try:
-        file_hash = hashlib.md5(path.read_bytes()).hexdigest()
+        file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError:
         return ""
     cache_file = CACHE_DIR / f"resume_{file_hash}.txt"

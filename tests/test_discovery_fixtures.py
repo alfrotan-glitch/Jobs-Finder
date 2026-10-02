@@ -99,18 +99,18 @@ class Client:
 async def test_pipeline_reports_parsed_before_relevance(monkeypatch):
     listing = "https://www.acbar.org/en/jobs"
     parsed = discovery._parse_acbar_listing(fixture("acbar_listing.html"), listing)
-    pages = {listing: fixture("acbar_listing.html")}
+    pages = {listing: fixture("acbar_listing.html"), "https://www.acbar.org/en/jobs?page=2": ""}
     for job in parsed:
         pages[job.url] = fixture("acbar_detail.html") if "145902" in job.url else "<h2>Job Requirements</h2><p>Non-medical duties.</p>"
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: Client(pages))
 
     result = await discovery.run_discovery_scan(
-        {"sources": {"enabled": ["acbar"]}, "job_sources": {"acbar": {"max_pages": 1, "detail_limit": 30}}},
+        {"sources": {"enabled": ["acbar"]}},
         today=date(2026, 10, 1),
     )
     report = result.source_reports[0]
-    assert result.status == PARTIAL_SCAN
-    assert report.status == "PARTIAL"
+    assert report.pagination_stop_reason == "END_REACHED"
+    assert report.status == "SCANNED"
     assert report.vacancies_parsed == 7
     assert report.duplicates_removed == 1
     assert report.relevant_retained >= 1

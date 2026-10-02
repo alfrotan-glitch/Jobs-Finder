@@ -13,9 +13,15 @@ from dataclasses import asdict, dataclass, field
 from datetime import date
 from typing import Any
 
-from utils.medical_requirements import AFGHAN_PROVINCES, ExtractedRequirements, Requirement, extract_requirements_from_job, is_valid_application_url, is_valid_email
+from utils.medical_requirements import (
+    AFGHAN_PROVINCES,
+    ExtractedRequirements,
+    Requirement,
+    extract_requirements_from_job,
+    is_valid_application_url,
+    is_valid_email,
+)
 from utils.profile import ProfileEvidence, build_profile_evidence
-
 
 MET = "Met"
 NOT_MET = "Not met"
@@ -492,28 +498,30 @@ def _match_application_destination(facts: dict[str, Any]) -> RequirementMatch:
     official_route = facts.get("official_route") or facts.get("vacancy_url") or facts.get("source_url")
     if not email and isinstance(url, str) and url.lower().startswith("mailto:"):
         email = url.split(":", 1)[1].split("?", 1)[0].strip()
-    if email and is_valid_email(str(email)):
+    email_text = str(email or "").strip()
+    if email_text and is_valid_email(email_text):
         return RequirementMatch(
             key="application_destination",
             label="Application email / destination",
             required="Required",
             status=MET,
             explanation="A direct application email was found in the official vacancy/source data. Use the required subject if one is provided.",
-            evidence=[email] + ([f"Subject: {facts.get('application_subject')}"] if facts.get("application_subject") else []),
+            evidence=[email_text] + ([f"Subject: {facts.get('application_subject')}"] if facts.get("application_subject") else []),
             required_evidence=[],
-            value=email,
+            value=email_text,
             criticality="essential",
         )
-    if is_valid_application_url(url):
+    url_text = str(url or "").strip()
+    if is_valid_application_url(url_text):
         return RequirementMatch(
             key="application_destination",
             label="Application URL",
             required="Required",
             status=MET,
             explanation="A valid direct application URL/form was found and retained from the source.",
-            evidence=[url],
+            evidence=[url_text],
             required_evidence=[],
-            value=url,
+            value=url_text,
             criticality="essential",
         )
     if method == "UNAVAILABLE" and official_route:
@@ -602,26 +610,28 @@ def classify_application_readiness(report_or_matches: MatchReport | dict[str, An
     conflict, insufficient years, or passed closing date is NOT_ELIGIBLE.
     Preferred/informational open items do not block readiness.
     """
+    raw_matches: Any
     if isinstance(report_or_matches, MatchReport):
-        matches = report_or_matches.requirement_matches
+        raw_matches = report_or_matches.requirement_matches
     elif isinstance(report_or_matches, dict):
-        matches = report_or_matches.get("requirement_matches", [])
+        raw_matches = report_or_matches.get("requirement_matches", [])
     else:
-        matches = report_or_matches
+        raw_matches = report_or_matches
+    matches: list[Any] = raw_matches if isinstance(raw_matches, list) else []
+
+    def field(item: Any, key: str, default: Any = None) -> Any:
+        return item.get(key, default) if isinstance(item, dict) else getattr(item, key, default)
 
     required_items = []
     for item in matches:
-        get = item.get if isinstance(item, dict) else lambda key, default=None: getattr(item, key, default)
-        if get("required") == "Required" or get("criticality") == "essential":
+        if field(item, "required") == "Required" or field(item, "criticality") == "essential":
             required_items.append(item)
 
     for item in required_items:
-        get = item.get if isinstance(item, dict) else lambda key, default=None: getattr(item, key, default)
-        if get("status") == NOT_MET:
+        if field(item, "status") == NOT_MET:
             return NOT_ELIGIBLE_STATUS
     for item in required_items:
-        get = item.get if isinstance(item, dict) else lambda key, default=None: getattr(item, key, default)
-        if get("status") == NEEDS_VERIFICATION:
+        if field(item, "status") == NEEDS_VERIFICATION:
             return NEEDS_VERIFICATION_STATUS
     return READY_TO_APPLY
 

@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import html
 import re
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import date
-from typing import Any, Iterable
+from typing import Any
 from urllib.parse import urlparse
 
 from utils.source_registry import canonical_source_name
-
 
 NUMBER_WORDS = {
     "one": 1,
@@ -619,8 +619,8 @@ def strip_html(text: str) -> str:
     if not text:
         return ""
     text = html.unescape(text)
-    text = re.sub(r"<\s*br\s*/?>", "\n", text, flags=re.I)
-    text = re.sub(r"</\s*(p|li|div|h\d|tr)\s*>", "\n", text, flags=re.I)
+    text = re.sub(r"<\s*br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</\s*(p|li|div|h\d|tr)\s*>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"[\t\r\f\v]+", " ", text)
     text = re.sub(r"\n\s+", "\n", text)
@@ -686,7 +686,7 @@ def _required_level(text: str, start: int, end: int) -> str:
 
 def _find_first(patterns: Iterable[str], text: str) -> tuple[str, int, int] | None:
     for pattern in patterns:
-        match = re.search(pattern, text, flags=re.I)
+        match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
             return match.group(0), match.start(), match.end()
     return None
@@ -738,7 +738,7 @@ def is_valid_http_url(url: str | None) -> bool:
 
 
 def is_valid_email(value: str | None) -> bool:
-    return bool(re.fullmatch(EMAIL_PATTERN, str(value or "").strip(), flags=re.I))
+    return bool(re.fullmatch(EMAIL_PATTERN, str(value or "").strip(), flags=re.IGNORECASE))
 
 
 def is_valid_application_route(value: str | None) -> bool:
@@ -917,7 +917,7 @@ def has_actionable_source(job: Any) -> bool:
 
 def _pattern_hit(patterns: Iterable[str], text: str) -> tuple[str, int, int] | None:
     for pattern in patterns:
-        match = re.search(pattern, text or "", flags=re.I)
+        match = re.search(pattern, text or "", flags=re.IGNORECASE)
         if match:
             return match.group(0), match.start(), match.end()
     return None
@@ -933,12 +933,12 @@ def _md_qualification_acceptance_hit(text: str) -> tuple[str, int, int] | None:
     involving another staff member rather than the accepted credential.
     """
     for pattern in MD_ACCEPTANCE_PATTERNS:
-        for match in re.finditer(pattern, text or "", flags=re.I):
+        for match in re.finditer(pattern, text or "", flags=re.IGNORECASE):
             window = text[max(0, match.start() - 90): match.end() + 90]
-            if not any(re.search(cue, window, flags=re.I) for cue in MD_QUALIFICATION_CONTEXT_CUES):
+            if not any(re.search(cue, window, flags=re.IGNORECASE) for cue in MD_QUALIFICATION_CONTEXT_CUES):
                 continue
             prefix = text[max(0, match.start() - 45): match.start()]
-            if any(re.search(duty, prefix, flags=re.I) for duty in MD_DUTY_MENTION_PREFIXES):
+            if any(re.search(duty, prefix, flags=re.IGNORECASE) for duty in MD_DUTY_MENTION_PREFIXES):
                 continue
             return match.group(0), match.start(), match.end()
     return None
@@ -1043,12 +1043,12 @@ def parse_closing_date(text: str, today: date | None = None) -> str | None:
     today = today or date.today()
     label = r"(?:closing\s+date|deadline|apply\s+by|valid\s+until|last\s+date|submission\s+deadline)"
     windows = []
-    for match in re.finditer(label, text, flags=re.I):
+    for match in re.finditer(label, text, flags=re.IGNORECASE):
         windows.append(text[match.start(): match.start() + 180])
     if not windows:
         # Some ACBAR-style cards show "Close date: ..." or just "Close: ...".
-        for match in re.finditer(r"(?:close\s+date|close|expires?)", text, flags=re.I):
-            windows.append(text[match.start(): match.start() + 160])
+        for close_match in re.finditer(r"(?:close\s+date|close|expires?)", text, flags=re.IGNORECASE):
+            windows.append(text[close_match.start(): close_match.start() + 160])
     search_space = "\n".join(windows) if windows else text[:300]
 
     date_patterns = [
@@ -1064,10 +1064,10 @@ def parse_closing_date(text: str, today: date | None = None) -> str | None:
         r"(?P<d>[12]\d|3[01]|0?[1-9])(?:st|nd|rd|th)?\s+(?P<mon>[A-Za-z]{3,9})(?!\s*\d)",
     ]
     for pattern in date_patterns:
-        match = re.search(pattern, search_space, flags=re.I)
-        if not match:
+        date_match = re.search(pattern, search_space, flags=re.IGNORECASE)
+        if not date_match:
             continue
-        parts = match.groupdict()
+        parts = date_match.groupdict()
         try:
             year = int(parts.get("y") or today.year)
             if parts.get("mon"):
@@ -1092,7 +1092,7 @@ def _normalize_number_words(text: str) -> str:
     def repl(match):
         return str(NUMBER_WORDS.get(match.group(1).lower(), match.group(1))) + " years"
 
-    return re.sub(r"\b(" + "|".join(NUMBER_WORDS) + r")\s+(?:years?|yrs?)\b", repl, text, flags=re.I)
+    return re.sub(r"\b(" + "|".join(NUMBER_WORDS) + r")\s+(?:years?|yrs?)\b", repl, text, flags=re.IGNORECASE)
 
 
 def _minimum_years_from_match(match: re.Match) -> int:
@@ -1136,7 +1136,7 @@ def extract_years_requirement(text: str) -> dict[str, int]:
         rf"(?P<context>clinical|medical|relevant|NGO|INGO|humanitarian|management|supervisory|public health|health program|health sector|pharmacy|صحی|مدیریت|نظارت).{{0,70}}?{range_value}\s*{year_word}",
     ]
     for pattern in patterns:
-        for match in re.finditer(pattern, text, flags=re.I):
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
             value = _minimum_years_from_match(match)
             if not value:
                 continue
@@ -1148,7 +1148,7 @@ def extract_years_requirement(text: str) -> dict[str, int]:
                 r"(?:clinical|curative|patient|hospital|clinic)\W{0,20}(?:experience|work)"
                 r"|(?:experience|work)\W{0,40}(?:clinical|curative|patient|hospital|clinic)",
                 surrounding,
-                flags=re.I,
+                flags=re.IGNORECASE,
             )
             if scope == "general_experience_years" or (
                 scope == "clinical_experience_years"
@@ -1168,14 +1168,14 @@ def extract_years_requirement(text: str) -> dict[str, int]:
     for sentence in re.split(r"[.\n;]+", text):
         sentence_lower = sentence.lower()
         if "pharmac" in sentence_lower and " or " in sentence_lower:
-            nums = [_minimum_years_from_match(m) for m in re.finditer(rf"{range_value}\s*{year_word}", sentence, flags=re.I)]
+            nums = [_minimum_years_from_match(m) for m in re.finditer(rf"{range_value}\s*{year_word}", sentence, flags=re.IGNORECASE)]
             nums = [n for n in nums if n > 0]
             if len(nums) >= 2:
                 pharmacy_alternative_min = min(nums) if pharmacy_alternative_min is None else min(pharmacy_alternative_min, min(nums))
 
     # Dari/Persian common order: "تجربه کاری حد اقل 5 سال ... مدیریت برنامه های صحی".
     persian_pattern = rf"(?P<context>.{{0,80}}?(?:تجربه|کاری).{{0,80}}?)(?:حد\s*اقل\s+)?{range_value}\s*{year_word}(?P<tail>.{{0,120}})"
-    for match in re.finditer(persian_pattern, text, flags=re.I):
+    for match in re.finditer(persian_pattern, text, flags=re.IGNORECASE):
         value = _minimum_years_from_match(match)
         if not value:
             continue
@@ -1206,7 +1206,7 @@ def _looks_like_reference_number(value: str, *, explicit_label: bool = False) ->
     # may allow all-uppercase separator codes, but generic scans must not.
     if not re.search(r"\d", candidate):
         return explicit_label and bool(re.fullmatch(r"[A-Z][A-Z0-9]*(?:[-_/][A-Z0-9]{2,})+", candidate))
-    return bool(re.fullmatch(r"[A-Z0-9][A-Z0-9/_\-.]{2,}", candidate, flags=re.I))
+    return bool(re.fullmatch(r"[A-Z0-9][A-Z0-9/_\-.]{2,}", candidate, flags=re.IGNORECASE))
 
 
 def extract_reference_number(text: str) -> str | None:
@@ -1214,7 +1214,7 @@ def extract_reference_number(text: str) -> str | None:
         r"\b(?:Vacancy|Reference|Ref(?:erence)?|VN|Job\s*ID|Requisition|Announcement)\b\s*(?:No\.?|Number|#|ID)?\s*[:\-]?\s*([A-Z0-9][A-Z0-9/_\-.]{2,})",
     ]
     for pattern in explicit_patterns:
-        match = re.search(pattern, text, flags=re.I)
+        match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
             candidate = _clean_reference_candidate(match.group(1))
             if _looks_like_reference_number(candidate, explicit_label=True):
@@ -1232,12 +1232,12 @@ def extract_reference_number(text: str) -> str | None:
 
 
 def extract_application_email(text: str) -> str | None:
-    match = re.search(EMAIL_PATTERN, text, flags=re.I)
+    match = re.search(EMAIL_PATTERN, text, flags=re.IGNORECASE)
     return match.group(0) if match else None
 
 
 def extract_urls(text: str) -> list[str]:
-    urls = re.findall(r"https?://[^\s<>\"')\],;]+", text or "", flags=re.I)
+    urls = re.findall(r"https?://[^\s<>\"')\],;]+", text or "", flags=re.IGNORECASE)
     cleaned: list[str] = []
     for url in urls:
         value = url.rstrip(".,;:!?)]")
@@ -1272,10 +1272,10 @@ def is_valid_application_url(url: str | None) -> bool:
 
 def extract_application_subject(text: str, title: str = "") -> str | None:
     if title and (
-        re.search(r"\b(?:mention|write|include|indicat(?:e|ing))\b[^\n\r]{0,120}\b(?:job\s+title|position(?:\s+title)?|title)\b[^\n\r]{0,120}\bsubject\b", text or "", flags=re.I)
-        or re.search(r"\bmention\b[^\n\r]{0,80}\bposition\b[^\n\r]{0,120}\bsubject\b", text or "", flags=re.I)
+        re.search(r"\b(?:mention|write|include|indicat(?:e|ing))\b[^\n\r]{0,120}\b(?:job\s+title|position(?:\s+title)?|title)\b[^\n\r]{0,120}\bsubject\b", text or "", flags=re.IGNORECASE)
+        or re.search(r"\bmention\b[^\n\r]{0,80}\bposition\b[^\n\r]{0,120}\bsubject\b", text or "", flags=re.IGNORECASE)
     ):
-        if not re.search(r"\b(?:(?:vacancy|reference|ref\.?|announcement)\s*(?:number|no\.?|#)?|position\s+code|job\s+code)\b", text or "", flags=re.I):
+        if not re.search(r"\b(?:(?:vacancy|reference|ref\.?|announcement)\s*(?:number|no\.?|#)?|position\s+code|job\s+code)\b", text or "", flags=re.IGNORECASE):
             return title
     patterns = [
         r"(?:email\s+)?subject(?:\s+line)?\s*(?:must\s+be|should\s+be|as)?\s*[:\-]\s*[\"']?([^\n\r\"']{3,120})",
@@ -1284,7 +1284,7 @@ def extract_application_subject(text: str, title: str = "") -> str | None:
         r"subject[^\n\r]{0,80}?(?:like|as)\s*\(?\s*\*{0,2}([A-Z0-9][A-Z0-9/_\-.]{2,})",
     ]
     for pattern in patterns:
-        match = re.search(pattern, text, flags=re.I)
+        match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
             subject = match.group(1).strip().strip(" .;:")
             # Avoid consuming the next instruction sentence.
@@ -1297,30 +1297,30 @@ def extract_application_subject(text: str, title: str = "") -> str | None:
 
 def application_subject_required(text: str) -> bool:
     text = text or ""
-    if re.search(r"\bsubject\b", text, flags=re.I):
+    if re.search(r"\bsubject\b", text, flags=re.IGNORECASE):
         return True
     # Common Dari/Persian ACBAR wording: applicants must write the job title
     # and position code in the email. If no exact code is present, readiness
     # must remain NEEDS_VERIFICATION instead of inventing a subject/reference.
     return bool(
-        re.search(r"عنوان.{0,80}(?:کد|كود|کُد|كد).{0,80}بست.{0,120}(?:ایمیل|ايميل).{0,80}الزام", text, flags=re.I)
-        or re.search(r"(?:ایمیل|ايميل).{0,120}عنوان.{0,80}(?:کد|كود|کُد|كد).{0,80}بست", text, flags=re.I)
+        re.search(r"عنوان.{0,80}(?:کد|كود|کُد|كد).{0,80}بست.{0,120}(?:ایمیل|ايميل).{0,80}الزام", text, flags=re.IGNORECASE)
+        or re.search(r"(?:ایمیل|ايميل).{0,120}عنوان.{0,80}(?:کد|كود|کُد|كد).{0,80}بست", text, flags=re.IGNORECASE)
     )
 
 
 def extract_locations(text: str, explicit_location: str = "") -> list[str]:
     found: list[str] = []
     combined = f"{explicit_location}\n{text}"
-    combined = re.sub(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", " ", combined, flags=re.I)
-    combined = re.sub(r"https?://\S+", " ", combined, flags=re.I)
+    combined = re.sub(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", " ", combined, flags=re.IGNORECASE)
+    combined = re.sub(r"https?://\S+", " ", combined, flags=re.IGNORECASE)
     for province in AFGHAN_PROVINCES:
-        if re.search(rf"\b{re.escape(province)}\b", combined, flags=re.I):
+        if re.search(rf"\b{re.escape(province)}\b", combined, flags=re.IGNORECASE):
             canonical = "Sar-e-Pul" if province.lower().replace(" ", "-") in {"sar-e-pul", "sar-e pul"} else province
             if canonical not in found:
                 found.append(canonical)
-    if re.search(r"\bKabul\b", combined, flags=re.I) and "Kabul" not in found:
+    if re.search(r"\bKabul\b", combined, flags=re.IGNORECASE) and "Kabul" not in found:
         found.append("Kabul")
-    if any(re.search(p, combined, flags=re.I) for p in DISTRICT_PATTERNS):
+    if any(re.search(p, combined, flags=re.IGNORECASE) for p in DISTRICT_PATTERNS):
         if "Field / district deployment" not in found:
             found.append("Field / district deployment")
     return found
@@ -1388,7 +1388,7 @@ def extract_gender_requirement(text: str) -> str | None:
         ("male", r"^\s*male\s+(?:medical\s+doctor|doctor|md|physician|nurse|staff|officer)\b"),
     ]
     for value, pattern in hard_patterns:
-        if re.search(pattern, lower, flags=re.I):
+        if re.search(pattern, lower, flags=re.IGNORECASE):
             return value
     return None
 
@@ -1414,7 +1414,7 @@ def extract_nationality_requirement(text: str) -> str | None:
 def extract_residency_requirement(text: str) -> str | None:
     lower = text.lower()
     if "resident of" in lower or "local resident" in lower or "must reside" in lower:
-        match = re.search(r"(?:resident of|must reside in|residents? of)\s+([A-Za-z\- ]{3,40})", text, flags=re.I)
+        match = re.search(r"(?:resident of|must reside in|residents? of)\s+([A-Za-z\- ]{3,40})", text, flags=re.IGNORECASE)
         return match.group(1).strip(" .,") if match else "Local residency"
     return None
 
@@ -1502,7 +1502,7 @@ def extract_requirements_from_text(
             "general_experience_years": "Relevant experience years",
         }.get(key, "Experience years")
         # Find a quote close to the first occurrence of the number.
-        match = re.search(rf"\b{min_years}\+?\s*(?:years?|yrs?)\b", combined, flags=re.I)
+        match = re.search(rf"\b{min_years}\+?\s*(?:years?|yrs?)\b", combined, flags=re.IGNORECASE)
         start, end = (match.start(), match.end()) if match else (0, 0)
         _add_requirement(
             requirements,
@@ -1540,30 +1540,30 @@ def extract_requirements_from_text(
 
     nationality = extract_nationality_requirement(combined)
     if nationality:
-        idx = re.search(r"Afghan|national|international|expatriate", combined, flags=re.I)
+        idx_match = re.search(r"Afghan|national|international|expatriate", combined, flags=re.IGNORECASE)
         _add_requirement(
             requirements,
             provenance,
             "nationality_requirement",
             "Nationality requirement",
             combined,
-            idx.start() if idx else 0,
-            idx.end() if idx else 0,
+            idx_match.start() if idx_match else 0,
+            idx_match.end() if idx_match else 0,
             value=nationality,
             criticality="essential",
         )
 
     residency = extract_residency_requirement(combined)
     if residency:
-        idx = re.search(r"resident|reside|local", combined, flags=re.I)
+        idx_match = re.search(r"resident|reside|local", combined, flags=re.IGNORECASE)
         _add_requirement(
             requirements,
             provenance,
             "residency_requirement",
             "Residency requirement",
             combined,
-            idx.start() if idx else 0,
-            idx.end() if idx else 0,
+            idx_match.start() if idx_match else 0,
+            idx_match.end() if idx_match else 0,
             value=residency,
             criticality="essential",
         )

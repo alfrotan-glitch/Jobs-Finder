@@ -2,8 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem Jobs-Finder one-click Windows launcher.
-rem It starts only the canonical dashboard and never runs scans, watchers,
-rem browser automation, or application submission.
+rem It starts only the canonical dashboard and never submits applications.
 
 title Jobs-Finder
 

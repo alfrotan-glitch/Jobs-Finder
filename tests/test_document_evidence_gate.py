@@ -19,7 +19,11 @@ import zipfile
 from datetime import date
 from pathlib import Path
 
-from utils.documents import generate_application_package, generate_tailored_documents, prepare_application_bundle
+from utils.documents import (
+    generate_application_package,
+    generate_tailored_documents,
+    prepare_application_bundle,
+)
 from utils.medical_matcher import match_job_against_profile
 
 

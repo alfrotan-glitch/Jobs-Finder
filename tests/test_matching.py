@@ -1,11 +1,12 @@
 from datetime import date
 
 from utils.medical_matcher import NEEDS_VERIFICATION_STATUS, NOT_ELIGIBLE_STATUS, READY_TO_APPLY, match_job_against_profile
+from utils.profile import build_profile_evidence
 
 
 def base_profile(**updates):
     profile = {
-        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "gender": "male", "nationality": "Afghan", "verified": True},
+        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "gender": "male", "nationality": "Afghan", "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True}},
         "medical_education": [{"degree": "MD", "verified": True}],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},
@@ -101,6 +102,36 @@ def test_verified_gender_mismatch_is_not_eligible():
     assert gender_item["status"] == "Not met"
 
 
+def test_gender_is_never_inferred_from_name_title_or_pronouns():
+    """Only personal.verification.gender makes gender evidence.
+
+    A feminine first name, a gendered job title, and pronouns in the vacancy
+    text must never produce profile gender evidence, so a female-only
+    vacancy stays NEEDS_VERIFICATION instead of being decided either way.
+    """
+    profile = base_profile(personal={
+        "first_name": "Fatima",
+        "last_name": "Ahmadi",
+        "email": "doctor@example.org",
+        "professional_title": "Lady Medical Doctor",
+        "nationality": "Afghan",
+        "verification": {"first_name": True, "last_name": True, "email": True, "professional_title": True, "nationality": True},
+    })
+    evidence = build_profile_evidence(profile)
+    assert not evidence.has("gender")
+    assert not evidence.has_verified("gender")
+
+    report = match_job_against_profile(
+        job("She will lead the clinic. Only qualified female candidates will be considered. "
+            "Apply to hr@example.org by 2026-12-31.", title="Female Medical Doctor"),
+        profile,
+        today=date(2026, 10, 1),
+    ).to_dict()
+    assert report["readiness_status"] == NEEDS_VERIFICATION_STATUS
+    gender_item = next(item for item in report["requirement_matches"] if item["key"] == "gender_requirement")
+    assert gender_item["status"] == "Needs verification"
+
+
 def test_unverified_nationality_claim_needs_verification():
     profile = base_profile(personal={"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "gender": "male", "nationality": "International"})
     report = match_job_against_profile(
@@ -153,7 +184,7 @@ def test_nutrition_promoter_is_not_eligible_when_md_not_accepted():
 
 def test_female_only_and_male_only_constraints_are_deterministic():
     male_profile = base_profile()
-    female_profile = base_profile(personal={"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "gender": "female", "nationality": "Afghan", "verified": True})
+    female_profile = base_profile(personal={"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "gender": "female", "nationality": "Afghan", "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True}})
     female_only = match_job_against_profile(job("Women only. Medical Doctor required. Apply to hr@example.org by 2026-12-31.", title="Female Medical Doctor"), male_profile, today=date(2026, 10, 1)).to_dict()
     male_only = match_job_against_profile(job("Male only. Medical Doctor required. Apply to hr@example.org by 2026-12-31.", title="Male Medical Doctor"), female_profile, today=date(2026, 10, 1)).to_dict()
     assert female_only["readiness_status"] == NOT_ELIGIBLE_STATUS

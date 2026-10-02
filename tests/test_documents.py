@@ -11,7 +11,7 @@ from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 
 def profile():
     return {
-        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "phone": "+93700000000", "location": "Kabul", "gender": "male", "nationality": "Afghan", "verified": True},
+        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "phone": "+93700000000", "location": "Kabul", "gender": "male", "nationality": "Afghan", "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True}},
         "medical_education": [{"degree": "MD", "verified": True}],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},

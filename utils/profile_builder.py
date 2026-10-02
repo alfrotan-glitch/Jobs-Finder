@@ -84,7 +84,6 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
             # email, and phone number, but it can never confirm them. Only
             # the profile owner reviewing and setting a specific
             # personal.verification.<field> flag to true verifies that fact.
-            "verified": False,  # Block-level confirmation stays off; the user confirms per field below.
             "verification": {
                 "first_name": False,
                 "last_name": False,

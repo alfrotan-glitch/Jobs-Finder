@@ -39,7 +39,7 @@ TODAY = date(2026, 10, 1)
 
 def md_profile(**updates):
     profile = {
-        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "gender": "male", "nationality": "Afghan", "verified": True},
+        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "gender": "male", "nationality": "Afghan", "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True}},
         "medical_education": [{"degree": "MD (Doctor of Medicine)", "verified": True}],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},
@@ -380,7 +380,7 @@ def test_needs_verification_items_cannot_bypass_hard_role_incompatibility():
     # Even when everything else is merely unverified, a proven professional
     # mismatch keeps the whole vacancy NOT_ELIGIBLE.
     sparse_profile = {
-        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "verified": True},
+        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True}},
         "medical_education": [{"degree": "MD", "verified": True}],
     }
     report = match_job_against_profile(

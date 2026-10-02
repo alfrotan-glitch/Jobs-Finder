@@ -183,21 +183,17 @@ PERSONAL_VERIFICATION_FIELDS = {
 
 
 def personal_field_is_verified(profile: dict[str, Any], key: str) -> bool:
-    """Return explicit verification status for one personal/profile field.
+    """Return the explicit verification status of one personal field.
 
-    ``personal.verification.<field>: true`` confirms one field, so identity,
-    contact, gender, nationality, and location are verified separately.
-    ``personal.verified: true`` is the user's block-level confirmation of the
-    whole personal section; dashboard confirmations always write the
-    per-field flag.
+    ``personal.verification.<field>: true`` is the only way a personal fact
+    becomes verified evidence, so identity, contact, gender, nationality,
+    location, and professional title are each confirmed on their own:
+    confirming an email never verifies gender. Only a literal boolean
+    ``true`` counts.
     """
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
-    if is_verified_flag(personal.get("verified")):
-        return True
     verification = personal.get("verification") or {}
-    if isinstance(verification, dict) and is_verified_flag(verification.get(key)):
-        return True
-    return False
+    return isinstance(verification, dict) and is_verified_flag(verification.get(key))
 
 
 MEDICAL_TERM_KEYS = {
@@ -675,9 +671,8 @@ def _add_personal(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
     # profile_builder.build_profile_from_cv_text). A CV-derived value is
     # therefore NOT automatically verified just because it is present and
     # non-placeholder -- per the canonical rule, identity/contact data is
-    # subject to explicit verification: individual fields are confirmed under
-    # personal.verification.<field>, and personal.verified: true is the
-    # user's block-level confirmation of the whole personal section.
+    # subject to explicit verification: each field is confirmed on its own
+    # under personal.verification.<field>.
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     for key in ["location", "nationality", "gender", "phone", "email", "first_name", "last_name", "linkedin"]:
         value = personal.get(key)

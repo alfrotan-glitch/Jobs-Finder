@@ -52,7 +52,6 @@ personal:
   # for hard requirements such as gender, nationality, location/residency, or
   # contact readiness. Confirming email does not verify gender; confirming
   # nationality does not verify phone, etc.
-  verified: false   # Optional: set true only to confirm the whole personal block at once.
   verification:
     first_name: false
     last_name: false

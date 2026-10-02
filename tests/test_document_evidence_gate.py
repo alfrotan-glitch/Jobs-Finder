@@ -12,7 +12,7 @@ unverified profile data into factual content:
 * verified entries must still appear correctly;
 * contact data follows one explicit rule: displayed for review even as a
   draft, never silently verified, placeholders replaced, and an unconfirmed
-  personal block keeps a visible package blocker.
+  unconfirmed personal field keeps a visible package blocker.
 """
 
 import zipfile
@@ -47,7 +47,7 @@ def _mixed_profile():
             "location": "Kabul",
             "nationality": "Afghan",
             "gender": "female",
-            "verified": True,
+            "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True},
         },
         "medical_education": [
             {"degree": "MD", "institution": "Kabul Medical University", "verified": True},
@@ -238,7 +238,7 @@ def test_excluded_unverified_items_stay_visible_in_review_warnings():
 
 def test_draft_contact_data_is_displayed_for_review_not_suppressed():
     profile = _mixed_profile()
-    profile["personal"]["verified"] = False  # CV-import-like draft
+    profile["personal"]["verification"] = {}  # CV-import-like draft
     docs, _ = _docs(profile)
     cv = docs["tailored_cv_text"]
     assert "jane.real@clinic-example.af" in cv
@@ -264,7 +264,7 @@ def test_placeholder_contact_data_is_replaced_with_review_marker():
 
 def test_unconfirmed_personal_fields_keep_visible_package_blocker():
     profile = _mixed_profile()
-    profile["personal"]["verified"] = False
+    profile["personal"]["verification"] = {}
     job = _job()
     report = match_job_against_profile(job, profile, today=date(2026, 10, 1)).to_dict()
     docs = generate_tailored_documents(job, profile, report)

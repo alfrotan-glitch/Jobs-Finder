@@ -151,7 +151,7 @@ def test_personal_identity_fields_require_explicit_personal_verification():
     verified evidence just because it is present and non-placeholder --
     profile_builder.py extracts these directly from CV text with no verified
     flags, so they must stay unverified until the owner explicitly confirms
-    each field (or the whole personal block).
+    each field under personal.verification.
     """
     profile = {
         "personal": {
@@ -189,7 +189,7 @@ def test_personal_identity_fields_verify_individually():
     assert not evidence.has_verified("location")
 
 
-def test_personal_identity_fields_verify_once_the_personal_block_is_confirmed():
+def test_personal_fields_verify_only_through_their_own_flag():
     profile = {
         "personal": {
             "first_name": "Jane",
@@ -197,7 +197,7 @@ def test_personal_identity_fields_verify_once_the_personal_block_is_confirmed():
             "email": "jane.doe@example.org",
             "gender": "female",
             "nationality": "Afghan",
-            "verified": True,
+            "verification": {"first_name": True, "last_name": True, "email": True, "gender": True, "nationality": True},
         }
     }
     evidence = build_profile_evidence(profile)
@@ -205,10 +205,19 @@ def test_personal_identity_fields_verify_once_the_personal_block_is_confirmed():
         assert evidence.has_verified(key)
 
 
-def test_personal_verified_false_does_not_verify():
-    profile = {"personal": {"gender": "male", "verified": False}}
+def test_personal_verification_flag_must_be_literal_true():
+    profile = {"personal": {"gender": "male", "verification": {"gender": False}}}
     evidence = build_profile_evidence(profile)
+    assert evidence.has("gender")
     assert not evidence.has_verified("gender")
-    profile2 = {"personal": {"gender": "male", "verified": "true"}}
-    evidence2 = build_profile_evidence(profile2)
-    assert not evidence2.has_verified("gender")
+    for truthy in ["true", "yes", 1]:
+        other = {"personal": {"gender": "male", "verification": {"gender": truthy}}}
+        assert not build_profile_evidence(other).has_verified("gender")
+
+
+def test_personal_fields_without_a_verification_map_stay_unverified():
+    profile = {"personal": {"gender": "male", "nationality": "Afghan"}}
+    evidence = build_profile_evidence(profile)
+    assert evidence.has("gender") and evidence.has("nationality")
+    assert not evidence.has_verified("gender")
+    assert not evidence.has_verified("nationality")

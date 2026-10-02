@@ -30,8 +30,8 @@ CONTACT/IDENTITY CONTRACT (single rule for employer-facing contact data):
   legitimate contact data must never be suppressed or invented.
 * Display never implies verification: contact/identity values only become
   verified evidence for matching (gender/nationality/location requirements)
-  via explicit personal verification (``personal.verification.<field>: true``
-  for one field, or ``personal.verified: true`` for the whole block).
+  via explicit personal verification (``personal.verification.<field>:
+  true``, one field at a time).
 * Known placeholder contact values are replaced with the explicit review
   marker ``CONFIRM BEFORE SUBMISSION`` so a fake address can never be sent.
 * While identity/contact fields are not explicitly verified, the application
@@ -1460,8 +1460,8 @@ def generate_application_package(
         missing.append("Confirmed phone number")
     # CONTACT/IDENTITY CONTRACT: draft (e.g. CV-imported) contact data is
     # displayed in the documents for review, but each identity/contact field
-    # stays a visible blocker until explicitly confirmed, either per field
-    # (personal.verification.<field>) or for the whole personal block.
+    # stays a visible blocker until it is explicitly confirmed under
+    # personal.verification.<field>.
     identity_fields = ["first_name", "last_name", "email", "phone"]
     unverified_identity = [field for field in identity_fields if personal.get(field) and not personal_field_is_verified(profile, field)]
     if unverified_identity:

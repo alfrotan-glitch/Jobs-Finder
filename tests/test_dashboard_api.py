@@ -134,7 +134,6 @@ def test_confirm_endpoint_supports_confirming_one_personal_field(client):
     updated = yaml.safe_load(server.PROFILE_PATH.read_text(encoding="utf-8"))
     assert updated["personal"]["verification"]["nationality"] is True
     assert updated["personal"]["verification"].get("location") is not True
-    assert updated["personal"].get("verified") is not True
 
     review_after = client.get("/api/profile/review").json()
     nationality_row_after = next(f for f in review_after["fields"] if f["key"] == "nationality")

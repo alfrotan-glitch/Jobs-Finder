@@ -30,7 +30,7 @@ def confirmed_profile():
             "location": "Kabul, Afghanistan",
             "nationality": "Afghan",
             "gender": "Male",
-            "verified": True,
+            "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True},
         },
         "professional_summary": {
             "text": "Medical Doctor with clinical, health and nutrition program experience in Afghanistan.",

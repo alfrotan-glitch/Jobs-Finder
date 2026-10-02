@@ -106,7 +106,7 @@ def test_license_copy_available_yes_with_verification_counts():
 
 def test_experience_years_from_unverified_cv_text_never_meet_requirements():
     profile = {
-        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "verified": True},
+        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True}},
         "medical_education": [{"degree": "MD", "verified": True}],
         "license_registration": {"status": "Valid", "verified": True},
     }

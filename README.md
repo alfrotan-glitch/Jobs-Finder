@@ -189,7 +189,7 @@ Employer-facing generated documents (tailored CV and cover letter — TXT, and t
 
 ### Contact/identity rule
 
-Contact data (name, email, phone, location) from `profile.personal` is display data for the applicant's own application: it is printed in generated documents even while still a draft (for example right after a CV import), so the user can review it in place and legitimate contact data is never suppressed or invented. Display never implies verification — contact/identity facts only become verified evidence for matching through explicit confirmation (`personal.verification.<field>: true` for one field, or `personal.verified: true` for the whole personal block). Known placeholder values are replaced with `CONFIRM BEFORE SUBMISSION`, and while identity/contact fields are unconfirmed, the application package keeps a visible "confirm identity/contact" blocker.
+Contact data (name, email, phone, location) from `profile.personal` is display data for the applicant's own application: it is printed in generated documents even while still a draft (for example right after a CV import), so the user can review it in place and legitimate contact data is never suppressed or invented. Display never implies verification — contact/identity facts only become verified evidence for matching through explicit per-field confirmation (`personal.verification.<field>: true`). Known placeholder values are replaced with `CONFIRM BEFORE SUBMISSION`, and while identity/contact fields are unconfirmed, the application package keeps a visible "confirm identity/contact" blocker.
 
 ## Troubleshooting
 

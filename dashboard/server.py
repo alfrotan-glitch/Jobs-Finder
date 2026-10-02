@@ -68,12 +68,10 @@ def load_profile(required: bool = False) -> dict[str, Any]:
 
 def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
-    professional_title: Any = personal.get("professional_title") or profile.get("professional_title") or ""
-    if isinstance(professional_title, dict):
-        professional_title = professional_title.get("text") or professional_title.get("value") or professional_title.get("title") or ""
+    professional_title = personal.get("professional_title") or ""
     return {
         "name": " ".join(str(personal.get(key, "")).strip() for key in ["first_name", "last_name"]).strip(),
-        "title": professional_title if isinstance(professional_title, str) else "",
+        "title": str(professional_title),
         "email": personal.get("email", ""),
         "phone": personal.get("phone", ""),
         "location": personal.get("location", ""),
@@ -205,7 +203,7 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
 # or None when no one-click confirm is available for it yet (those facts
 # still require editing profile.yaml directly).
 REVIEW_FIELDS: list[tuple[str, str, str | None]] = [
-    ("professional_title", "Professional identity/title", "professional_title"),
+    ("professional_title", "Professional identity/title", "personal:professional_title"),
     ("first_name", "First name", "personal:first_name"),
     ("last_name", "Last name", "personal:last_name"),
     ("email", "Email address", "personal:email"),
@@ -228,7 +226,7 @@ REVIEW_FIELDS: list[tuple[str, str, str | None]] = [
 # never invents a value, a number, a date, or a document. Personal fields are
 # confirmed one at a time under personal.verification.<field>, so confirming
 # an email cannot silently verify gender, nationality, or location.
-CONFIRMABLE_FIELDS = {"medical_education", "license_registration", "medical_exit_exam", "professional_title"}
+CONFIRMABLE_FIELDS = {"medical_education", "license_registration", "medical_exit_exam"}
 
 
 def _is_confirmable(field: str) -> bool:
@@ -370,24 +368,6 @@ async def api_profile_confirm(request: Request):
         if not isinstance(verification, dict):
             raise HTTPException(status_code=400, detail="personal.verification is not a mapping in profile.yaml.")
         verification[key] = True
-    elif field == "professional_title":
-        personal = profile.get("personal") if isinstance(profile.get("personal"), dict) else {}
-        if personal.get("professional_title") and not is_unresolved_value(personal.get("professional_title")):
-            verification = personal.setdefault("verification", {})
-            if not isinstance(verification, dict):
-                raise HTTPException(status_code=400, detail="personal.verification is not a mapping in profile.yaml.")
-            verification["professional_title"] = True
-        else:
-            title = profile.get("professional_title")
-            if isinstance(title, dict):
-                value = title.get("text") or title.get("value") or title.get("title")
-                if not value or is_unresolved_value(value):
-                    raise HTTPException(status_code=400, detail="professional_title has no resolved value to verify.")
-                title["verified"] = True
-            elif title and not is_unresolved_value(title):
-                profile["professional_title"] = {"value": str(title), "verified": True}
-            else:
-                raise HTTPException(status_code=400, detail="professional_title has no resolved value to verify.")
     elif field == "medical_education":
         target = profile.get(field)
         if not isinstance(target, list) or not target:

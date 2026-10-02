@@ -221,3 +221,21 @@ def test_personal_fields_without_a_verification_map_stay_unverified():
     assert evidence.has("gender") and evidence.has("nationality")
     assert not evidence.has_verified("gender")
     assert not evidence.has_verified("nationality")
+
+
+def test_professional_title_evidence_comes_from_the_personal_field():
+    profile = {
+        "personal": {
+            "professional_title": "Medical Doctor",
+            "verification": {"professional_title": True},
+        }
+    }
+    evidence = build_profile_evidence(profile)
+    items = evidence.items["professional_title"]
+    assert [item.value for item in items] == ["Medical Doctor"]
+    assert items[0].source == "profile.personal.professional_title"
+    assert evidence.has_verified("professional_title")
+
+    unconfirmed = build_profile_evidence({"personal": {"professional_title": "Medical Doctor"}})
+    assert unconfirmed.has("professional_title")
+    assert not unconfirmed.has_verified("professional_title")

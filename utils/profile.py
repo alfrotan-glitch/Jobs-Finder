@@ -390,7 +390,6 @@ def _profile_text(profile: dict[str, Any]) -> str:
         "ngo_humanitarian_experience",
         "personal",
         "preferences",
-        "professional_title",
         "professional_summary",
     ]
     return "\n".join("\n".join(_iter_strings(profile.get(key))) for key in include_keys)
@@ -680,20 +679,14 @@ def _add_personal(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
             evidence.add(key, value, f"profile.personal.{key}", str(value), verified=personal_field_is_verified(profile, key))
 
     title_value = personal.get("professional_title")
-    title_verified = personal_field_is_verified(profile, "professional_title")
-    title_source = "profile.personal.professional_title"
-    if not title_value:
-        raw_title = profile.get("professional_title")
-        if isinstance(raw_title, dict):
-            title_value = raw_title.get("text") or raw_title.get("value") or raw_title.get("title")
-            title_verified = is_verified_flag(raw_title.get("verified"))
-            title_source = "profile.professional_title"
-        else:
-            title_value = raw_title
-            title_verified = False
-            title_source = "profile.professional_title"
     if title_value and not is_unresolved_value(title_value):
-        evidence.add("professional_title", title_value, title_source, str(title_value), verified=title_verified)
+        evidence.add(
+            "professional_title",
+            title_value,
+            "profile.personal.professional_title",
+            str(title_value),
+            verified=personal_field_is_verified(profile, "professional_title"),
+        )
     prefs = profile.get("preferences", {}) if isinstance(profile.get("preferences"), dict) else {}
     for loc in prefs.get("locations", []) or []:
         if not is_unresolved_value(loc):

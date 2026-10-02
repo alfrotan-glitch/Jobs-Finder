@@ -45,7 +45,7 @@ personal:
   nationality: Afghan
   gender: ""   # Optional; only used for explicit gender-restricted vacancies.
   linkedin: ""
-  professional_title: ""  # e.g. your current reviewed professional identity/title.
+  professional_title: ""  # Your professional identity/title; confirm it with personal.verification.professional_title.
   # Confirm personal facts one field at a time. Importing a CV can fill in
   # name/email/phone automatically, but it NEVER sets these flags. Only the
   # specific fields below with literal `true` can be used as verified evidence

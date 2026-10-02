@@ -84,7 +84,6 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
             # email, and phone number, but it can never confirm them. Only
             # the profile owner reviewing and setting a specific
             # personal.verification.<field> flag to true verifies that fact.
-            "verified": False,  # Legacy block flag kept false; new workflow uses the per-field map below.
             "verification": {
                 "first_name": False,
                 "last_name": False,
@@ -137,10 +136,8 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
         },
         "sources": {"enabled": [], "disabled": []},
         # Never bake the registry's operational source defaults into the
-        # generated profile. Anything materialized here is read back later as
-        # an explicit user override — this is exactly how the old bounded
-        # ACBAR budget (max_pages: 6 / detail_limit: 30) kept capping real
-        # scans even after the registry default was removed. The empty blocks
+        # generated profile: anything materialized here would be read back as
+        # an explicit user override and would cap real scans. The empty blocks
         # only document where deliberate overrides go; canonical defaults live
         # solely in utils/source_registry.py.
         "job_sources": {

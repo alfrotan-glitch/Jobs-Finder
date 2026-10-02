@@ -1,13 +1,7 @@
-"""Regression tests for the recommendation accounting mismatch from the real
-Windows run.
+"""Recommendation accounting: one authority, one collection.
 
-Observed live: the scan summary printed "Recommended from this scan: 6" while
-the CLI went on to print 8 recommendations. Root cause: the summary counted
-THIS scan's match outcomes, but the printed list came from an independent
-re-query of the whole stored database (all scans ever, own ranking, own
-filter). Two independent answers to one question — they diverged.
-
-Design now (utils/recommendations.py is the single authority):
+``utils/recommendations.py`` is the single authority, so every surface counts
+and renders the same collection:
 
 * ``scan.recommendations`` is built ONCE from the scan's own (job, match)
   pairs; ``recommended_from_scan == len(scan.recommendations)`` structurally.

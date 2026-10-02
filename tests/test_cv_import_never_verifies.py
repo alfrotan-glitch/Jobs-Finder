@@ -1,7 +1,8 @@
-"""Regression test for brief requirement #14: importing a CV must never
-produce verified facts by itself. Uses a synthetic CV claiming an MD,
-license/registration, fluent English, 5 years experience, and certificates --
-none of this may become `verified: true` anywhere in the resulting profile.
+"""Importing a CV must never produce verified facts by itself.
+
+Uses a synthetic CV claiming an MD, license/registration, fluent English,
+5 years experience, and certificates -- none of this may become
+`verified: true` anywhere in the resulting profile.
 """
 
 from utils.profile import build_profile_evidence
@@ -73,11 +74,11 @@ def test_cv_import_never_verifies_identity_or_contact_evidence():
     """Even though the synthetic CV has a real name, email, and phone number
     that profile_builder.py DOES extract into personal.first_name/last_name/
     email/phone, none of that may be represented as verified evidence --
-    explicit confirmation (personal.verified: true) is the only route.
+    explicit confirmation by the profile owner is the only route.
     """
     profile = build_profile_from_cv_text(SYNTHETIC_CV, resume_path="cv.txt")
     assert profile["personal"]["email"]  # sanity: the extractor did find one
-    assert profile["personal"]["verified"] is False
+    assert all(flag is False for flag in profile["personal"]["verification"].values())
     evidence = build_profile_evidence(profile)
     for key in ["first_name", "last_name", "email", "phone"]:
         assert not evidence.has_verified(key), f"{key} must not be verified from CV import alone"

@@ -30,8 +30,8 @@ CONTACT/IDENTITY CONTRACT (single rule for employer-facing contact data):
   legitimate contact data must never be suppressed or invented.
 * Display never implies verification: contact/identity values only become
   verified evidence for matching (gender/nationality/location requirements)
-  via explicit personal-field verification (``personal.verification.<field>:
-  true``; legacy ``personal.verified: true`` is still honored).
+  via explicit personal verification (``personal.verification.<field>:
+  true``, one field at a time).
 * Known placeholder contact values are replaced with the explicit review
   marker ``CONFIRM BEFORE SUBMISSION`` so a fake address can never be sent.
 * While identity/contact fields are not explicitly verified, the application
@@ -691,23 +691,16 @@ def _max_verified_years(evidence, key: str) -> float | None:
 
 
 def _verified_profile_title(profile: dict[str, Any], evidence) -> str:
-    """Return a profile-owner-confirmed professional title, if available."""
+    """Return the profile owner's confirmed professional title, if any.
+
+    The title comes from ``personal.professional_title`` and counts only
+    when ``personal.verification.professional_title`` is true.
+    """
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
-    candidates: list[tuple[Any, bool]] = []
-    candidates.append((personal.get("professional_title"), personal_field_is_verified(profile, "professional_title")))
-    title = profile.get("professional_title")
-    if isinstance(title, dict):
-        candidates.append((title.get("text") or title.get("value") or title.get("title"), is_verified_flag(title.get("verified"))))
-    else:
-        # A top-level plain string has no sibling verification flag.  Only use
-        # it when the verified medical-degree evidence independently supports a
-        # medical professional headline.
-        candidates.append((title, evidence.has_verified("md_degree")))
-    for value, verified in candidates:
-        text = str(value or "").strip()
-        if verified and text and not is_unresolved_value(text):
-            return text
-    return ""
+    if not personal_field_is_verified(profile, "professional_title"):
+        return ""
+    text = str(personal.get("professional_title") or "").strip()
+    return text if text and not is_unresolved_value(text) else ""
 
 
 def _signature_title(profile: dict[str, Any], evidence) -> str:
@@ -1460,9 +1453,8 @@ def generate_application_package(
         missing.append("Confirmed phone number")
     # CONTACT/IDENTITY CONTRACT: draft (e.g. CV-imported) contact data is
     # displayed in the documents for review, but each identity/contact field
-    # stays a visible blocker until explicitly confirmed. A legacy
-    # personal.verified: true profile still satisfies this check, but new
-    # dashboard confirmations write personal.verification.<field>: true.
+    # stays a visible blocker until it is explicitly confirmed under
+    # personal.verification.<field>.
     identity_fields = ["first_name", "last_name", "email", "phone"]
     unverified_identity = [field for field in identity_fields if personal.get(field) and not personal_field_is_verified(profile, field)]
     if unverified_identity:

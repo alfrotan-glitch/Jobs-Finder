@@ -16,7 +16,7 @@ def six_role_profile():
             "first_name": "Ahmad", "last_name": "Example",
             "email": "ahmad@example.af", "phone": "+93 70 123 4567",
             "location": "Afghanistan", "professional_title": "Medical Doctor",
-            "verified": True,
+            "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True},
         },
         "medical_education": [{"degree": "Doctor of Medicine (MD)", "institution": "Medical University", "year": "2018", "verified": True}],
         "license_registration": {"authority": "Medical Council", "status": "Registered", "verified": True},

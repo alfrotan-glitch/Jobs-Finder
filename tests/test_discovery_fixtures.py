@@ -111,9 +111,10 @@ async def test_pipeline_reports_parsed_before_relevance(monkeypatch):
     report = result.source_reports[0]
     assert result.status == PARTIAL_SCAN
     assert report.status == "PARTIAL"
-    assert report.jobs_found == 6
-    assert report.relevant_candidates >= 1
-    assert report.final_retained == len(result.jobs)
+    assert report.vacancies_parsed == 7
+    assert report.duplicates_removed == 1
+    assert report.relevant_retained >= 1
+    assert report.relevant_retained == len(result.jobs)
     assert any(job.title == "Medical Doctor (MD)" for job in result.jobs)
 
 

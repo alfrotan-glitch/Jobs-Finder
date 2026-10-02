@@ -1,9 +1,9 @@
-"""Regression tests for strict matcher semantics.
+"""Strict matcher semantics.
 
-Every weakness covered here was either found in this audit or is a trap the
-canonical contract explicitly forbids: Python truthiness standing in for
-semantic verification, unverified evidence producing MET/NOT_MET, and
-string/number look-alike booleans ("true", "no", 1, 0, placeholders).
+Each case is a trap the canonical contract explicitly forbids: Python
+truthiness standing in for semantic verification, unverified evidence
+producing MET/NOT_MET, and string/number look-alike booleans ("true", "no",
+1, 0, placeholders).
 """
 
 from datetime import date
@@ -106,7 +106,7 @@ def test_license_copy_available_yes_with_verification_counts():
 
 def test_experience_years_from_unverified_cv_text_never_meet_requirements():
     profile = {
-        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "verified": True},
+        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True}},
         "medical_education": [{"degree": "MD", "verified": True}],
         "license_registration": {"status": "Valid", "verified": True},
     }

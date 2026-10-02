@@ -11,7 +11,7 @@ from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 
 def profile():
     return {
-        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "phone": "+93700000000", "location": "Kabul", "gender": "male", "nationality": "Afghan", "verified": True},
+        "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "phone": "+93700000000", "location": "Kabul", "gender": "male", "nationality": "Afghan", "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True}},
         "medical_education": [{"degree": "MD", "verified": True}],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},
@@ -98,10 +98,10 @@ def test_package_json_contains_review_warnings_for_verification(tmp_path):
 
 
 def test_design_fonts_are_always_renderable_on_this_platform():
-    """Regression (Windows CI): _register_fonts previously returned font names
-    whose registration had silently failed on non-Linux hosts, crashing every
-    PDF export. The returned names must always be either actually registered
-    TTF fonts or ReportLab built-in standard fonts."""
+    """Every name returned by _register_fonts must be renderable on the
+    current platform: either an actually registered TTF font or a ReportLab
+    built-in standard font, so PDF export works on Windows, Linux, and
+    macOS."""
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.pdfmetrics import standardFonts
 

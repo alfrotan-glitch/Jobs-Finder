@@ -1,5 +1,5 @@
-"""Regression tests: generated CV/cover letter text must never promote
-unverified facts into confirmed claims (brief requirements #6-13).
+"""Generated CV/cover letter text must never promote unverified facts into
+confirmed claims.
 """
 
 from datetime import date

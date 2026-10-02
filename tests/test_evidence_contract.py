@@ -1,9 +1,8 @@
-"""Regression tests for the canonical evidence/verification contract.
+"""The canonical evidence/verification contract.
 
-These target the specific defects fixed this pass: tri-state yes/no parsing,
-work-history years requiring per-entry verification, skills/certificates
-never auto-verifying from plain presence, and placeholder values never being
-treated as evidence.
+Covers tri-state yes/no parsing, work-history years requiring per-entry
+verification, skills/certificates never auto-verifying from plain presence,
+and placeholder values never being treated as evidence.
 """
 
 from datetime import date
@@ -152,7 +151,7 @@ def test_personal_identity_fields_require_explicit_personal_verification():
     verified evidence just because it is present and non-placeholder --
     profile_builder.py extracts these directly from CV text with no verified
     flags, so they must stay unverified until the owner explicitly confirms
-    each field (or a legacy whole personal block).
+    each field under personal.verification.
     """
     profile = {
         "personal": {
@@ -168,7 +167,7 @@ def test_personal_identity_fields_require_explicit_personal_verification():
     evidence = build_profile_evidence(profile)
     for key in ["first_name", "last_name", "email", "phone", "gender", "nationality", "location"]:
         assert evidence.has(key), f"{key} should still be recorded as (unverified) evidence"
-        assert not evidence.has_verified(key), f"{key} must not be verified without personal.verified: true"
+        assert not evidence.has_verified(key), f"{key} must not be verified without an explicit confirmation"
 
 
 def test_personal_identity_fields_verify_individually():
@@ -190,7 +189,7 @@ def test_personal_identity_fields_verify_individually():
     assert not evidence.has_verified("location")
 
 
-def test_personal_identity_fields_verify_once_legacy_personal_block_is_confirmed():
+def test_personal_fields_verify_only_through_their_own_flag():
     profile = {
         "personal": {
             "first_name": "Jane",
@@ -198,7 +197,7 @@ def test_personal_identity_fields_verify_once_legacy_personal_block_is_confirmed
             "email": "jane.doe@example.org",
             "gender": "female",
             "nationality": "Afghan",
-            "verified": True,
+            "verification": {"first_name": True, "last_name": True, "email": True, "gender": True, "nationality": True},
         }
     }
     evidence = build_profile_evidence(profile)
@@ -206,10 +205,37 @@ def test_personal_identity_fields_verify_once_legacy_personal_block_is_confirmed
         assert evidence.has_verified(key)
 
 
-def test_personal_verified_false_does_not_verify():
-    profile = {"personal": {"gender": "male", "verified": False}}
+def test_personal_verification_flag_must_be_literal_true():
+    profile = {"personal": {"gender": "male", "verification": {"gender": False}}}
     evidence = build_profile_evidence(profile)
+    assert evidence.has("gender")
     assert not evidence.has_verified("gender")
-    profile2 = {"personal": {"gender": "male", "verified": "true"}}
-    evidence2 = build_profile_evidence(profile2)
-    assert not evidence2.has_verified("gender")
+    for truthy in ["true", "yes", 1]:
+        other = {"personal": {"gender": "male", "verification": {"gender": truthy}}}
+        assert not build_profile_evidence(other).has_verified("gender")
+
+
+def test_personal_fields_without_a_verification_map_stay_unverified():
+    profile = {"personal": {"gender": "male", "nationality": "Afghan"}}
+    evidence = build_profile_evidence(profile)
+    assert evidence.has("gender") and evidence.has("nationality")
+    assert not evidence.has_verified("gender")
+    assert not evidence.has_verified("nationality")
+
+
+def test_professional_title_evidence_comes_from_the_personal_field():
+    profile = {
+        "personal": {
+            "professional_title": "Medical Doctor",
+            "verification": {"professional_title": True},
+        }
+    }
+    evidence = build_profile_evidence(profile)
+    items = evidence.items["professional_title"]
+    assert [item.value for item in items] == ["Medical Doctor"]
+    assert items[0].source == "profile.personal.professional_title"
+    assert evidence.has_verified("professional_title")
+
+    unconfirmed = build_profile_evidence({"personal": {"professional_title": "Medical Doctor"}})
+    assert unconfirmed.has("professional_title")
+    assert not unconfirmed.has_verified("professional_title")

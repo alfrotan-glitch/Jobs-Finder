@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 
-DESIGN_SYSTEM_VERSION = "jobs-finder-editorial-medical-v1"
+DESIGN_SYSTEM_NAME = "jobs-finder-editorial-medical"
 
 
 def render_professional_document_artifacts(
@@ -202,7 +202,7 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
     languages = _split_languages(languages_raw[0]) if languages_raw else []
     headline = headline_from_text or "Medical Doctor"
     return {
-        "design_system": DESIGN_SYSTEM_VERSION,
+        "design_system": DESIGN_SYSTEM_NAME,
         "name": name,
         "headline": headline,
         "email": email,
@@ -249,7 +249,7 @@ def parse_cover_letter_text(text: str, metadata: dict[str, Any] | None = None) -
     job_metadata = _coerce_dict(job.get("metadata"))
     reference = str(job_metadata.get("reference_number") or package.get("vacancy_reference") or "").strip()
     return {
-        "design_system": DESIGN_SYSTEM_VERSION,
+        "design_system": DESIGN_SYSTEM_NAME,
         "name": name,
         "headline": "Application Letter",
         "contact": contact,
@@ -302,11 +302,8 @@ def _register_fonts() -> tuple[str, str, str, str]:
     TTF candidates are tried per platform (Linux DejaVu, Windows system
     fonts, macOS system fonts). When no candidate file is available or
     registration fails, the role falls back to ReportLab's built-in Type 1
-    fonts (Times/Helvetica), which require no font files on any OS — the
-    returned names are therefore always renderable. The previous
-    implementation hardcoded Linux-only paths, silently swallowed the
-    registration failure, and still returned the unregistered names, which
-    crashed PDF export on Windows/macOS.
+    fonts (Times/Helvetica), which require no font files on any OS, so every
+    returned name is registered and renderable on Windows, Linux, and macOS.
     """
     import os
 

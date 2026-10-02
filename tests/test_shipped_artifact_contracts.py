@@ -1,4 +1,4 @@
-"""Regression tests for the final micro-closure:
+"""Shipped-artifact contracts:
 
 1. profile.yaml.example must never silently create verified credentials.
 2. Dashboard terminology for NEEDS_VERIFICATION must not claim eligibility.
@@ -29,7 +29,7 @@ def test_profile_example_parses_with_no_verified_claims():
     profile.yaml) and assert nothing is pre-verified."""
     data = yaml.safe_load(Path("profile.yaml.example").read_text(encoding="utf-8"))
 
-    assert data["personal"]["verified"] is False
+    assert all(flag is False for flag in data["personal"]["verification"].values())
     for entry in data["medical_education"]:
         assert entry.get("verified") is not True
         assert entry["degree"] == "Needs verification"

@@ -1,6 +1,6 @@
-"""Dashboard API tests: the backend remains the sole authority for evidence
-and verification status; the UI only displays/collects what these endpoints
-return (brief requirements #20-23).
+"""Dashboard API tests: the backend is the sole authority for evidence and
+verification status; the UI only displays/collects what these endpoints
+return.
 """
 
 import io
@@ -134,7 +134,6 @@ def test_confirm_endpoint_supports_confirming_one_personal_field(client):
     updated = yaml.safe_load(server.PROFILE_PATH.read_text(encoding="utf-8"))
     assert updated["personal"]["verification"]["nationality"] is True
     assert updated["personal"]["verification"].get("location") is not True
-    assert updated["personal"].get("verified") is not True
 
     review_after = client.get("/api/profile/review").json()
     nationality_row_after = next(f for f in review_after["fields"] if f["key"] == "nationality")
@@ -207,7 +206,7 @@ def test_latest_scan_endpoint_returns_backend_persisted_scan(client):
         "started_at": "2026-10-01T00:00:00+00:00",
         "finished_at": "2026-10-01T00:00:01+00:00",
         "jobs": [],
-        "source_reports": [{"id": "acbar", "name": "ACBAR", "status": "PARTIAL", "listings_checked": 12}],
+        "source_reports": [{"id": "acbar", "name": "ACBAR", "status": "PARTIAL", "listings_seen": 12}],
         "job_count": 0,
     })
     body = client.get("/api/scan/latest").json()
@@ -244,3 +243,24 @@ def test_find_returns_authoritative_complete_scan_summary(client, monkeypatch):
     assert body["summary"]["pages_requested"] == 2
     assert body["summary"]["listings_seen"] == 4
     assert body["summary"]["recommended_from_scan"] == 0
+
+
+def test_professional_title_is_confirmed_as_a_personal_field(client):
+    profile = {"personal": {"first_name": "Jane", "last_name": "Doe", "professional_title": "Medical Doctor"}}
+    server.PROFILE_PATH.write_text(yaml.safe_dump(profile), encoding="utf-8")
+
+    review = client.get("/api/profile/review").json()
+    title_row = next(f for f in review["fields"] if f["key"] == "professional_title")
+    assert title_row["status"] == "Needs verification"
+    assert title_row["confirm_field"] == "personal:professional_title"
+
+    response = client.post("/api/profile/confirm", json={"field": "personal:professional_title"})
+    assert response.status_code == 200
+
+    updated = yaml.safe_load(server.PROFILE_PATH.read_text(encoding="utf-8"))
+    assert updated["personal"]["verification"]["professional_title"] is True
+    assert "professional_title" not in {key for key in updated if key != "personal"}
+
+    review_after = client.get("/api/profile/review").json()
+    title_after = next(f for f in review_after["fields"] if f["key"] == "professional_title")
+    assert title_after["status"] == "Verified"

@@ -53,7 +53,7 @@ async def test_scan_report_counts_exclusions_without_calling_failure_zero_jobs(m
             Job("md", "Medical Officer", "Clinic", "Kabul", "https://example.org/md", "hr@example.org", "mixed", "MD required. Apply to hr@example.org by 2026-12-31.", metadata={"source_name": "ACBAR", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/md"}),
             Job("ph", "Pharmacist", "Pharmacy", "Kabul", "https://example.org/ph", "hr@example.org", "mixed", "B.Sc. in Pharmacy required. Apply to hr@example.org by 2026-12-31.", metadata={"source_name": "ACBAR", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/ph"}),
             Job("dup", "Medical Officer", "Clinic", "Kabul", "https://example.org/md?utm=1", "hr@example.org", "mixed", "MD required. Apply to hr@example.org by 2026-12-31.", metadata={"source_name": "ACBAR", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/md?utm=1"}),
-            Job("old", "Medical Officer", "Clinic", "Kabul", "https://example.org/old", "hr@example.org", "mixed", "MD required. Apply to hr@example.org by 2020-01-01.", metadata={"source_name": "ACBAR", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/old", "closing_date": "2020-01-01"}),
+            Job("expired", "Medical Officer", "Clinic", "Kabul", "https://example.org/expired", "hr@example.org", "mixed", "MD required. Apply to hr@example.org by 2020-01-01.", metadata={"source_name": "ACBAR", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/expired", "closing_date": "2020-01-01"}),
         ]
 
     monkeypatch.setitem(discovery.SOURCE_REGISTRY, "mixed", {"name": "Mixed", "tier": "A", "fetcher": "mixed", "active": True, "official_url": "https://example.org/jobs"})
@@ -62,9 +62,9 @@ async def test_scan_report_counts_exclusions_without_calling_failure_zero_jobs(m
 
     report = result.source_reports[0]
     assert report.status == "SCANNED"
-    assert report.incompatible_professional_role_excluded == 1
+    assert report.incompatible_role_classification_excluded == 1
     assert report.duplicates_removed == 1
-    assert report.expired_stale_excluded == 1
+    assert report.expired_excluded == 1
     assert report.relevant_retained == 1
     assert len(result.jobs) == 1
 
@@ -222,8 +222,8 @@ async def test_acbar_relevant_vacancy_after_detail_limit_is_discovered(monkeypat
     fake_client = _FakeAcbarClient(pages)
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: fake_client)
 
-    # With detail_limit=10, the old code would truncate summaries[:10] on page 1,
-    # completely missing the medical vacancies on page 4.
+    # A detail budget must never truncate listing discovery: with
+    # detail_limit=10 the medical vacancies on page 4 must still be found.
     jobs = await discovery.discover_acbar_jobs({
         "job_sources": {"acbar": {"max_pages": 4, "detail_limit": 10}}
     })
@@ -340,11 +340,11 @@ async def test_acbar_explicit_urls_override_auto_pagination(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_acbar_default_discovery_follows_real_end_and_matches_reported_total(monkeypatch):
-    """Regression for the six-page production failure.
+    """Default discovery runs to ACBAR's real end.
 
-    ACBAR currently publishes a count and twenty cards per full page. The
-    adapter must not stop at a legacy default budget: a 234-card source takes
-    twelve non-empty pages plus the authoritative empty end page.
+    ACBAR publishes a count and twenty cards per full page. Without a
+    configured budget the adapter walks a 234-card source across twelve
+    non-empty pages plus the authoritative empty end page.
     """
     reported_total = 234
     pages = {}

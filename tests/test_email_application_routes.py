@@ -16,7 +16,7 @@ def md_profile():
             "location": "Kabul",
             "gender": "male",
             "nationality": "Afghan",
-            "verified": True,
+            "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True},
         },
         "medical_education": [
             {

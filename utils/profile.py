@@ -19,7 +19,6 @@ from typing import Any
 import yaml
 
 from utils.medical_requirements import MONTHS, NUMBER_WORDS, normalize_text
-from utils.source_registry import normalize_profile_source_budgets
 
 
 @dataclass
@@ -184,21 +183,17 @@ PERSONAL_VERIFICATION_FIELDS = {
 
 
 def personal_field_is_verified(profile: dict[str, Any], key: str) -> bool:
-    """Return explicit verification status for one personal/profile field.
+    """Return the explicit verification status of one personal field.
 
-    New profiles use ``personal.verification.<field>: true`` so identity,
-    contact, gender, nationality, and location can be confirmed separately.
-    Existing profiles with the legacy ``personal.verified: true`` remain
-    honored as a user-controlled block confirmation, but the dashboard no
-    longer creates that broad flag.
+    ``personal.verification.<field>: true`` is the only way a personal fact
+    becomes verified evidence, so identity, contact, gender, nationality,
+    location, and professional title are each confirmed on their own:
+    confirming an email never verifies gender. Only a literal boolean
+    ``true`` counts.
     """
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
-    if is_verified_flag(personal.get("verified")):
-        return True
-    verification = personal.get("verification") or personal.get("verified_fields") or {}
-    if isinstance(verification, dict) and is_verified_flag(verification.get(key)):
-        return True
-    return False
+    verification = personal.get("verification") or {}
+    return isinstance(verification, dict) and is_verified_flag(verification.get(key))
 
 
 MEDICAL_TERM_KEYS = {
@@ -249,11 +244,6 @@ def load_profile(path: str | Path = "profile.yaml") -> dict[str, Any]:
 
 def save_profile(profile: dict[str, Any], path: str | Path = "profile.yaml") -> None:
     path = Path(path)
-    # Self-healing write: if the profile still carries an untouched builder-era
-    # discovery budget (verbatim legacy CV-import copy), drop those keys so the
-    # file itself stops silently capping scans. Deliberately configured values
-    # are never touched (see utils/source_registry.normalize_source_overrides).
-    profile, _notes = normalize_profile_source_budgets(profile)
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(profile, f, sort_keys=False, allow_unicode=True)
 
@@ -400,7 +390,6 @@ def _profile_text(profile: dict[str, Any]) -> str:
         "ngo_humanitarian_experience",
         "personal",
         "preferences",
-        "professional_title",
         "professional_summary",
     ]
     return "\n".join("\n".join(_iter_strings(profile.get(key))) for key in include_keys)
@@ -681,9 +670,8 @@ def _add_personal(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
     # profile_builder.build_profile_from_cv_text). A CV-derived value is
     # therefore NOT automatically verified just because it is present and
     # non-placeholder -- per the canonical rule, identity/contact data is
-    # subject to explicit verification. New profiles can verify individual
-    # fields under personal.verification.<field>; legacy personal.verified:
-    # true remains honored as a prior user-controlled block confirmation.
+    # subject to explicit verification: each field is confirmed on its own
+    # under personal.verification.<field>.
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     for key in ["location", "nationality", "gender", "phone", "email", "first_name", "last_name", "linkedin"]:
         value = personal.get(key)
@@ -691,20 +679,14 @@ def _add_personal(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
             evidence.add(key, value, f"profile.personal.{key}", str(value), verified=personal_field_is_verified(profile, key))
 
     title_value = personal.get("professional_title")
-    title_verified = personal_field_is_verified(profile, "professional_title")
-    title_source = "profile.personal.professional_title"
-    if not title_value:
-        raw_title = profile.get("professional_title")
-        if isinstance(raw_title, dict):
-            title_value = raw_title.get("text") or raw_title.get("value") or raw_title.get("title")
-            title_verified = is_verified_flag(raw_title.get("verified"))
-            title_source = "profile.professional_title"
-        else:
-            title_value = raw_title
-            title_verified = False
-            title_source = "profile.professional_title"
     if title_value and not is_unresolved_value(title_value):
-        evidence.add("professional_title", title_value, title_source, str(title_value), verified=title_verified)
+        evidence.add(
+            "professional_title",
+            title_value,
+            "profile.personal.professional_title",
+            str(title_value),
+            verified=personal_field_is_verified(profile, "professional_title"),
+        )
     prefs = profile.get("preferences", {}) if isinstance(profile.get("preferences"), dict) else {}
     for loc in prefs.get("locations", []) or []:
         if not is_unresolved_value(loc):

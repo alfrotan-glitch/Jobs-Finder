@@ -27,15 +27,130 @@ Three distinct concepts are tracked and must never be confused:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import stat
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from utils.medical_requirements import canonical_source_fields, has_actionable_source
+from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.recommendations import is_recommendable, recommendation_rank
 
-DB_PATH = Path(__file__).resolve().parent.parent / "applications.db"
+# Public compatibility name retained for tests and local integrations.  It is
+# the one canonical database location used by both entry points.
+DB_PATH = CANONICAL_DB_PATH
+
+
+class TrackerDatabaseError(sqlite3.OperationalError):
+    """A local database cannot be used for the requested tracker operation."""
+
+
+def canonical_db_path() -> Path:
+    """Return the effective absolute path, never a path relative to CWD.
+
+    ``DB_PATH`` remains patchable for isolated tests and local embedding, but a
+    relative override is still interpreted relative to the project root.  The
+    production default comes from ``utils.paths.CANONICAL_DB_PATH``.
+    """
+    configured = Path(DB_PATH).expanduser()
+    if not configured.is_absolute():
+        configured = PROJECT_ROOT / configured
+    return configured.resolve()
+
+
+def _windows_readonly_attribute(path: Path) -> bool:
+    """Detect the Windows FILE_ATTRIBUTE_READONLY bit when available."""
+    try:
+        attributes = int(getattr(path.stat(), "st_file_attributes", 0))
+    except OSError:
+        return False
+    # Python exposes the value on some Windows versions, but the Windows API
+    # value is stable and using the fallback keeps this import portable.
+    readonly_flag = int(getattr(stat, "FILE_ATTRIBUTE_READONLY", 0x01))
+    return bool(attributes & readonly_flag)
+
+
+def _has_write_permission(path: Path) -> bool:
+    """Best-effort ACL/mode check before SQLite produces an opaque error."""
+    if not os.access(path, os.W_OK):
+        return False
+    if os.name != "nt":
+        try:
+            return bool(path.stat().st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
+        except OSError:
+            return False
+    return True
+
+
+def _write_problem(path: Path) -> str | None:
+    """Describe a known non-writable path before opening SQLite."""
+    parent = path.parent
+    if not parent.exists():
+        return f"the database directory does not exist: {parent}"
+    if not parent.is_dir():
+        return f"the database parent is not a directory: {parent}"
+    if not _has_write_permission(parent):
+        return f"the database directory is not writable: {parent}"
+    if path.exists():
+        if _windows_readonly_attribute(path):
+            return f"the database file has the Windows read-only attribute: {path}"
+        if not _has_write_permission(path):
+            return f"the database file is not writable: {path}"
+    # A WAL connection also writes these sibling files.  An old read-only
+    # sidecar can therefore produce the same SQLite error even when the main
+    # database file itself looks writable.
+    for sidecar in (Path(f"{path}-wal"), Path(f"{path}-shm")):
+        if sidecar.exists():
+            if _windows_readonly_attribute(sidecar) or not _has_write_permission(sidecar):
+                return f"the SQLite sidecar is not writable: {sidecar}"
+    return None
+
+
+def _is_readonly_sqlite_error(error: sqlite3.OperationalError) -> bool:
+    message = str(error).lower()
+    return any(
+        phrase in message
+        for phrase in (
+            "readonly database",
+            "read-only database",
+            "unable to open database file",
+            "attempt to write a readonly database",
+        )
+    )
+
+
+def _database_error(path: Path, reason: str | BaseException) -> TrackerDatabaseError:
+    detail = str(reason)
+    return TrackerDatabaseError(
+        "Jobs-Finder cannot write its SQLite database. "
+        f"Canonical path: {path}. "
+        f"Reason: {detail}. "
+        "The normal runtime never uses a read-only database or a CWD-relative "
+        "fallback; make this project location and its database writable for "
+        "the current Windows user, or choose a writable project directory."
+    )
+
+
+@contextmanager
+def _write_connection() -> Iterator[sqlite3.Connection]:
+    """Yield a tracker connection and translate write failures with context."""
+    conn = get_db()
+    path = canonical_db_path()
+    try:
+        yield conn
+    except sqlite3.OperationalError as error:
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+        if _is_readonly_sqlite_error(error):
+            raise _database_error(path, error) from error
+        raise
+    finally:
+        conn.close()
 
 FOUND = "FOUND"
 REVIEWED = "REVIEWED"
@@ -56,54 +171,74 @@ def now_iso() -> str:
 
 
 def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS vacancies (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            company TEXT NOT NULL,
-            location TEXT DEFAULT '',
-            source TEXT DEFAULT '',
-            url TEXT DEFAULT '',
-            apply_url TEXT DEFAULT '',
-            description TEXT DEFAULT '',
-            status TEXT DEFAULT 'FOUND',
-            readiness TEXT DEFAULT '',
-            package_status TEXT DEFAULT 'NOT_CREATED',
-            metadata_json TEXT DEFAULT '{}',
-            match_json TEXT DEFAULT '',
-            package_json TEXT DEFAULT '',
-            documents_json TEXT DEFAULT '',
-            discovered_at TEXT DEFAULT '',
-            updated_at TEXT DEFAULT ''
+    """Open the one project database and ensure its schema exists.
+
+    SQLite is deliberately opened with a filesystem path, not a URI.  There is
+    no ``mode=ro``, ``immutable=1``, or CWD fallback in this runtime.
+    """
+    path = canonical_db_path()
+    problem = _write_problem(path)
+    if problem:
+        raise _database_error(path, problem)
+
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect(str(path), timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=5000")
+        # WAL needs the containing directory for its -wal/-shm files.  The
+        # preflight above therefore checks both an existing DB and its parent.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS vacancies (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                company TEXT NOT NULL,
+                location TEXT DEFAULT '',
+                source TEXT DEFAULT '',
+                url TEXT DEFAULT '',
+                apply_url TEXT DEFAULT '',
+                description TEXT DEFAULT '',
+                status TEXT DEFAULT 'FOUND',
+                readiness TEXT DEFAULT '',
+                package_status TEXT DEFAULT 'NOT_CREATED',
+                metadata_json TEXT DEFAULT '{}',
+                match_json TEXT DEFAULT '',
+                package_json TEXT DEFAULT '',
+                documents_json TEXT DEFAULT '',
+                discovered_at TEXT DEFAULT '',
+                updated_at TEXT DEFAULT ''
+            )
+            """
         )
-        """
-    )
-    existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(vacancies)").fetchall()}
-    if "package_status" not in existing_columns:
-        conn.execute("ALTER TABLE vacancies ADD COLUMN package_status TEXT DEFAULT 'NOT_CREATED'")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_status ON vacancies(status)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_readiness ON vacancies(readiness)")
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS scan_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            status TEXT NOT NULL,
-            message TEXT DEFAULT '',
-            started_at TEXT DEFAULT '',
-            finished_at TEXT DEFAULT '',
-            result_json TEXT NOT NULL,
-            created_at TEXT DEFAULT ''
+        existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(vacancies)").fetchall()}
+        if "package_status" not in existing_columns:
+            conn.execute("ALTER TABLE vacancies ADD COLUMN package_status TEXT DEFAULT 'NOT_CREATED'")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_status ON vacancies(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_readiness ON vacancies(readiness)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS scan_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                status TEXT NOT NULL,
+                message TEXT DEFAULT '',
+                started_at TEXT DEFAULT '',
+                finished_at TEXT DEFAULT '',
+                result_json TEXT NOT NULL,
+                created_at TEXT DEFAULT ''
+            )
+            """
         )
-        """
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_runs_created ON scan_runs(created_at)")
-    conn.commit()
-    return conn
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_runs_created ON scan_runs(created_at)")
+        conn.commit()
+        return conn
+    except sqlite3.Error as error:
+        if conn is not None:
+            conn.close()
+        if isinstance(error, sqlite3.OperationalError) and _is_readonly_sqlite_error(error):
+            raise _database_error(path, error) from error
+        raise
 
 
 def _to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -147,8 +282,7 @@ def log_scan_result(result: Any) -> int:
     """Persist one backend-authoritative discovery scan summary."""
     data = result.to_dict() if hasattr(result, "to_dict") else dict(result or {})
     timestamp = now_iso()
-    conn = get_db()
-    try:
+    with _write_connection() as conn:
         cur = conn.execute(
             """
             INSERT INTO scan_runs (status, message, started_at, finished_at, result_json, created_at)
@@ -165,8 +299,6 @@ def log_scan_result(result: Any) -> int:
         )
         conn.commit()
         return int(cur.lastrowid)
-    finally:
-        conn.close()
 
 
 def _scan_row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -237,8 +369,7 @@ def log_discovered(job: Any) -> None:
         }
     )
     timestamp = now_iso()
-    conn = get_db()
-    try:
+    with _write_connection() as conn:
         conn.execute(
             """
             INSERT INTO vacancies
@@ -272,22 +403,17 @@ def log_discovered(job: Any) -> None:
             ),
         )
         conn.commit()
-    finally:
-        conn.close()
 
 
 def log_medical_match(job_id: str, report: dict[str, Any]) -> None:
     readiness = str(report.get("readiness_status") or "")
     status = readiness_to_status(readiness)
-    conn = get_db()
-    try:
+    with _write_connection() as conn:
         conn.execute(
             "UPDATE vacancies SET match_json=?, readiness=?, status=?, updated_at=? WHERE id=?",
             (json.dumps(report, ensure_ascii=False), readiness, status, now_iso(), job_id),
         )
         conn.commit()
-    finally:
-        conn.close()
 
 
 def update_tailored_resume(job_id: str, documents: dict[str, Any]) -> None:
@@ -301,8 +427,7 @@ def update_tailored_resume(job_id: str, documents: dict[str, Any]) -> None:
     package = documents.get("application_package") or {}
     package_status = str(package.get("package_status") or PACKAGE_READY_FOR_REVIEW)
     status = PACKAGE_NEEDS_INPUT if package_status == PACKAGE_STATUS_NEEDS_USER_INPUT else PACKAGE_READY
-    conn = get_db()
-    try:
+    with _write_connection() as conn:
         conn.execute(
             "UPDATE vacancies SET documents_json=?, package_json=?, package_status=?, status=?, updated_at=? WHERE id=?",
             (
@@ -315,8 +440,6 @@ def update_tailored_resume(job_id: str, documents: dict[str, Any]) -> None:
             ),
         )
         conn.commit()
-    finally:
-        conn.close()
 
 
 def mark_applied_manually(job_id: str, *, confirmation: str = "") -> tuple[bool, str]:
@@ -327,12 +450,9 @@ def mark_applied_manually(job_id: str, *, confirmation: str = "") -> tuple[bool,
         return False, f"Explicit confirmation required: type APPLIED {job_id}."
     if job.get("readiness") == "NOT_ELIGIBLE":
         return False, "Cannot mark a NOT_ELIGIBLE vacancy as applied."
-    conn = get_db()
-    try:
+    with _write_connection() as conn:
         conn.execute("UPDATE vacancies SET status=?, updated_at=? WHERE id=?", (APPLIED_MANUALLY, now_iso(), job_id))
         conn.commit()
-    finally:
-        conn.close()
     return True, "Recorded as applied manually."
 
 
@@ -380,15 +500,12 @@ def get_recommended_jobs(limit: int = 20) -> list[dict[str, Any]]:
 
 
 def delete_all() -> int:
-    conn = get_db()
-    try:
+    with _write_connection() as conn:
         count = conn.execute("SELECT COUNT(*) FROM vacancies").fetchone()[0]
         conn.execute("DELETE FROM vacancies")
         conn.execute("DELETE FROM scan_runs")
         conn.commit()
         return int(count)
-    finally:
-        conn.close()
 
 
 def stats() -> dict[str, int]:

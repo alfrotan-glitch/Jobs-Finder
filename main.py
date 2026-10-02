@@ -15,6 +15,7 @@ import yaml
 from utils.discovery import run_discovery_scan
 from utils.documents import prepare_application_bundle
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
+from utils.paths import CANONICAL_DB_PATH, CANONICAL_PROFILE_PATH, project_path
 from utils.profile import save_profile
 from utils.profile_builder import build_profile_from_cv_file
 from utils.recommendations import evaluate_scan_jobs
@@ -32,14 +33,17 @@ from utils.tracker import (
     update_tailored_resume,
 )
 
-PROFILE_PATH = Path("profile.yaml")
+# Public aliases make the CLI's runtime contract inspectable: the tracker and
+# dashboard use this same canonical database path.
+DB_PATH = CANONICAL_DB_PATH
+PROFILE_PATH = CANONICAL_PROFILE_PATH
 
 
-def load_profile(path: str = "profile.yaml", *, required: bool = True) -> dict[str, Any]:
-    p = Path(path)
+def load_profile(path: str | Path | None = None, *, required: bool = True) -> dict[str, Any]:
+    p = PROFILE_PATH if path is None else project_path(path)
     if not p.exists():
         if required:
-            print(f"Profile not found: {path}")
+            print(f"Profile not found: {p}")
             print("Copy profile.yaml.example to profile.yaml and enter verified facts first.")
             sys.exit(1)
         return {}
@@ -230,8 +234,9 @@ def cmd_mark_applied(job_id: str) -> None:
 
 def cmd_import_cv(cv_path: str, profile_path: str) -> None:
     profile = build_profile_from_cv_file(cv_path, resume_path=cv_path)
-    save_profile(profile, profile_path)
-    print(f"Structured profile written to {profile_path}")
+    destination = project_path(profile_path)
+    save_profile(profile, destination)
+    print(f"Structured profile written to {destination}")
     print("Review it before scanning. Missing evidence remains Needs verification.")
 
 

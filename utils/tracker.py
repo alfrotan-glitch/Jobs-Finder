@@ -32,6 +32,7 @@ import sqlite3
 import stat
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -215,6 +216,42 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _is_locked_sqlite_error(error: BaseException) -> bool:
+    message = str(error).lower()
+    return "database is locked" in message or "database table is locked" in message
+
+
+def _ensure_wal(conn: sqlite3.Connection, timeout: float = 5.0) -> None:
+    """Put the database in WAL mode, tolerating a concurrent writer.
+
+    ``PRAGMA journal_mode=WAL`` needs a brief exclusive lock and -- unlike
+    ordinary statements -- SQLite returns SQLITE_BUSY for it immediately
+    instead of honouring ``busy_timeout``.  When a scan pair already holds the
+    writer transaction, a second connection used to blow up with "database is
+    locked" before it had done any work.  Retry until the deadline and accept
+    the mode another connection has already set.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        row = conn.execute("PRAGMA journal_mode").fetchone()
+        if row is not None and str(row[0]).lower() == "wal":
+            return
+        try:
+            row = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        except sqlite3.OperationalError as error:
+            if not _is_locked_sqlite_error(error):
+                raise
+        else:
+            if row is not None and str(row[0]).lower() == "wal":
+                return
+        if time.monotonic() >= deadline:
+            # Another connection owns the lock; the existing journal mode is
+            # still correct and usable, so keep going rather than failing a
+            # write that has not been attempted yet.
+            return
+        time.sleep(0.02)
+
+
 def get_db() -> sqlite3.Connection:
     """Open the one project database and ensure its schema exists.
 
@@ -233,7 +270,11 @@ def get_db() -> sqlite3.Connection:
         conn.execute("PRAGMA busy_timeout=5000")
         # WAL needs the containing directory for its -wal/-shm files.  The
         # preflight above therefore checks both an existing DB and its parent.
-        conn.execute("PRAGMA journal_mode=WAL")
+        _ensure_wal(conn)
+        if _schema_is_ready_for_reads(conn):
+            # Nothing to migrate: skip the DDL so a second connection does not
+            # fight the active scan writer for the database lock.
+            return conn
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS vacancies (

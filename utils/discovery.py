@@ -21,7 +21,7 @@ from bs4 import BeautifulSoup
 
 from utils.medical_requirements import AFGHAN_PROVINCES, analyze_professional_role, canonical_source_fields, extract_requirements_from_job, has_actionable_source, looks_medical, parse_closing_date, strip_html
 from utils.recommendations import collect_scan_recommendations, iter_match_pairs
-from utils.source_registry import SOURCE_REGISTRY, normalize_source_overrides, source_defaults, source_display_name, source_official_url
+from utils.source_registry import SOURCE_REGISTRY, source_defaults, source_display_name, source_official_url
 
 SCAN_COMPLETE = "SCAN_COMPLETE"
 NO_RELEVANT_JOBS_FOUND = "NO_RELEVANT_JOBS_FOUND"
@@ -36,8 +36,6 @@ DEFAULT_USER_AGENT = "Jobs-Finder Afghanistan Job Assistant (+manual, non-automa
 # configures one, the source report is explicitly PARTIAL.
 _ACBAR_DEFAULTS = source_defaults("acbar")
 _RELIEFWEB_DEFAULTS = source_defaults("reliefweb")
-ACBAR_DEFAULT_MAX_PAGES: int | None = None
-ACBAR_DEFAULT_DETAIL_LIMIT: int | None = None
 ACBAR_DEFAULT_DETAIL_CONCURRENCY = int(_ACBAR_DEFAULTS.get("max_detail_concurrency", 5))
 ACBAR_DEFAULT_TIMEOUT_SECONDS = float(_ACBAR_DEFAULTS.get("timeout_seconds", 25.0))
 RELIEFWEB_DEFAULT_LIMIT = int(_RELIEFWEB_DEFAULTS.get("limit", 20))
@@ -113,20 +111,9 @@ class SourceScanMetrics:
     partial_reasons: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
-    # Backward-compatible serialized aliases. New producers only write the
-    # canonical fields above.
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        data.update({
-            "pages_attempted": self.pages_requested,
-            "listings_attempted": self.listings_seen,
-            "listings_checked": self.listings_seen,
-            "vacancies_discovered": self.listings_seen - self.listing_parse_failures,
-            "expired_stale_excluded": self.expired_excluded,
-            "incompatible_professional_role_excluded": self.incompatible_role_classification_excluded,
-            "application_routes_discovered": self.application_routes_found,
-            "partial": self.status == SOURCE_STATUS_PARTIAL,
-        })
+        data["partial"] = self.status == SOURCE_STATUS_PARTIAL
         return data
 
     def add_partial_reason(self, reason: str, error: str = "") -> None:
@@ -143,9 +130,6 @@ class SourceReport:
     tier: str
     attempted: bool = False
     ok: bool = False
-    jobs_found: int = 0
-    relevant_candidates: int = 0
-    final_retained: int = 0
     error: str = ""
     timestamp: str = ""
     started_at: str = ""
@@ -191,30 +175,8 @@ class SourceReport:
         if self.errors and not self.error:
             self.error = "; ".join(self.errors[:2])
 
-    @property
-    def incompatible_professional_role_excluded(self) -> int:
-        return self.incompatible_role_classification_excluded
-
-    @property
-    def expired_stale_excluded(self) -> int:
-        return self.expired_excluded
-
-    @property
-    def application_routes_discovered(self) -> int:
-        return self.application_routes_found
-
     def to_dict(self) -> dict[str, Any]:
-        data = asdict(self)
-        data.update({
-            "pages_attempted": self.pages_requested,
-            "listings_attempted": self.listings_seen,
-            "listings_checked": self.listings_seen,
-            "vacancies_discovered": self.listings_seen - self.listing_parse_failures,
-            "expired_stale_excluded": self.expired_excluded,
-            "incompatible_professional_role_excluded": self.incompatible_role_classification_excluded,
-            "application_routes_discovered": self.application_routes_found,
-        })
-        return data
+        return asdict(self)
 
 
 SUMMARY_COUNTERS = (
@@ -484,14 +446,13 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
                 report.apply_metrics(metrics)
                 report.ok = report.status not in {SOURCE_STATUS_UNAVAILABLE, SOURCE_STATUS_FAILED}
             else:
-                # Compatibility for simple/custom fetchers: each returned item
-                # is one encountered listing and malformed items are explicit.
+                # A fetcher that reports no metrics: each returned item is one
+                # encountered listing and malformed items are counted explicitly.
                 report.listings_seen = len(found)
                 report.listing_parse_failures = sum(not isinstance(item, Job) for item in found)
                 report.vacancies_parsed = report.listings_seen - report.listing_parse_failures
                 report.pagination_stop_reason = "END_REACHED"
                 report.status = SOURCE_STATUS_SCANNED
-            report.jobs_found = report.vacancies_parsed
             for item in found:
                 if isinstance(item, Job):
                     item.metadata = dict(item.metadata or {})
@@ -561,12 +522,9 @@ async def run_discovery_scan(profile: dict[str, Any] | None = None, *, today: da
 
     for report in reports:
         source_jobs = [job for job in retained if str((job.metadata or {}).get("_scan_source_id") or job.platform).lower() == report.id.lower()]
-        report.relevant_candidates = len(source_jobs)
-        report.final_retained = report.relevant_retained = len(source_jobs)
+        report.relevant_retained = len(source_jobs)
         report.application_routes_found = sum(job.application_method in {"EMAIL", "WEB"} for job in source_jobs)
         report.application_routes_unavailable = report.relevant_retained - report.application_routes_found
-        # Legacy jobs_found historically meant post duplicate/expiry candidates.
-        report.jobs_found = max(0, report.vacancies_parsed - report.duplicates_removed - report.expired_excluded)
         # Every parsed item must have exactly one semantic terminal outcome.
         terminal = (report.duplicates_removed + report.expired_excluded + report.not_processed_due_to_budget
                     + report.irrelevant_excluded + report.incompatible_role_classification_excluded
@@ -621,24 +579,18 @@ def _job_is_relevant(job: Job) -> bool:
 
 
 def _source_overrides(profile: dict[str, Any], source_id: str) -> dict[str, Any]:
-    """Return the effective ``job_sources.<id>`` block for a scan.
+    """Return the ``job_sources.<id>`` block for a scan.
 
-    The block is the ONLY place an operational cap may come from — the
-    registry no longer carries page/detail budgets. Blocks that are untouched
-    builder artifacts from the bounded-defaults era (a CV import used to copy
-    ``source_defaults`` verbatim into profile.yaml, including ``max_pages: 6``
-    and ``detail_limit: 30``) are normalized here via the shared registry
-    rule, so a stale file cannot silently cap a live scan even when the
-    profile did not pass through the load-time migration.
+    This block is the ONLY place an operational cap may come from: the
+    registry carries connection defaults, never page/detail budgets.
     """
     raw = (profile.get("job_sources") or {}) if isinstance(profile, dict) else {}
     cfg = raw.get(source_id) if isinstance(raw, dict) else {}
-    if not cfg:  # missing, null, "", false, [] — historically: no overrides
+    if not cfg:  # missing, null, "", false, [] — no overrides
         return {}
     if not isinstance(cfg, dict):
         raise ValueError(f"job_sources.{source_id} must be a mapping")
-    effective, _removed = normalize_source_overrides(source_id, cfg)
-    return effective
+    return dict(cfg)
 
 
 def _configured_positive_limit(config: dict[str, Any], key: str) -> int | None:

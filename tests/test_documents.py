@@ -98,10 +98,10 @@ def test_package_json_contains_review_warnings_for_verification(tmp_path):
 
 
 def test_design_fonts_are_always_renderable_on_this_platform():
-    """Regression (Windows CI): _register_fonts previously returned font names
-    whose registration had silently failed on non-Linux hosts, crashing every
-    PDF export. The returned names must always be either actually registered
-    TTF fonts or ReportLab built-in standard fonts."""
+    """Every name returned by _register_fonts must be renderable on the
+    current platform: either an actually registered TTF font or a ReportLab
+    built-in standard font, so PDF export works on Windows, Linux, and
+    macOS."""
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.pdfmetrics import standardFonts
 

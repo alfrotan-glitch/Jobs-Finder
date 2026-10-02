@@ -58,8 +58,8 @@ def role_classification_for(job: dict[str, Any], match: dict[str, Any] | None = 
     """The professional-role classification used by the recommendation gate.
 
     Prefers the analysis captured at match time (``match.facts.role_analysis``,
-    or the enrichment snapshot under ``metadata.requirements.facts``) and only
-    recomputes from the vacancy text as a fallback for legacy stored rows.
+    or the enrichment snapshot under ``metadata.requirements.facts``) and
+    analyses the vacancy text only when neither snapshot is present.
     """
     match = match if isinstance(match, dict) else {}
     facts = match.get("facts") if isinstance(match.get("facts"), dict) else {}

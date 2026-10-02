@@ -1,4 +1,4 @@
-"""Regression tests for the final micro-closure:
+"""Shipped-artifact contracts:
 
 1. profile.yaml.example must never silently create verified credentials.
 2. Dashboard terminology for NEEDS_VERIFICATION must not claim eligibility.

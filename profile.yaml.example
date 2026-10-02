@@ -52,7 +52,7 @@ personal:
   # for hard requirements such as gender, nationality, location/residency, or
   # contact readiness. Confirming email does not verify gender; confirming
   # nationality does not verify phone, etc.
-  verified: false   # Legacy block flag; leave false in new profiles and use per-field flags below.
+  verified: false   # Optional: set true only to confirm the whole personal block at once.
   verification:
     first_name: false
     last_name: false
@@ -192,14 +192,9 @@ job_sources:
   # from utils/source_registry.py. Add only values you intentionally want to
   # override locally.
   #
-  # NOTE (legacy migration): CV imports from before 2026-10 used to copy the
-  # registry's then-defaults verbatim into this block, including a hard
-  # `max_pages: 6` / `detail_limit: 30` ACBAR budget. If your profile.yaml was
-  # created that way and that block is still untouched, the app now ignores
-  # exactly those two budget keys at load time (and says so once on scan), so
-  # real scans run to ACBAR's actual end. Any block you edited yourself is
-  # preserved as-is. To cap a scan on purpose, set the keys yourself below --
-  # a capped scan is then correctly reported as PARTIAL.
+  # Every key here is read exactly as written. `max_pages` and `detail_limit`
+  # have no default: set one only to cap a scan on purpose, and the scan is
+  # then correctly reported as PARTIAL.
   acbar:
     # timeout_seconds:
     # detail_limit:        # Optional explicit detail-page cap. If set, deferred candidates make the scan PARTIAL.

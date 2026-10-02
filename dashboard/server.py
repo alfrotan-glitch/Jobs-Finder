@@ -21,8 +21,6 @@ from fastapi.templating import Jinja2Templates
 
 from utils.discovery import (
     ACBAR_DEFAULT_DETAIL_CONCURRENCY,
-    ACBAR_DEFAULT_DETAIL_LIMIT,
-    ACBAR_DEFAULT_MAX_PAGES,
     ACBAR_DEFAULT_TIMEOUT_SECONDS,
     RELIEFWEB_DEFAULT_LIMIT,
     RELIEFWEB_DEFAULT_TIMEOUT_SECONDS,
@@ -33,7 +31,7 @@ from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.paths import CANONICAL_DB_PATH, CANONICAL_PROFILE_PATH, PROJECT_ROOT
 from utils.profile import PERSONAL_VERIFICATION_FIELDS, build_profile_evidence, is_unresolved_value, save_profile
 from utils.recommendations import evaluate_scan_jobs
-from utils.source_registry import SOURCE_REGISTRY, normalize_profile_source_budgets, source_registry_for_settings
+from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
 from utils.profile_builder import build_profile_from_cv_file
 from utils.resume_parser import extract_resume_text
 from utils.tracker import (
@@ -65,12 +63,7 @@ def load_profile(required: bool = False) -> dict[str, Any]:
         if required:
             raise HTTPException(status_code=400, detail="profile.yaml is missing. Copy profile.yaml.example and enter verified facts.")
         return {}
-    profile = yaml.safe_load(PROFILE_PATH.read_text(encoding="utf-8")) or {}
-    # Same load-time migration as the CLI: an untouched builder-era
-    # job_sources budget (max_pages: 6 / detail_limit: 30 copied in by an old
-    # CV import) is ignored; deliberate user configuration is preserved.
-    profile, _notes = normalize_profile_source_budgets(profile)
-    return profile
+    return yaml.safe_load(PROFILE_PATH.read_text(encoding="utf-8")) or {}
 
 
 def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
@@ -419,7 +412,7 @@ async def api_import_cv(file: UploadFile = File(...)):
     The result always needs review: nothing extracted from the CV is written
     as verified. If profile.yaml already exists it is preserved as
     profile.yaml.bak before being replaced, so a browser-based import never
-    silently destroys previously confirmed facts.
+    silently destroys facts the user has already confirmed.
     """
     allowed_suffixes = {".pdf", ".txt", ".md", ".markdown", ".rst", ".csv"}
     suffix = Path(file.filename or "cv.txt").suffix.lower() or ".txt"
@@ -458,8 +451,8 @@ def api_settings():
     return {
         "sources": source_registry_for_settings(),
         "acbar": {
-            "max_pages": acbar_cfg.get("max_pages", ACBAR_DEFAULT_MAX_PAGES),
-            "detail_limit": acbar_cfg.get("detail_limit", ACBAR_DEFAULT_DETAIL_LIMIT),
+            "max_pages": acbar_cfg.get("max_pages"),
+            "detail_limit": acbar_cfg.get("detail_limit"),
             "max_detail_concurrency": acbar_cfg.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY),
             "timeout_seconds": acbar_cfg.get("timeout_seconds", ACBAR_DEFAULT_TIMEOUT_SECONDS),
             "note": (SOURCE_REGISTRY.get("acbar", {}).get("settings_note") or "ACBAR pagination is followed to the real end unless an explicit limit is configured; a limit makes the scan partial."),
@@ -480,9 +473,9 @@ def api_recommended(limit: int = 200):
     The authoritative per-scan collection is persisted inside the scan run by
     the backend; this endpoint returns it verbatim (only overlaying current
     package/progress state from the tracker for cards that have since had a
-    package generated). A legacy scan history without a stored collection
-    falls back to the stored-history view, which uses the same recommendation
-    gate via utils/recommendations.py.
+    package generated). When no scan run with a stored collection exists yet,
+    the stored-history view is served instead, which applies the same
+    recommendation gate via utils/recommendations.py.
     """
     latest = get_latest_scan() or {}
     entries = latest.get("recommendations")

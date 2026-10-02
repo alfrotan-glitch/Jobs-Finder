@@ -19,7 +19,6 @@ from typing import Any
 import yaml
 
 from utils.medical_requirements import MONTHS, NUMBER_WORDS, normalize_text
-from utils.source_registry import normalize_profile_source_budgets
 
 
 @dataclass
@@ -186,16 +185,16 @@ PERSONAL_VERIFICATION_FIELDS = {
 def personal_field_is_verified(profile: dict[str, Any], key: str) -> bool:
     """Return explicit verification status for one personal/profile field.
 
-    New profiles use ``personal.verification.<field>: true`` so identity,
-    contact, gender, nationality, and location can be confirmed separately.
-    Existing profiles with the legacy ``personal.verified: true`` remain
-    honored as a user-controlled block confirmation, but the dashboard no
-    longer creates that broad flag.
+    ``personal.verification.<field>: true`` confirms one field, so identity,
+    contact, gender, nationality, and location are verified separately.
+    ``personal.verified: true`` is the user's block-level confirmation of the
+    whole personal section; dashboard confirmations always write the
+    per-field flag.
     """
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     if is_verified_flag(personal.get("verified")):
         return True
-    verification = personal.get("verification") or personal.get("verified_fields") or {}
+    verification = personal.get("verification") or {}
     if isinstance(verification, dict) and is_verified_flag(verification.get(key)):
         return True
     return False
@@ -249,11 +248,6 @@ def load_profile(path: str | Path = "profile.yaml") -> dict[str, Any]:
 
 def save_profile(profile: dict[str, Any], path: str | Path = "profile.yaml") -> None:
     path = Path(path)
-    # Self-healing write: if the profile still carries an untouched builder-era
-    # discovery budget (verbatim legacy CV-import copy), drop those keys so the
-    # file itself stops silently capping scans. Deliberately configured values
-    # are never touched (see utils/source_registry.normalize_source_overrides).
-    profile, _notes = normalize_profile_source_budgets(profile)
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(profile, f, sort_keys=False, allow_unicode=True)
 
@@ -681,9 +675,9 @@ def _add_personal(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
     # profile_builder.build_profile_from_cv_text). A CV-derived value is
     # therefore NOT automatically verified just because it is present and
     # non-placeholder -- per the canonical rule, identity/contact data is
-    # subject to explicit verification. New profiles can verify individual
-    # fields under personal.verification.<field>; legacy personal.verified:
-    # true remains honored as a prior user-controlled block confirmation.
+    # subject to explicit verification: individual fields are confirmed under
+    # personal.verification.<field>, and personal.verified: true is the
+    # user's block-level confirmation of the whole personal section.
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     for key in ["location", "nationality", "gender", "phone", "email", "first_name", "last_name", "linkedin"]:
         value = personal.get(key)

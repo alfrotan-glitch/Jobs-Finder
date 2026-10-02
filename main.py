@@ -20,7 +20,6 @@ from utils.profile import save_profile
 from utils.profile_builder import build_profile_from_cv_file
 from utils.recommendations import evaluate_scan_jobs
 from utils.resume_parser import extract_resume_text
-from utils.source_registry import normalize_profile_source_budgets
 from utils.tracker import (
     delete_all,
     get_job_by_id,
@@ -48,13 +47,6 @@ def load_profile(path: str | Path | None = None, *, required: bool = True) -> di
             sys.exit(1)
         return {}
     profile = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    # Remove untouched builder-era discovery budgets (see
-    # utils/source_registry.py). This is the load-time migration that stops a
-    # CV-import-era profile.yaml from silently capping real scans at 6 listing
-    # pages / 30 detail pages; anything the user actually edited is preserved.
-    _profile, budget_notes = normalize_profile_source_budgets(profile)
-    for note in budget_notes:
-        print(note)
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     missing = [field for field in ["first_name", "last_name", "email"] if not personal.get(field)]
     if missing and required:

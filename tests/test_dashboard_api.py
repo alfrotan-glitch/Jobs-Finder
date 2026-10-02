@@ -1,6 +1,6 @@
-"""Dashboard API tests: the backend remains the sole authority for evidence
-and verification status; the UI only displays/collects what these endpoints
-return (brief requirements #20-23).
+"""Dashboard API tests: the backend is the sole authority for evidence and
+verification status; the UI only displays/collects what these endpoints
+return.
 """
 
 import io
@@ -207,7 +207,7 @@ def test_latest_scan_endpoint_returns_backend_persisted_scan(client):
         "started_at": "2026-10-01T00:00:00+00:00",
         "finished_at": "2026-10-01T00:00:01+00:00",
         "jobs": [],
-        "source_reports": [{"id": "acbar", "name": "ACBAR", "status": "PARTIAL", "listings_checked": 12}],
+        "source_reports": [{"id": "acbar", "name": "ACBAR", "status": "PARTIAL", "listings_seen": 12}],
         "job_count": 0,
     })
     body = client.get("/api/scan/latest").json()

@@ -1,38 +1,24 @@
-"""Regression tests for the LIVE ACBAR cap reported from a real Windows run.
+"""Contract tests for scan budget configuration.
 
-Root cause (confirmed against git history and the user profile): before the
-full-market change the registry's ACBAR defaults contained a bounded budget
-(``max_pages: 6`` / ``detail_limit: 30``) and ``utils/profile_builder.py``
-copied ``source_defaults()`` verbatim into every profile.yaml it generated.
-The registry default was later removed, but profiles created during that era
-still carry the literal values, so every real scan kept reading them as an
-"explicit" cap: 6 pages / 134 of 234 listings / PAGE_LIMIT_REACHED / PARTIAL.
+Operational caps come from ``profile.yaml`` alone:
 
-These tests prove:
-
-1. A profile WITHOUT limits scans to the source's real end (END_REACHED,
-   SCANNED, every listing seen — the requested "no max_pages/no detail_limit"
-   validation).
-2. A profile carrying the untouched legacy builder block behaves unbounded
-   (load-time migration + discovery-level normalization agree).
-3. Explicitly configured limits still work exactly as before (PARTIAL).
-4. The CV importer no longer bakes ANY operational defaults into profile.yaml.
-5. Any user-touched override block is preserved bit-for-bit.
+1. A profile without limits scans to the source's real end (END_REACHED,
+   SCANNED, every listing seen).
+2. An explicitly configured ``max_pages`` caps pagination and marks the scan
+   PARTIAL.
+3. An explicitly configured ``detail_limit`` defers candidates openly and
+   marks the scan PARTIAL, with budget-deferred listings keeping exactly one
+   terminal outcome.
+4. A ``job_sources`` block is read exactly as written, and the CV importer
+   never writes operational defaults into profile.yaml.
 """
 
 from datetime import date
 
 import pytest
 
-import main
 from utils import discovery
 from utils.profile_builder import build_profile_from_cv_text
-from utils.source_registry import (
-    normalize_profile_source_budgets,
-    normalize_source_overrides,
-)
-
-LEGACY_ACBAR_BLOCK = {"timeout_seconds": 25.0, "detail_limit": 30, "max_pages": 6, "max_detail_concurrency": 5}
 
 
 class Response:
@@ -94,24 +80,24 @@ def _assert_unbounded_full_scan(jobs):
 
 @pytest.mark.asyncio
 async def test_default_scan_without_limits_reaches_real_end(monkeypatch):
-    """Requested validation #2: no max_pages and no detail_limit → unbounded."""
+    """No max_pages and no detail_limit means an unbounded scan."""
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: _paged_client({1: PAGE_ONE, 2: PAGE_TWO, 3: ""})())
     jobs = await discovery.discover_acbar_jobs({"personal": {"first_name": "A"}})
     _assert_unbounded_full_scan(jobs)
 
 
 @pytest.mark.asyncio
-async def test_legacy_builder_budget_block_does_not_cap_real_scan(monkeypatch):
-    """The exact profile.yaml block a CV import wrote during the bounded era."""
+async def test_connection_settings_alone_do_not_cap_a_scan(monkeypatch):
+    """Timeout/concurrency settings are not budgets: the scan stays unbounded."""
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: _paged_client({1: PAGE_ONE, 2: PAGE_TWO, 3: ""})())
-    profile = {"job_sources": {"acbar": dict(LEGACY_ACBAR_BLOCK)}}
+    profile = {"job_sources": {"acbar": {"timeout_seconds": 25.0, "max_detail_concurrency": 5}}}
     jobs = await discovery.discover_acbar_jobs(profile)
     _assert_unbounded_full_scan(jobs)
 
 
 @pytest.mark.asyncio
 async def test_explicit_max_pages_still_caps_and_marks_partial(monkeypatch):
-    """Requested validation #3: a deliberate user limit is honored + PARTIAL."""
+    """A deliberate user limit is honored and reported PARTIAL."""
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: _paged_client({1: PAGE_ONE, 2: PAGE_TWO, 3: ""})())
     jobs = await discovery.discover_acbar_jobs({"job_sources": {"acbar": {"max_pages": 1}}})
     assert jobs.metrics.configured_page_limit == 1
@@ -123,7 +109,7 @@ async def test_explicit_max_pages_still_caps_and_marks_partial(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_explicit_detail_limit_defers_candidates_and_marks_partial(monkeypatch):
-    """Requested validation #4: a deliberate detail budget defers openly."""
+    """A deliberate detail budget defers candidates openly."""
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: _paged_client({1: PAGE_ONE, 2: PAGE_TWO, 3: ""})())
     jobs = await discovery.discover_acbar_jobs({"job_sources": {"acbar": {"detail_limit": 2}}})
     assert jobs.metrics.configured_detail_limit == 2
@@ -138,14 +124,8 @@ async def test_explicit_detail_limit_defers_candidates_and_marks_partial(monkeyp
 
 
 # ---------------------------------------------------------------------------
-# The normalization rule itself
+# How a job_sources block is read
 # ---------------------------------------------------------------------------
-
-
-def test_verbatim_legacy_block_is_stripped_with_report():
-    effective, removed = normalize_source_overrides("acbar", dict(LEGACY_ACBAR_BLOCK))
-    assert "max_pages" not in effective and "detail_limit" not in effective
-    assert removed == {"max_pages": 6, "detail_limit": 30}
 
 
 def test_falsy_override_forms_mean_no_overrides():
@@ -158,41 +138,13 @@ def test_falsy_override_forms_mean_no_overrides():
         discovery._source_overrides({"job_sources": {"acbar": "yes"}}, "acbar")
 
 
-def test_user_modified_block_is_never_touched():
-    modified = {**LEGACY_ACBAR_BLOCK, "detail_limit": 50}
-    effective, removed = normalize_source_overrides("acbar", modified)
-    assert removed == {}
-    assert effective == modified
+def test_configured_block_is_read_exactly_as_written():
+    block = {"timeout_seconds": 25.0, "max_pages": 4, "detail_limit": 50, "urls": ["https://example.org/jobs"]}
+    assert discovery._source_overrides({"job_sources": {"acbar": dict(block)}}, "acbar") == block
 
 
-def test_user_explicit_single_key_is_never_touched():
-    explicit = {"max_pages": 6}  # deliberately typed by the user
-    effective, removed = normalize_source_overrides("acbar", explicit)
-    assert removed == {}
-    assert effective == explicit
-
-
-def test_unknown_extra_key_marks_block_as_user_owned():
-    block = {**LEGACY_ACBAR_BLOCK, "urls": ["https://example.org/jobs"]}
-    effective, removed = normalize_source_overrides("acbar", block)
-    assert removed == {}
-    assert effective == block
-
-
-def test_profile_level_migration_reports_and_preserves():
-    legacy_profile = {"personal": {"first_name": "A"}, "job_sources": {"acbar": dict(LEGACY_ACBAR_BLOCK)}}
-    cleaned, notes = normalize_profile_source_budgets(legacy_profile)
-    assert "max_pages" not in cleaned["job_sources"]["acbar"]
-    assert notes and "max_pages=6" in notes[0] and "detail_limit=30" in notes[0]
-
-    user_profile = {"personal": {"first_name": "A"}, "job_sources": {"acbar": {"max_pages": 6, "detail_limit": 30}}}
-    cleaned, notes = normalize_profile_source_budgets(user_profile)
-    assert cleaned["job_sources"]["acbar"] == {"max_pages": 6, "detail_limit": 30}
-    assert notes == []
-
-
-def test_cv_import_no_longer_materializes_source_defaults():
-    """Root-cause fix: the importer never bakes operational defaults again."""
+def test_cv_import_does_not_materialize_source_defaults():
+    """The importer writes no operational defaults into profile.yaml."""
     profile = build_profile_from_cv_text("Jane Doe\nMedical Doctor\njane@example.org", resume_path="cv.txt")
     acbar = profile["job_sources"]["acbar"]
     reliefweb = profile["job_sources"]["reliefweb"]
@@ -201,25 +153,10 @@ def test_cv_import_no_longer_materializes_source_defaults():
     assert acbar == {} and reliefweb == {}
 
 
-def test_main_load_profile_migrates_legacy_budget_and_says_so(tmp_path, capsys):
-    path = tmp_path / "profile.yaml"
-    path.write_text(
-        "personal:\n  first_name: Jane\n  last_name: Doe\n  email: j@example.org\n"
-        "job_sources:\n  acbar:\n    timeout_seconds: 25.0\n    detail_limit: 30\n"
-        "    max_pages: 6\n    max_detail_concurrency: 5\n",
-        encoding="utf-8",
-    )
-    profile = main.load_profile(str(path))
-    assert "max_pages" not in profile["job_sources"]["acbar"]
-    assert "detail_limit" not in profile["job_sources"]["acbar"]
-    out = capsys.readouterr().out
-    assert "legacy" in out.lower() and "max_pages=6" in out
-
-
 @pytest.mark.asyncio
 async def test_deferred_candidates_stay_in_canonical_accounting(monkeypatch):
-    """Two-stage design: full discovery first, conservative detail enrichment
-    second; budget-deferred listings keep one explicit terminal outcome."""
+    """Full discovery first, conservative detail enrichment second: a
+    budget-deferred listing keeps exactly one explicit terminal outcome."""
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: _paged_client({1: PAGE_ONE, 2: PAGE_TWO, 3: ""})())
     result = await discovery.run_discovery_scan(
         {"sources": {"enabled": ["acbar"]}, "job_sources": {"acbar": {"detail_limit": 1}}},

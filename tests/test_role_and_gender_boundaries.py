@@ -1,8 +1,8 @@
-"""Regression tests for the discovery→recommendation boundary audit (2026-10).
+"""The discovery to recommendation boundary.
 
-Every case below reproduces a REAL vacancy observed on ACBAR where the matcher
-previously let an incompatible professional role or a female-only vacancy reach
-the recommendation list for a verified male MD profile:
+Every case below is a real ACBAR vacancy shape that must never reach the
+recommendation list for a verified male MD profile, because the role family
+is incompatible or the vacancy is female-only:
 
 * A duty phrase ("Work closely with the medical doctor...", "Contact the
   physician for inaccuracy in prescription order...") was treated as "MD
@@ -226,8 +226,8 @@ def test_gender_male_female_and_any_rows_are_not_restrictions():
 
 
 def test_pharmacist_duty_mention_of_physician_does_not_unlock_md():
-    # Real case: FMIC "Pharmacist" -- "Contact the physician for inaccuracy in
-    # prescription order..." previously classified this as an MD role.
+    # Real case: FMIC "Pharmacist" -- a duty phrase such as "Contact the
+    # physician for inaccuracy in prescription order..." is not an MD role.
     report = match_job_against_profile(
         job(
             "Job Summary Review and check prescriptions. Contact the physician for inaccuracy in prescription "
@@ -246,7 +246,7 @@ def test_pharmacist_duty_mention_of_physician_does_not_unlock_md():
 
 def test_nurse_duty_mention_of_medical_doctor_does_not_unlock_md():
     # Real case: INTERSOS "Nurse Nutrition" -- "Work closely with the medical
-    # doctor in the planning..." previously cancelled the nursing blocker.
+    # doctor in the planning..." must not cancel the nursing blocker.
     report = match_job_against_profile(
         job(
             "Job Summary Provide nursing and nutritional care in the TFU. Duties: Work closely with the medical "

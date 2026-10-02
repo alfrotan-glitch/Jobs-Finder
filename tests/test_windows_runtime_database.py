@@ -1,10 +1,9 @@
-"""Regression coverage for the Windows project-runtime SQLite contract.
+"""The Windows project-runtime SQLite contract.
 
-These tests deliberately run the backend from a different working directory.
-That is the important part of the real ``main.py find`` failure: the process
-location must not select a second database, and a genuine read-only database
-must fail with enough context to repair the runtime rather than with a bare
-SQLite error.
+These tests deliberately run the backend from a different working directory:
+the process location must not select a second database, and a genuine
+read-only database must fail with enough context to repair the runtime
+rather than with a bare SQLite error.
 """
 
 from __future__ import annotations

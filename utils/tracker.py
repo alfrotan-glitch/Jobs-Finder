@@ -42,8 +42,8 @@ from utils.medical_requirements import canonical_source_fields, has_actionable_s
 from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.recommendations import is_recommendable, recommendation_rank
 
-# Public compatibility name retained for tests and local integrations.  It is
-# the one canonical database location used by both entry points.
+# The one canonical database location used by the CLI and the dashboard.
+# Tests and local integrations patch this name to redirect the database.
 DB_PATH = CANONICAL_DB_PATH
 
 
@@ -137,9 +137,9 @@ def _write_problem(path: Path) -> str | None:
             return f"the database file has the Windows read-only attribute: {path}"
         if not _has_write_permission(path):
             return f"the database file is not writable: {path}"
-    # A WAL connection also writes these sibling files.  An old read-only
-    # sidecar can therefore produce the same SQLite error even when the main
-    # database file itself looks writable.
+    # A WAL connection also writes these sibling files.  A read-only sidecar
+    # therefore produces the same SQLite error even when the main database
+    # file itself looks writable.
     for sidecar in (Path(f"{path}-wal"), Path(f"{path}-shm")):
         if sidecar.exists():
             if _windows_readonly_attribute(sidecar) or not _has_write_permission(sidecar):
@@ -226,10 +226,9 @@ def _ensure_wal(conn: sqlite3.Connection, timeout: float = 5.0) -> None:
 
     ``PRAGMA journal_mode=WAL`` needs a brief exclusive lock and -- unlike
     ordinary statements -- SQLite returns SQLITE_BUSY for it immediately
-    instead of honouring ``busy_timeout``.  When a scan pair already holds the
-    writer transaction, a second connection used to blow up with "database is
-    locked" before it had done any work.  Retry until the deadline and accept
-    the mode another connection has already set.
+    instead of honouring ``busy_timeout``.  While a scan pair holds the writer
+    transaction, a second connection must therefore retry until the deadline
+    and accept the mode another connection has already set.
     """
     deadline = time.monotonic() + timeout
     while True:
@@ -271,9 +270,9 @@ def get_db() -> sqlite3.Connection:
         # WAL needs the containing directory for its -wal/-shm files.  The
         # preflight above therefore checks both an existing DB and its parent.
         _ensure_wal(conn)
-        if _schema_is_ready_for_reads(conn):
-            # Nothing to migrate: skip the DDL so a second connection does not
-            # fight the active scan writer for the database lock.
+        if _schema_is_ready(conn):
+            # The schema is already in place: skip the DDL so a second
+            # connection does not fight the active scan writer for the lock.
             return conn
         conn.execute(
             """
@@ -298,9 +297,6 @@ def get_db() -> sqlite3.Connection:
             )
             """
         )
-        existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(vacancies)").fetchall()}
-        if "package_status" not in existing_columns:
-            conn.execute("ALTER TABLE vacancies ADD COLUMN package_status TEXT DEFAULT 'NOT_CREATED'")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_status ON vacancies(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_vacancies_readiness ON vacancies(readiness)")
         conn.execute(
@@ -327,26 +323,21 @@ def get_db() -> sqlite3.Connection:
         raise
 
 
-def _schema_is_ready_for_reads(conn: sqlite3.Connection) -> bool:
-    """Check the current schema without making a read connection a writer."""
+def _schema_is_ready(conn: sqlite3.Connection) -> bool:
+    """Check the canonical schema without making a read connection a writer."""
     tables = {
         str(row[0])
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }
-    if not {"vacancies", "scan_runs"}.issubset(tables):
-        return False
-    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(vacancies)").fetchall()}
-    return "package_status" in columns
+    return {"vacancies", "scan_runs"}.issubset(tables)
 
 
 def _read_connection() -> sqlite3.Connection:
     """Open a query-only connection for dashboard/CLI reads.
 
-    ``get_db`` intentionally ensures the schema for a writer, but doing that
-    from every dashboard GET made a read process execute WAL/DDL work while a
-    scan was inserting and matching. Existing databases use this side-effect-
-    free path; a missing or legacy schema is initialized once through
-    ``get_db`` and then reopened read-only.
+    Reads never execute WAL or DDL work, so a dashboard GET cannot compete
+    with a scan that is inserting and matching. A database whose schema is
+    not in place yet is initialized once through ``get_db``.
     """
     path = canonical_db_path()
     if not path.exists():
@@ -354,7 +345,7 @@ def _read_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), timeout=5.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=5000")
-    if _schema_is_ready_for_reads(conn):
+    if _schema_is_ready(conn):
         conn.execute("PRAGMA query_only=1")
         _trace_database("_read_connection", "open", conn)
         return conn
@@ -379,7 +370,7 @@ def _to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     data["match_json"] = json.dumps(data.get("match") or {}, ensure_ascii=False)
     data["package_json"] = json.dumps(data.get("package") or {}, ensure_ascii=False)
     data["documents_json"] = json.dumps(data.get("documents") or {}, ensure_ascii=False)
-    # Backward-compatible aliases used by document generation and older views.
+    # Display/document fields derived from the stored row.
     data["platform"] = data.get("source", "")
     data["company"] = data.get("company", "")
     metadata = data.get("metadata") or {}
@@ -578,15 +569,12 @@ def log_medical_match(job_id: str, report: dict[str, Any]) -> None:
 
 
 def log_discovered_and_medical_match(job: Any, report: dict[str, Any]) -> None:
-    """Persist a production scan pair on one transaction and one connection.
+    """Persist a scan pair on one transaction and one connection.
 
-    The old scan path committed ``INSERT ... vacancies`` and then opened a
-    second connection for ``UPDATE vacancies``.  That was safe in a quiet,
-    single-process probe but left a race window for a dashboard/CLI overlap and
-    made the real Windows lifecycle differ from the isolated helper test.  A
-    scan pair now acquires the SQLite writer transaction once, inserts (or
-    refreshes) the vacancy, updates that same row, and commits once.  The
-    public single-operation helpers remain available for package/API actions.
+    A scan pair acquires the SQLite writer transaction once, inserts (or
+    refreshes) the vacancy, updates that same row with the match report, and
+    commits once, so a dashboard/CLI overlap can never observe a half-written
+    pair. The single-operation helpers above serve package/API actions.
     """
     data, metadata, source, timestamp = _discovered_data(job)
     with _write_connection() as conn:

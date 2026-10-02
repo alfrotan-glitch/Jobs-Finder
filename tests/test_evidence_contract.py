@@ -1,9 +1,8 @@
-"""Regression tests for the canonical evidence/verification contract.
+"""The canonical evidence/verification contract.
 
-These target the specific defects fixed this pass: tri-state yes/no parsing,
-work-history years requiring per-entry verification, skills/certificates
-never auto-verifying from plain presence, and placeholder values never being
-treated as evidence.
+Covers tri-state yes/no parsing, work-history years requiring per-entry
+verification, skills/certificates never auto-verifying from plain presence,
+and placeholder values never being treated as evidence.
 """
 
 from datetime import date
@@ -152,7 +151,7 @@ def test_personal_identity_fields_require_explicit_personal_verification():
     verified evidence just because it is present and non-placeholder --
     profile_builder.py extracts these directly from CV text with no verified
     flags, so they must stay unverified until the owner explicitly confirms
-    each field (or a legacy whole personal block).
+    each field (or the whole personal block).
     """
     profile = {
         "personal": {
@@ -168,7 +167,7 @@ def test_personal_identity_fields_require_explicit_personal_verification():
     evidence = build_profile_evidence(profile)
     for key in ["first_name", "last_name", "email", "phone", "gender", "nationality", "location"]:
         assert evidence.has(key), f"{key} should still be recorded as (unverified) evidence"
-        assert not evidence.has_verified(key), f"{key} must not be verified without personal.verified: true"
+        assert not evidence.has_verified(key), f"{key} must not be verified without an explicit confirmation"
 
 
 def test_personal_identity_fields_verify_individually():
@@ -190,7 +189,7 @@ def test_personal_identity_fields_verify_individually():
     assert not evidence.has_verified("location")
 
 
-def test_personal_identity_fields_verify_once_legacy_personal_block_is_confirmed():
+def test_personal_identity_fields_verify_once_the_personal_block_is_confirmed():
     profile = {
         "personal": {
             "first_name": "Jane",

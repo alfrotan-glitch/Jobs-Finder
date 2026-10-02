@@ -73,10 +73,9 @@ def test_missing_application_route_is_visible_blocker():
 
 
 def test_unverified_gender_claim_needs_verification_not_silently_excluded():
-    """An unconfirmed gender value (e.g. fresh from a CV import, no
-    personal.verified: true) must never be used to decide a gender-restricted
-    requirement either way -- it must stay NEEDS_VERIFICATION, never NOT_MET
-    or MET.
+    """An unconfirmed gender value (e.g. fresh from a CV import) must never
+    be used to decide a gender-restricted requirement either way -- it must
+    stay NEEDS_VERIFICATION, never NOT_MET or MET.
     """
     profile = base_profile(personal={"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "gender": "male", "nationality": "Afghan"})
     report = match_job_against_profile(

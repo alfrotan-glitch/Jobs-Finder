@@ -1,4 +1,4 @@
-"""Regression coverage for the real discovery-to-match persistence lifecycle.
+"""The discovery-to-match persistence lifecycle.
 
 The scan itself performs HTTP detail work concurrently, but matching and tracker
 writes are synchronous.  These tests keep that distinction explicit and verify

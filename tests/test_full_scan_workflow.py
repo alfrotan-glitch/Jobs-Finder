@@ -1,21 +1,18 @@
-"""End-to-end integration test of the REAL reported Windows scenario.
+"""End-to-end integration test of a complete CLI scan.
 
-Setup mirrors the user's live machine exactly:
-* profile.yaml as produced by a CV import during the bounded-defaults era
-  (verbatim legacy ``job_sources.acbar`` block with ``max_pages: 6`` /
-  ``detail_limit: 30``), then hand-filled with verified medical facts;
+Setup:
+* a profile.yaml holding verified medical facts and no scan budget;
 * a realistic ACBAR: 2 full listing pages + 1 empty end page and a truthful
   "24 jobs found" banner.
 
-Asserted invariants (the user's seven validation points, end to end):
-1. The load-time migration fires once and says exactly what it ignored.
-2. The scan is NOT capped: END_REACHED, SCANNED (not PARTIAL), all 24
+Asserted invariants:
+1. The scan is not capped: END_REACHED, SCANNED (not PARTIAL), all 24
    listings seen, source-reported total matches, no "Configured limits"
    line in the output.
-3. The recommended COUNT in the summary equals the number of printed
+2. The recommended COUNT in the summary equals the number of printed
    recommendation entries equals the length of the collection persisted
    with scan activity — one authoritative collection everywhere.
-4. Broad discovery retained generic roles for review, but Project Manager /
+3. Broad discovery retains generic roles for review, but Project Manager /
    CLIC Operator are absent from recommendations while genuine health-domain
    roles (incl. "Nutrition Trainer") are present.
 """
@@ -29,7 +26,7 @@ import pytest
 import main
 from utils import discovery, tracker
 
-LEGACY_PROFILE_YAML = """
+PROFILE_YAML = """
 personal:
   first_name: Jane
   last_name: Doe
@@ -76,8 +73,6 @@ sources:
 job_sources:
   acbar:
     timeout_seconds: 25.0
-    detail_limit: 30
-    max_pages: 6
     max_detail_concurrency: 5
   reliefweb:
     timeout_seconds: 25.0
@@ -195,16 +190,15 @@ def _printed_titles(output: str) -> list[str]:
     return titles
 
 
-def test_real_windows_profile_scans_uncapped_and_counts_agree(tmp_path, monkeypatch, capsys):
+def test_full_cli_scan_is_uncapped_and_counts_agree(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
     client = _fake_acbar()
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: client())
     profile_path = tmp_path / "profile.yaml"
-    profile_path.write_text(LEGACY_PROFILE_YAML, encoding="utf-8")
+    profile_path.write_text(PROFILE_YAML, encoding="utf-8")
 
     profile = main.load_profile(str(profile_path))
-    migration_note = capsys.readouterr().out
-    assert "max_pages=6" in migration_note and "detail_limit=30" in migration_note
+    capsys.readouterr()
 
     asyncio.run(main.cmd_scan(profile))
     output = capsys.readouterr().out
@@ -240,7 +234,7 @@ def test_scan_collection_survives_persistence_round_trip(tmp_path, monkeypatch):
     client = _fake_acbar()
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: client())
     profile_path = tmp_path / "profile.yaml"
-    profile_path.write_text(LEGACY_PROFILE_YAML, encoding="utf-8")
+    profile_path.write_text(PROFILE_YAML, encoding="utf-8")
     profile = main.load_profile(str(profile_path))
     asyncio.run(main.cmd_scan(profile))
 
@@ -255,7 +249,7 @@ def test_scan_collection_survives_persistence_round_trip(tmp_path, monkeypatch):
 @pytest.mark.parametrize("key", ["max_pages", "detail_limit"])
 @pytest.mark.asyncio
 async def test_real_end_without_any_configured_limit(monkeypatch, key):
-    """Belt-and-braces: the default scan never invents the removed defaults."""
+    """A profile without an explicit limit never gets an implicit one."""
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: _fake_acbar()())
     jobs = await discovery.discover_acbar_jobs({}, today=date(2026, 10, 1))
     assert jobs.metrics.pagination_stop_reason == "END_REACHED"

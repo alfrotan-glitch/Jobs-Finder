@@ -1,9 +1,9 @@
-"""Regression tests for strict matcher semantics.
+"""Strict matcher semantics.
 
-Every weakness covered here was either found in this audit or is a trap the
-canonical contract explicitly forbids: Python truthiness standing in for
-semantic verification, unverified evidence producing MET/NOT_MET, and
-string/number look-alike booleans ("true", "no", 1, 0, placeholders).
+Each case is a trap the canonical contract explicitly forbids: Python
+truthiness standing in for semantic verification, unverified evidence
+producing MET/NOT_MET, and string/number look-alike booleans ("true", "no",
+1, 0, placeholders).
 """
 
 from datetime import date

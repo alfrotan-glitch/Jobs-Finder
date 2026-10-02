@@ -1,5 +1,4 @@
-"""Regression tests for the DOCUMENT EVIDENCE GATE and CONTACT/IDENTITY
-CONTRACT.
+"""The DOCUMENT EVIDENCE GATE and CONTACT/IDENTITY CONTRACT.
 
 Employer-facing generated documents (tailored CV / cover letter — TXT, and
 the DOCX/PDF renders derived from the same text) must never promote
@@ -326,8 +325,8 @@ def test_docx_and_pdf_artifacts_respect_the_evidence_gate(tmp_path):
 
 
 def test_cv_import_draft_profile_produces_fully_gated_documents():
-    """End-to-end regression: a complete CV-import draft (profile_builder
-    output, which fills personal.location/nationality and languages with
+    """End to end: a complete CV-import draft (profile_builder output,
+    which fills personal.location/nationality and languages with
     'Needs verification' placeholders) must yield employer-facing documents
     with no internal placeholder text, no unverified claims, and a neutral
     summary -- while still displaying draft contact data for review."""

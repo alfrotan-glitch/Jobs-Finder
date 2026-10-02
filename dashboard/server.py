@@ -30,7 +30,7 @@ from utils.discovery import (
 )
 from utils.documents import prepare_application_bundle
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
-from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
+from utils.paths import CANONICAL_DB_PATH, CANONICAL_PROFILE_PATH, PROJECT_ROOT
 from utils.profile import PERSONAL_VERIFICATION_FIELDS, build_profile_evidence, is_unresolved_value, save_profile
 from utils.recommendations import evaluate_scan_jobs
 from utils.source_registry import SOURCE_REGISTRY, normalize_profile_source_budgets, source_registry_for_settings
@@ -52,7 +52,7 @@ from utils.tracker import (
 # The dashboard and CLI intentionally expose the same canonical locations.
 ROOT = PROJECT_ROOT
 DB_PATH = CANONICAL_DB_PATH
-PROFILE_PATH = ROOT / "profile.yaml"
+PROFILE_PATH = CANONICAL_PROFILE_PATH
 UPLOADS_DIR = ROOT / "resumes"
 
 app = FastAPI(title="Jobs-Finder")

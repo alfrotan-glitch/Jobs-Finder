@@ -84,6 +84,13 @@ def test_cli_and_dashboard_expose_the_same_canonical_db_path() -> None:
     assert Path(server.DB_PATH).resolve() == expected
 
 
+def test_default_db_path_is_cwd_independent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    expected = Path(tracker.DB_PATH).resolve()
+    monkeypatch.chdir(tmp_path)
+    assert tracker.canonical_db_path() == expected
+    assert tracker.canonical_db_path().parent == expected.parent
+
+
 def test_tracker_connection_is_read_write_and_points_at_canonical_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

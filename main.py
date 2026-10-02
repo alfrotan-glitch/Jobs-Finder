@@ -43,7 +43,7 @@ def load_profile(path: str | Path | None = None, *, required: bool = True) -> di
     p = PROFILE_PATH if path is None else project_path(path)
     if not p.exists():
         if required:
-            print(f"Profile not found: {path}")
+            print(f"Profile not found: {p}")
             print("Copy profile.yaml.example to profile.yaml and enter verified facts first.")
             sys.exit(1)
         return {}

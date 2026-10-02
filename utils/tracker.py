@@ -44,7 +44,7 @@ from utils.recommendations import is_recommendable, recommendation_rank
 DB_PATH = CANONICAL_DB_PATH
 
 
-class TrackerDatabaseError(RuntimeError):
+class TrackerDatabaseError(sqlite3.OperationalError):
     """A local database cannot be used for the requested tracker operation."""
 
 
@@ -142,6 +142,10 @@ def _write_connection() -> Iterator[sqlite3.Connection]:
     try:
         yield conn
     except sqlite3.OperationalError as error:
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
         if _is_readonly_sqlite_error(error):
             raise _database_error(path, error) from error
         raise
@@ -179,12 +183,12 @@ def get_db() -> sqlite3.Connection:
 
     conn: sqlite3.Connection | None = None
     try:
-        conn = sqlite3.connect(str(path))
+        conn = sqlite3.connect(str(path), timeout=5.0)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=5000")
         # WAL needs the containing directory for its -wal/-shm files.  The
         # preflight above therefore checks both an existing DB and its parent.
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS vacancies (
@@ -229,10 +233,10 @@ def get_db() -> sqlite3.Connection:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_runs_created ON scan_runs(created_at)")
         conn.commit()
         return conn
-    except sqlite3.OperationalError as error:
+    except sqlite3.Error as error:
         if conn is not None:
             conn.close()
-        if _is_readonly_sqlite_error(error):
+        if isinstance(error, sqlite3.OperationalError) and _is_readonly_sqlite_error(error):
             raise _database_error(path, error) from error
         raise
 

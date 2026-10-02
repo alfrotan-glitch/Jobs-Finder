@@ -445,6 +445,16 @@ function renderSettings() {
     <p class="sectionHelp">Generated documents are kept locally for review and are not submitted by the system.</p>`;
 }
 
+function renderScanRecommendations(scan) {
+  // The scan's own authoritative recommendation collection — the exact list
+  // the summary counter above counted (never recomputed in the browser).
+  const entries = Array.isArray(scan?.recommendations) ? scan.recommendations : [];
+  if (!entries.length) return "";
+  const rows = entries.map((entry, index) => `
+    <p class="sectionHelp">${index + 1}. ${escapeHtml(entry.title || "Untitled vacancy")} — ${escapeHtml(entry.company || "")} · ${escapeHtml(readinessValue(entry) || "Needs review")}</p>`).join("");
+  return `<div class="sectionHelp" aria-label="Recommendations from this scan">${rows}</div>`;
+}
+
 function renderAdvanced() {
   const scan = state.lastScan;
   const reports = scan?.source_reports || [];
@@ -474,7 +484,8 @@ function renderAdvanced() {
       <p><strong>Lifecycle:</strong> ${escapeHtml(total.listings_seen || 0)} listings · ${escapeHtml(total.listing_parse_failures || 0)} parse failures · ${escapeHtml(total.vacancies_parsed || 0)} parsed · ${escapeHtml(total.not_processed_due_to_budget || 0)} budget-deferred</p>
       <p><strong>Outcomes:</strong> ${escapeHtml(total.duplicates_removed || 0)} duplicates · ${escapeHtml(total.expired_excluded || 0)} expired · ${escapeHtml(total.irrelevant_excluded || 0)} irrelevant · ${escapeHtml(total.incompatible_role_classification_excluded || 0)} incompatible · ${escapeHtml(total.source_validation_excluded || 0)} source-invalid · ${escapeHtml(returnedJobs)} retained</p>
       <p><strong>Routes:</strong> ${escapeHtml(total.application_routes_found || 0)} found · ${escapeHtml(total.application_routes_unavailable || 0)} unavailable</p>
-      <p><strong>Recommended from this scan:</strong> ${escapeHtml(total.recommended_from_scan || 0)} · ${escapeHtml(total.ready_to_apply_from_scan || 0)} ready · ${escapeHtml(total.needs_verification_from_scan || 0)} needs verification · ${escapeHtml(total.not_eligible_from_scan || 0)} not eligible</p>`;
+      <p><strong>Recommended from this scan:</strong> ${escapeHtml(total.recommended_from_scan || 0)} · ${escapeHtml(total.ready_to_apply_from_scan || 0)} ready · ${escapeHtml(total.needs_verification_from_scan || 0)} needs verification · ${escapeHtml(total.not_eligible_from_scan || 0)} not eligible</p>
+      ${renderScanRecommendations(scan)}`;
     const failedReports = reports.filter((source) => !source.ok || source.error);
     $("advancedFailures").innerHTML = failedReports.length
       ? failedReports.map((source) => `<div class="sourceRow"><strong>${escapeHtml(source.name)}</strong><p>${escapeHtml(source.error || "Source returned no successful response.")}</p></div>`).join("")

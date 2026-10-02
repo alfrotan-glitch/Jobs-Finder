@@ -454,7 +454,6 @@ def _draw_rule(cnv, x: float, y: float, width: float) -> None:
 def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     """Render a readable, content-driven CV with automatic pagination."""
     from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm

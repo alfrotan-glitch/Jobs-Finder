@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from utils.discovery import Job
 from utils import tracker
+from utils.discovery import Job
 
 
 def test_tracker_simple_status_flow(tmp_path, monkeypatch):

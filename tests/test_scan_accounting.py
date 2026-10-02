@@ -87,7 +87,7 @@ async def test_acbar_page_failure_preserves_successful_page(monkeypatch):
             return Response(page)
 
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: Client())
-    jobs = await discovery.discover_acbar_jobs({"job_sources": {"acbar": {"max_pages": 3}}})
+    jobs = await discovery.discover_acbar_jobs({})
     assert len(jobs) == 1
     assert jobs.metrics.pages_requested == 2
     assert jobs.metrics.pages_succeeded == 1
@@ -164,9 +164,8 @@ def test_scan_specific_recommendations_do_not_share_history():
     assert second.summary()["recommended_from_scan"] == 0 == len(second.recommendations)
 
 @pytest.mark.asyncio
-async def test_pagination_end_page_limit_and_detail_budget_are_distinct(monkeypatch):
+async def test_acbar_real_end_is_scanned_without_budget(monkeypatch):
     card1 = "<div><a href='/en/jobs/details/1/medical-officer'>Medical Officer</a><span>Org</span></div>"
-    card2 = "<div><a href='/en/jobs/details/2/medical-officer'>Medical Officer Two</a><span>Org</span></div>"
 
     class EndClient:
         async def __aenter__(self): return self
@@ -175,34 +174,19 @@ async def test_pagination_end_page_limit_and_detail_budget_are_distinct(monkeypa
             if "?page=2" in url:
                 return Response("")
             if "/details/" in url:
-                return Response("<h1>Medical Officer</h1><p>MD required</p>")
+                return Response("<h1>Medical Officer</h1><p>MD required. Apply hr@example.org.</p>")
             return Response(card1)
 
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: EndClient())
-    ended = await discovery.discover_acbar_jobs({"job_sources": {"acbar": {"max_pages": 3}}})
+    ended = await discovery.discover_acbar_jobs({})
     assert ended.metrics.pagination_stop_reason == "END_REACHED"
     assert ended.metrics.status == "SCANNED"
+    assert ended.metrics.not_processed_due_to_budget == 0
+    assert ended.metrics.detail_pages_attempted == 1
 
-    class LimitClient:
-        async def __aenter__(self): return self
-        async def __aexit__(self, *args): return False
-        async def get(self, url):
-            if "/details/" in url:
-                return Response("<h1>Medical Officer</h1><p>MD required</p>")
-            return Response(card1 + card2)
-
-    monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: LimitClient())
-    limited = await discovery.discover_acbar_jobs({"job_sources": {"acbar": {"max_pages": 1, "detail_limit": 1}}})
-    assert limited.metrics.pagination_stop_reason == "PAGE_LIMIT_REACHED"
-    assert limited.metrics.not_processed_due_to_budget == 1
-    # Stage 1 still parses both discovered cards; the configured detail cap
-    # defers one candidate rather than making it disappear from accounting.
-    assert limited.metrics.vacancies_parsed == 2
-    assert "PAGE_LIMIT_REACHED" in limited.metrics.partial_reasons
-    assert "DETAIL_LIMIT_REACHED" in limited.metrics.partial_reasons
 
 @pytest.mark.asyncio
-async def test_explicit_detail_budget_is_a_terminal_lifecycle_outcome(monkeypatch):
+async def test_acbar_full_detail_processing_is_terminally_accounted(monkeypatch):
     cards = "".join(
         f"<div><a href='/en/jobs/details/{number}/medical-officer-{number}'>Medical Officer {number}</a><span>Org</span><span>Kabul</span><span>2026-12-31</span></div>"
         for number in range(1, 4)
@@ -212,23 +196,21 @@ async def test_explicit_detail_budget_is_a_terminal_lifecycle_outcome(monkeypatc
         async def __aenter__(self): return self
         async def __aexit__(self, *args): return False
         async def get(self, url):
+            if "?page=2" in url:
+                return Response("")
             if "/details/" in url:
                 return Response("<h1>Medical Officer</h1><p>MD required. Apply hr@example.org.</p>")
             return Response(cards)
 
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: Client())
-    result = await run_discovery_scan(
-        {"sources": {"enabled": ["acbar"]}, "job_sources": {"acbar": {"max_pages": 1, "detail_limit": 1}}},
-        today=date(2026, 10, 1),
-    )
+    result = await run_discovery_scan({"sources": {"enabled": ["acbar"]}}, today=date(2026, 10, 1))
     report = result.source_reports[0]
-    assert result.status == discovery.PARTIAL_SCAN
-    assert report.status == "PARTIAL"
-    assert report.pagination_stop_reason == "PAGE_LIMIT_REACHED"
+    assert report.pagination_stop_reason == "END_REACHED"
+    assert report.status == "SCANNED"
     assert report.vacancies_parsed == 3
-    assert report.not_processed_due_to_budget == 2
-    assert report.detail_pages_attempted == report.detail_pages_succeeded == 1
-    assert report.relevant_retained == 1
+    assert report.not_processed_due_to_budget == 0
+    assert report.detail_pages_attempted == report.detail_pages_succeeded == 3
+    assert report.relevant_retained == 3
     assert report.application_routes_found + report.application_routes_unavailable == report.relevant_retained
     assert report.vacancies_parsed == sum([
         report.duplicates_removed,

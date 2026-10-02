@@ -304,13 +304,13 @@ def _merged_months(intervals: list[tuple[date, date]]) -> int:
 def infer_years_from_history(profile: dict[str, Any], *, kind: str = "clinical", today: date | None = None) -> float | None:
     """Infer years from work_history entries tagged or worded with a kind."""
     today = today or date.today()
-    work = profile.get("work_history") or profile.get("experience") or []
+    work = profile.get("work_history") or []
     if not isinstance(work, list):
         return None
     intervals: list[tuple[date, date]] = []
     kind_terms = {
         "clinical": ["clinical", "doctor", "physician", "medical officer", "hospital", "clinic", "patient", "therapeutic feeding", "tfu", "sam", "mam", "otp", "mobile health"],
-        "ngo": ["ngo", "ingo", "humanitarian", "donor", "emergency", "action against hunger", "acf", "tbt"],
+        "ngo": ["ngo", "ingo", "humanitarian", "donor", "emergency"],
         "management": ["manager", "management", "supervisor", "supervision", "lead", "coordinat", "advisor", "focal point", "capacity"],
         "public_health": ["public health", "moph", "health program", "hmis", "dhis2", "bphs", "ephs", "nutrition", "imam", "cmam", "covid"],
     }.get(kind, [kind])
@@ -325,12 +325,12 @@ def infer_years_from_history(profile: dict[str, Any], *, kind: str = "clinical",
             continue
         haystack = " ".join(
             str(entry.get(field, ""))
-            for field in ["title", "role", "organization", "employer", "sector", "description", "duties", "tags", "bullets"]
+            for field in ["title", "organization", "location", "description", "bullets"]
         ).lower()
         if not any(term in haystack for term in kind_terms):
             continue
-        start = parse_profile_date(entry.get("start") or entry.get("start_date") or entry.get("from"), today=today)
-        end = parse_profile_date(entry.get("end") or entry.get("end_date") or entry.get("to") or "present", today=today)
+        start = parse_profile_date(entry.get("start"), today=today)
+        end = parse_profile_date(entry.get("end") or "present", today=today)
         if start and end and end >= start:
             intervals.append((start, end))
     total_months = _merged_months(intervals)
@@ -396,16 +396,8 @@ def _profile_text(profile: dict[str, Any]) -> str:
 
 
 def _add_structured_education(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
-    medical = profile.get("medical", {}) if isinstance(profile.get("medical"), dict) else {}
-    education = []
-    for key in ("medical_education", "education"):
-        val = profile.get(key)
-        if isinstance(val, list):
-            education.extend(val)
-    if isinstance(medical.get("education"), list):
-        education.extend(medical["education"])
-    if isinstance(medical.get("degrees"), list):
-        education.extend(medical["degrees"])
+    raw_education = profile.get("medical_education")
+    education: list[Any] = raw_education if isinstance(raw_education, list) else []
 
     for item in education:
         if isinstance(item, dict):
@@ -419,19 +411,13 @@ def _add_structured_education(evidence: ProfileEvidence, profile: dict[str, Any]
         else:
             text = str(item)
             verified = False
-        if re.search(r"\b(M\.?D\.?|MBBS|Medical Doctor|Doctor of Medicine|Physician)\b", text, flags=re.I):
+        if re.search(r"\b(M\.?D\.?|MBBS|Medical Doctor|Doctor of Medicine|Physician)\b", text, flags=re.IGNORECASE):
             evidence.add("md_degree", True, "profile.medical_education", text, verified=verified)
             evidence.add("medical_education", text, "profile.medical_education", text, verified=verified)
 
 
 def _add_license(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
-    candidates = []
-    medical = profile.get("medical", {}) if isinstance(profile.get("medical"), dict) else {}
-    for key in ["license", "registration", "license_registration"]:
-        if key in medical:
-            candidates.append(medical[key])
-        if key in profile:
-            candidates.append(profile[key])
+    candidates = [profile.get("license_registration")]
     for candidate in candidates:
         if candidate in (None, "", {}, []):
             continue
@@ -514,8 +500,8 @@ def _add_languages(evidence: ProfileEvidence, profile: dict[str, Any], texts: li
     elif isinstance(languages, list):
         for item in languages:
             if isinstance(item, dict):
-                name = item.get("name") or item.get("language") or ""
-                level = item.get("level") or item.get("proficiency") or ""
+                name = item.get("name") or ""
+                level = item.get("level") or ""
                 # Verification requires an explicit `verified: true` AND a
                 # resolved (non-placeholder) level; a contradictory
                 # combination (verified: true with level "Needs verification")
@@ -533,7 +519,7 @@ def _add_languages(evidence: ProfileEvidence, profile: dict[str, Any], texts: li
 
     for source, text in texts:
         for canonical, aliases in LANGUAGE_ALIASES.items():
-            if any(re.search(rf"\b{re.escape(alias)}\b", text, flags=re.I) for alias in aliases):
+            if any(re.search(rf"\b{re.escape(alias)}\b", text, flags=re.IGNORECASE) for alias in aliases):
                 evidence.add(f"language_{canonical}", True, source, _quote_for_alias(text, aliases), verified=False)
 
 
@@ -547,7 +533,7 @@ def _canonical_language(name: str) -> str | None:
 
 def _quote_for_alias(text: str, aliases: list[str]) -> str:
     for alias in aliases:
-        match = re.search(rf".{{0,45}}\b{re.escape(alias)}\b.{{0,45}}", text, flags=re.I)
+        match = re.search(rf".{{0,45}}\b{re.escape(alias)}\b.{{0,45}}", text, flags=re.IGNORECASE)
         if match:
             return normalize_text(match.group(0))
     return ""
@@ -556,7 +542,7 @@ def _quote_for_alias(text: str, aliases: list[str]) -> str:
 def _add_term_matches(evidence: ProfileEvidence, text: str, source: str, *, verified: bool) -> None:
     for key, patterns in MEDICAL_TERM_KEYS.items():
         for pattern in patterns:
-            match = re.search(pattern, text, flags=re.I)
+            match = re.search(pattern, text, flags=re.IGNORECASE)
             if match:
                 quote = normalize_text(text[max(0, match.start() - 50): match.end() + 50])
                 evidence.add(key, True, source, quote, verified=verified)
@@ -570,13 +556,13 @@ def _add_terms(evidence: ProfileEvidence, texts: list[tuple[str, str]]) -> None:
 
 def _add_verified_profile_terms(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
     """Promote terms from explicitly verified profile facts into verified evidence."""
-    work = profile.get("work_history") or profile.get("experience") or []
+    work = profile.get("work_history") or []
     if isinstance(work, list):
         for entry in work:
             if isinstance(entry, dict) and is_verified_flag(entry.get("verified")):
                 text = "\n".join(_iter_strings({k: v for k, v in entry.items() if k != "verified"}))
                 _add_term_matches(evidence, text, "profile.work_history", verified=True)
-    for key in ["skills", "certificates", "certifications", "training"]:
+    for key in ["skills", "certificates"]:
         for item in _iter_dicts(profile.get(key)):
             name = item.get("name") or item.get("title") or ""
             if name and is_verified_flag(item.get("verified")):
@@ -586,15 +572,15 @@ def _add_verified_profile_terms(evidence: ProfileEvidence, profile: dict[str, An
 def _extract_years_from_text(text: str, context_terms: list[str]) -> float | None:
     def repl(match):
         return str(NUMBER_WORDS.get(match.group(1).lower(), match.group(1))) + " years"
-    text = re.sub(r"\b(" + "|".join(NUMBER_WORDS) + r")\s+(?:years?|yrs?)\b", repl, text, flags=re.I)
+    text = re.sub(r"\b(" + "|".join(NUMBER_WORDS) + r")\s+(?:years?|yrs?)\b", repl, text, flags=re.IGNORECASE)
     best: float | None = None
-    for match in re.finditer(r"(?P<years>\d{1,2})\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?P<context>.{0,80}?)(?:experience|work)", text, flags=re.I):
+    for match in re.finditer(r"(?P<years>\d{1,2})\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?P<context>.{0,80}?)(?:experience|work)", text, flags=re.IGNORECASE):
         context = match.group("context").lower()
         if any(term in context for term in context_terms):
             value = float(match.group("years"))
             best = max(best or 0, value)
     # Alternate ordering: clinical experience of 4 years.
-    for match in re.finditer(r"(?P<context>.{0,80}?)(?P<years>\d{1,2})\+?\s*(?:years?|yrs?)", text, flags=re.I):
+    for match in re.finditer(r"(?P<context>.{0,80}?)(?P<years>\d{1,2})\+?\s*(?:years?|yrs?)", text, flags=re.IGNORECASE):
         context = match.group("context").lower()
         if any(term in context for term in context_terms):
             value = float(match.group("years"))
@@ -691,9 +677,6 @@ def _add_personal(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
     for loc in prefs.get("locations", []) or []:
         if not is_unresolved_value(loc):
             evidence.add("preferred_location", loc, "profile.preferences.locations", str(loc), verified=True)
-    for loc in prefs.get("preferred_locations", []) or []:
-        if not is_unresolved_value(loc):
-            evidence.add("preferred_location", loc, "profile.preferences.preferred_locations", str(loc), verified=True)
     # Canonical tri-state parsing: "Needs verification"/"Unknown"/etc. resolve
     # to None and are therefore never added as evidence (never silently
     # become True through truthiness). Only a recognised Yes/No token (or a
@@ -707,16 +690,16 @@ def _add_personal(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
 
 
 def _add_skills_and_certificates(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
-    """Record skills/certificates/training as ordinary (unverified) evidence.
+    """Record canonical skills/certificates as ordinary evidence.
 
     These are not currently consumed as pass/fail eligibility evidence by the
     matcher (see DIRECT_EVIDENCE_KEYS) -- they are only ever used as ordinary,
     self-reported resume content. Per the canonical verification contract,
     mere presence in profile.yaml does not verify a claim; an individual
-    skill/certificate/training item can opt in to verified status only via an
-    explicit ``{"name": ..., "verified": true}`` structure.
+    skill/certificate item can opt in to verified status only via an explicit
+    ``{"name": ..., "verified": true}`` structure.
     """
-    for key in ["skills", "certificates", "certifications", "training"]:
+    for key in ["skills", "certificates"]:
         value = profile.get(key)
         if not value:
             continue
@@ -752,11 +735,11 @@ def build_profile_evidence(profile: dict[str, Any], resume_text: str = "", today
     _add_experience_years(evidence, profile, resume_text, today=today)
 
     # CV-only medical degree evidence.
-    if resume_text and re.search(r"\b(M\.?D\.?|MBBS|Medical Doctor|Doctor of Medicine|Physician)\b", resume_text, flags=re.I):
+    if resume_text and re.search(r"\b(M\.?D\.?|MBBS|Medical Doctor|Doctor of Medicine|Physician)\b", resume_text, flags=re.IGNORECASE):
         quote = _quote_for_alias(resume_text, ["MD", "MBBS", "Medical Doctor", "Doctor of Medicine", "Physician"])
         evidence.add("md_degree", True, "cv", quote or "Medical degree mentioned in CV", verified=False)
 
-    if resume_text and re.search(r"\b(licen[cs]e|registration|registered)\b", resume_text, flags=re.I):
+    if resume_text and re.search(r"\b(licen[cs]e|registration|registered)\b", resume_text, flags=re.IGNORECASE):
         quote = _quote_for_alias(resume_text, ["license", "licence", "registration", "registered"])
         evidence.add("license_registration", True, "cv", quote or "License/registration mentioned in CV", verified=False)
 

@@ -1,0 +1,15 @@
+[tool.ruff.lint]
+ignore = [
+  "B008",    # FastAPI dependency declarations intentionally use File(...).
+  "B023",    # Existing matcher helper pattern is covered by tests.
+  "BLE001",  # Source isolation/export fallbacks intentionally catch broad exceptions.
+  "DTZ007",  # Profile date parsing intentionally returns dates, not timezone-aware datetimes.
+  "DTZ011",  # Product scan/date semantics use local date inputs and explicit test dates.
+  "EXE001",  # main.py is launched with python on Windows and in tests.
+  "FLY002",  # Readability of small joins is preferred in current code.
+  "RUF012",  # Test-local clients use mutable class probes deliberately.
+  "RUF059",  # Some unpacked names document renderer tuple positions.
+  "S112",    # Font probing intentionally continues across unreadable font files.
+  "SIM102",  # Nested conditionals are kept where they clarify audit/safety steps.
+  "TRY004",  # Configuration validation uses ValueError consistently.
+]

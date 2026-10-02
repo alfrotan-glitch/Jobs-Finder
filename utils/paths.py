@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CANONICAL_DB_PATH = (PROJECT_ROOT / "applications.db").resolve()
 CANONICAL_PROFILE_PATH = (PROJECT_ROOT / "profile.yaml").resolve()

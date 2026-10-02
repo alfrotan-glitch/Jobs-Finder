@@ -16,7 +16,7 @@ from utils.resume_parser import extract_resume_text
 
 
 def _email(text: str) -> str:
-    match = re.search(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", text, flags=re.I)
+    match = re.search(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", text, flags=re.IGNORECASE)
     return match.group(0) if match else ""
 
 
@@ -37,13 +37,9 @@ def _name_from_text(text: str) -> tuple[str, str]:
 def _languages(text: str) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for name in ["Dari", "Pashto", "English"]:
-        if re.search(rf"\b{name}\b", text, flags=re.I):
+        if re.search(rf"\b{name}\b", text, flags=re.IGNORECASE):
             out.append({"name": name, "level": "Needs verification", "verified": False})
-    return out or [
-        {"name": "Dari", "level": "Needs verification", "verified": False},
-        {"name": "Pashto", "level": "Needs verification", "verified": False},
-        {"name": "English", "level": "Needs verification", "verified": False},
-    ]
+    return out
 
 
 def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str, Any]:
@@ -60,9 +56,9 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
     source by itself.
     """
     first, last = _name_from_text(text)
-    md_mentioned = bool(re.search(r"\b(MD|M\.D\.|Medical Doctor|Doctor of Medicine)\b", text, flags=re.I))
-    license_mentioned = bool(re.search(r"\b(medical\s+(?:license|licence|registration)|Afghan Medical Council|medical council)\b", text, flags=re.I))
-    exit_exam_mentioned = bool(re.search(r"\bexit\s+exam", text, flags=re.I))
+    md_mentioned = bool(re.search(r"\b(MD|M\.D\.|Medical Doctor|Doctor of Medicine)\b", text, flags=re.IGNORECASE))
+    license_mentioned = bool(re.search(r"\b(medical\s+(?:license|licence|registration)|Afghan Medical Council|medical council)\b", text, flags=re.IGNORECASE))
+    exit_exam_mentioned = bool(re.search(r"\bexit\s+exam", text, flags=re.IGNORECASE))
 
     return {
         "profile_status": "DRAFT",
@@ -97,15 +93,15 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
             },
         },
         "resume_path": resume_path,
-        "medical_education": [
+        "medical_education": ([
             {
                 "degree": "MD",
                 "institution": "Needs verification",
                 "graduation_year": "Needs verification",
-                "status": "Mentioned in CV; verify details" if md_mentioned else "Needs verification",
+                "status": "Mentioned in CV; verify details",
                 "verified": False,
             }
-        ],
+        ] if md_mentioned else []),
         "license_registration": {
             "authority": "Needs verification",
             "number": "",
@@ -120,17 +116,13 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
         },
         "clinical_experience": {"years": "", "settings": []},
         "work_history": [],
-        "skills": {"medical": ["Clinical care"], "public_health": [], "management": []},
+        "skills": {"medical": [], "public_health": [], "management": []},
         "languages": _languages(text),
         "certificates": [],
         "ngo_humanitarian_experience": {"years": "", "organizations": []},
         "preferences": {
-            "roles": ["Medical Officer", "Medical Doctor", "Physician", "Public Health Officer", "Nutrition / TSFP health roles"],
-            # Never a resolved value: a CV import must not manufacture a
-            # ready-made "verified" location preference the user never
-            # actually typed (see utils.profile._add_personal, which treats
-            # any non-placeholder preferences.locations entry as confirmed).
-            "locations": ["Needs verification"],
+            "roles": [],
+            "locations": [],
             "willing_to_relocate": "Needs verification",
             "field_deployment": "Needs verification",
         },

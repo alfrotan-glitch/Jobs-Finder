@@ -6,7 +6,7 @@ presenting verified facts as confirmed credentials -- see the EDUCATION /
 LICENSE / MEDICAL EXIT EXAM gating in ``generate_tailored_documents``) and
 renders it with a reusable medical/NGO visual identity.  It must not add
 facts, and it must not claim a stronger verification status than the source
-text actually supports.  The TXT artifact remains ATS/plain-text canonical;
+text actually supports.  The TXT artifact remains plain-text canonical;
 the DOCX and PDF artifacts are designed views of that same content.
 """
 
@@ -16,7 +16,6 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-
 
 DESIGN_SYSTEM_NAME = "jobs-finder-editorial-medical"
 
@@ -137,7 +136,7 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
     metadata = metadata or {}
     lines = [ln.rstrip() for ln in (text or "").splitlines()]
     nonempty = [ln.strip() for ln in lines if ln.strip()]
-    name = nonempty[0] if nonempty else "Applicant"
+    name = nonempty[0] if nonempty else "CONFIRM BEFORE SUBMISSION"
     headline_from_text = ""
     if len(nonempty) > 1 and ":" not in nonempty[1] and not nonempty[1].isupper():
         headline_from_text = nonempty[1]
@@ -181,9 +180,7 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
             elif not line.startswith("-"):
                 if current:
                     parsed.append(current)
-                current = _parse_experience_header(line)
-                current["bullets"] = []
-                current["group"] = group
+                current = {**_parse_experience_header(line), "bullets": [], "group": group}
         if current:
             parsed.append(current)
         return parsed
@@ -241,7 +238,7 @@ def parse_cover_letter_text(text: str, metadata: dict[str, Any] | None = None) -
             body_lines.append(stripped)
     if body_lines and body_lines[-1].lower() not in {"sincerely,", "regards,"}:
         signature = body_lines[-1]
-    name = _full_name_from_package(package) or signature or "Applicant"
+    name = _full_name_from_package(package) or signature or "CONFIRM BEFORE SUBMISSION"
     contact = _contact_from_package(package)
     target_role = str(job.get("title") or package.get("job_title") or "Target Role")
     target_org = str(job.get("company") or package.get("company") or "Target Organization")
@@ -348,13 +345,16 @@ def _register_fonts() -> tuple[str, str, str, str]:
             resolved[name] = name
             continue
         for path in paths:
+            usable_font = False
             try:
-                if path.is_file():
+                usable_font = path.is_file()
+                if usable_font:
                     pdfmetrics.registerFont(TTFont(name, str(path)))
-                    resolved[name] = name
-                    break
             except Exception:  # pragma: no cover - corrupt/unreadable font file
-                continue
+                usable_font = False
+            if usable_font:
+                resolved[name] = name
+                break
         if name not in resolved:
             resolved[name] = builtin_fallbacks[name]
     return resolved["JFSerif"], resolved["JFSerifBold"], resolved["JFSans"], resolved["JFSansBold"]
@@ -460,8 +460,8 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     doc = SimpleDocTemplate(
         str(path), pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm,
         topMargin=12 * mm, bottomMargin=13 * mm,
-        title=f"{model.get('name') or 'Applicant'} — Curriculum Vitae",
-        author=model.get("name") or "Applicant",
+        title=f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Curriculum Vitae",
+        author=model.get("name") or "CONFIRM BEFORE SUBMISSION",
     )
     styles = getSampleStyleSheet()
     name_style = ParagraphStyle("CVName", parent=styles["Title"], fontName=serif_bold, fontSize=22, leading=25, textColor=colors.HexColor(Theme.deep), spaceAfter=2)
@@ -474,8 +474,8 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     bullet_style = ParagraphStyle("CVBullet", parent=body_style, leftIndent=11, firstLineIndent=-7, bulletIndent=0, spaceAfter=.5)
 
     def esc(value: Any) -> str:
-        from xml.sax.saxutils import escape
-        return escape(str(value or ""))
+        import html
+        return html.escape(str(value or ""))
 
     def footer(canvas, document):
         canvas.saveState()
@@ -483,12 +483,12 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
         canvas.line(18 * mm, 11 * mm, A4[0] - 18 * mm, 11 * mm)
         canvas.setFont(sans, 7)
         canvas.setFillColor(colors.HexColor(Theme.muted))
-        canvas.drawString(18 * mm, 7 * mm, str(model.get("name") or "Applicant"))
+        canvas.drawString(18 * mm, 7 * mm, str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
         canvas.drawRightString(A4[0] - 18 * mm, 7 * mm, f"Page {document.page}")
         canvas.restoreState()
 
     story: list[Any] = [
-        Paragraph(esc(model.get("name") or "Applicant"), name_style),
+        Paragraph(esc(model.get("name") or "CONFIRM BEFORE SUBMISSION"), name_style),
         Paragraph(esc(model.get("headline") or "Medical Professional"), title_style),
         Paragraph(esc(" | ".join(str(x) for x in (model.get("contact_lines") or [model.get("location"), model.get("phone"), model.get("email")]) if x)), contact_style),
         Paragraph("PROFESSIONAL SUMMARY", section_style),
@@ -605,7 +605,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
         p.add_run("• ")
         p.add_run(str(text))
 
-    doc.add_paragraph(model.get("name") or "Applicant", style="CV Name")
+    doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="CV Name")
     doc.add_paragraph(model.get("headline") or "Medical Professional", style="CV Professional Title")
     contact = " | ".join(str(x) for x in (model.get("contact_lines") or [model.get("location"), model.get("phone"), model.get("email")]) if x)
     doc.add_paragraph(contact, style="CV Contact")
@@ -650,7 +650,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
 
     footer = section.footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = footer.add_run(str(model.get("name") or "Applicant"))
+    run = footer.add_run(str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
     run.font.size = Pt(7)
     run.font.color.rgb = RGBColor(102, 115, 122)
     doc.save(str(path))
@@ -670,7 +670,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
     width, height = A4
     cnv = canvas.Canvas(str(path), pagesize=A4)
     cnv.setTitle(f"{model.get('name')} — Cover Letter")
-    cnv.setAuthor(model.get("name") or "Applicant")
+    cnv.setAuthor(model.get("name") or "CONFIRM BEFORE SUBMISSION")
     cnv.setFillColor(_c("#FFFFFF"))
     cnv.rect(0, 0, width, height, stroke=0, fill=1)
     cnv.setFillColor(_c(Theme.deep))
@@ -680,7 +680,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
     cnv.line(42, height - 48, width - 42, height - 48)
     cnv.setFont(serif_bold, 24)
     cnv.setFillColor(_c(Theme.deep))
-    cnv.drawString(42, height - 82, model.get("name") or "Applicant")
+    cnv.drawString(42, height - 82, model.get("name") or "CONFIRM BEFORE SUBMISSION")
     cnv.setFont(sans, 9.5)
     cnv.setFillColor(_c(Theme.teal))
     cnv.drawString(44, height - 101, model.get("headline") or "Medical Professional")
@@ -727,12 +727,12 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
     cnv.drawString(112, y, "Sincerely,")
     cnv.setFont(serif_bold, 12)
     cnv.setFillColor(_c(Theme.deep))
-    cnv.drawString(112, y - 22, model.get("name") or "Applicant")
+    cnv.drawString(112, y - 22, model.get("name") or "CONFIRM BEFORE SUBMISSION")
     cnv.setStrokeColor(_c(Theme.rule))
     cnv.line(42, 38, width - 42, 38)
     cnv.setFont(sans, 6.6)
     cnv.setFillColor(_c(Theme.muted))
-    cnv.drawString(42, 25, f"{model.get('name') or 'Applicant'} — Cover Letter")
+    cnv.drawString(42, 25, f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Cover Letter")
     cnv.save()
 
 
@@ -771,7 +771,7 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
     style("JF Body", 9.0, False, (23, 42, 53))
     style("JF Signature", 12, True, (12, 52, 66), "Georgia")
 
-    doc.add_paragraph(model.get("name") or "Applicant", style="JF Name")
+    doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="JF Name")
     doc.add_paragraph(model.get("headline") or "Medical Professional", style="JF Title")
     contact = model.get("contact") or {}
     doc.add_paragraph(" | ".join([x for x in [contact.get("location"), contact.get("phone"), contact.get("email")] if x]), style="JF Contact")
@@ -793,11 +793,11 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
         else:
             doc.add_paragraph(line, style="JF Body")
     doc.add_paragraph("Sincerely,", style="JF Body")
-    doc.add_paragraph(model.get("name") or "Applicant", style="JF Signature")
+    doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="JF Signature")
     for section in doc.sections:
         f = section.footer.paragraphs[0]
         f.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = f.add_run(f"{model.get('name') or 'Applicant'} — Cover Letter")
+        run = f.add_run(f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Cover Letter")
         run.font.size = Pt(7)
         run.font.color.rgb = RGBColor(102, 115, 122)
     doc.save(str(path))

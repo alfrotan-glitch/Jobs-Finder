@@ -11,7 +11,6 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-
 SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     "acbar": {
         "id": "acbar",
@@ -41,7 +40,7 @@ SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
             "timeout_seconds": 25.0,
             "max_detail_concurrency": 5,
         },
-        "settings_note": "Discovery follows ACBAR pagination until the site returns its real end. A listing-page or detail-page limit is applied only when explicitly configured and makes the scan partial.",
+        "settings_note": "Discovery follows ACBAR pagination until the site returns its real end and processes every relevant detail page with bounded concurrency.",
     },
     "reliefweb": {
         "id": "reliefweb",
@@ -108,7 +107,8 @@ def source_official_url(spec_or_id: str | dict[str, Any]) -> str:
 
 def source_defaults(source_id: str) -> dict[str, Any]:
     spec = SOURCE_REGISTRY.get(source_id, {})
-    defaults = spec.get("defaults") if isinstance(spec.get("defaults"), dict) else {}
+    raw_defaults = spec.get("defaults")
+    defaults: dict[str, Any] = raw_defaults if isinstance(raw_defaults, dict) else {}
     return deepcopy(defaults)
 
 

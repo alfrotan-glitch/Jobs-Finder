@@ -183,14 +183,12 @@ def test_confirm_endpoint_rejects_language_not_present(client):
     assert response.status_code == 400
 
 
-def test_settings_endpoint_reflects_acbar_budget_not_a_toggle(client):
+def test_settings_endpoint_reflects_acbar_connection_settings_not_budgets(client):
     response = client.get("/api/settings")
     assert response.status_code == 200
     body = response.json()
-    # A normal ACBAR scan has no artificial page ceiling; a page cap is only
-    # meaningful when a user explicitly configures it and must make the scan partial.
-    assert body["acbar"]["max_pages"] is None
-    assert body["acbar"]["detail_limit"] is None
+    assert "max_pages" not in body["acbar"]
+    assert "detail_limit" not in body["acbar"]
     assert body["acbar"]["max_detail_concurrency"] > 0
     assert body["sources"]
     assert all(source.get("official_url") for source in body["sources"])

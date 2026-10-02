@@ -30,17 +30,34 @@ def test_profile_example_parses_with_no_verified_claims():
     data = yaml.safe_load(Path("profile.yaml.example").read_text(encoding="utf-8"))
 
     assert all(flag is False for flag in data["personal"]["verification"].values())
-    for entry in data["medical_education"]:
-        assert entry.get("verified") is not True
-        assert entry["degree"] == "Needs verification"
+    assert data["personal"]["first_name"] == ""
+    assert data["personal"]["last_name"] == ""
+    assert data["personal"]["email"] == ""
+    assert data["medical_education"] == []
     assert data["license_registration"]["verified"] is False
     assert data["license_registration"]["status"] == "Needs verification"
     assert data["medical_exit_exam"]["verified"] is False
     assert data["medical_exit_exam"]["status"] == "Needs verification"
-    for item in data["skills"]["medical"]:
-        assert item.get("verified") is not True
-    for lang in data["languages"]:
-        assert lang["verified"] is False
+    assert data["skills"]["medical"] == []
+    assert data["languages"] == []
+
+
+def test_profile_example_has_no_fake_candidate_identity():
+    text = Path("profile.yaml.example").read_text(encoding="utf-8")
+    for token in ["Jane", "Doe", "applicant@example.org", "+93 00 000 0000", "Example Clinic"]:
+        assert token not in text
+
+
+def test_profile_example_has_no_acbar_scan_budget_keys():
+    """Copying the shipped example must not configure ACBAR scan budgets."""
+    text = Path("profile.yaml.example").read_text(encoding="utf-8")
+    data = yaml.safe_load(text)
+    acbar = ((data.get("job_sources") or {}).get("acbar") or {})
+
+    assert "max_pages" not in text
+    assert "detail_limit" not in text
+    assert "max_pages" not in acbar
+    assert "detail_limit" not in acbar
 
 
 def test_dashboard_needs_verification_label_is_not_an_eligibility_claim():

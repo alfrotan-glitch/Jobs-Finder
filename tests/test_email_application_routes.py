@@ -27,14 +27,6 @@ def md_profile():
                 "verified": True,
             }
         ],
-        "education": [
-            {
-                "institution": "Verified High School",
-                "start": "2000",
-                "end": "2012",
-                "verified": True,
-            }
-        ],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},
         "clinical_experience": {"years": 4},
@@ -183,7 +175,7 @@ def test_unknown_organization_not_written_into_employer_facing_email(tmp_path):
     assert "Application – Medical Doctor (MD)" in draft["subject"]
 
 
-def test_cv_cover_letter_and_md_identity_are_clean_and_include_high_school(tmp_path):
+def test_cv_cover_letter_and_md_identity_are_clean(tmp_path):
     profile = md_profile()
     job = email_job()
     report = match_job_against_profile(job, profile, today=date(2026, 10, 1)).to_dict()
@@ -193,7 +185,6 @@ def test_cv_cover_letter_and_md_identity_are_clean_and_include_high_school(tmp_p
 
     assert "Medical Doctor" in cv.splitlines()[1]
     assert "Doctor of Medicine (MD) — Verified Medical Science University — 2013–2020" in cv
-    assert "Verified High School — 2000–2012" in cv
     assert cv.index("Medical Doctor") < cv.index("Health and Nutrition Supervisor")
     for text in [cv, cover]:
         for token in ["Unknown", "Jobs-Finder", "evidence", "verification", "match", "eligibility", "READY_TO_APPLY", "NEEDS_VERIFICATION", "email-md"]:

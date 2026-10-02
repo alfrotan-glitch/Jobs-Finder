@@ -27,7 +27,7 @@ It helps one user answer:
 
 ## What it does not do
 
-Jobs-Finder is not an ATS, recruiter bot, form-submission bot, email monitor, interview platform, or generic global job-board aggregator.
+Jobs-Finder is not a recruiter bot, form-submission bot, email monitor, or generic global job-board aggregator.
 
 It does **not**:
 
@@ -35,7 +35,7 @@ It does **not**:
 - bypass CAPTCHA, login, MFA, or employer security controls
 - invent experience, license numbers, documents, dates, achievements, references, or skills
 - silently run continuous scans when the dashboard starts
-- monitor email or perform follow-up automation
+- monitor email or perform post-submission automation
 
 ## Windows one-click start
 
@@ -125,7 +125,7 @@ Dashboard:
 6. Review the generated files.
 7. Open the official route and apply manually.
 
-The **Settings** tab shows the current, non-editable system configuration (active sources, ACBAR scan budget, and the fact that background scanning and automatic submission are both disabled) -- it has no fake controls.
+The **Settings** tab shows the current, non-editable system configuration (active sources, ACBAR connection settings, ReliefWeb result limit, and the fact that background scanning and automatic submission are both disabled) -- it has no nonfunctional controls.
 
 ## Source status semantics
 
@@ -143,7 +143,7 @@ A result of zero jobs is never used to claim the Afghanistan market is empty whe
 
 Maintained active sources are intentionally few:
 
-- **Tier A: ACBAR Jobs** — core Afghanistan NGO/INGO job board. Normal discovery follows `?page=N` until ACBAR returns a real empty listing page (`END_REACHED`), deduplicates all current cards, and cross-checks the discovered total against the count published by ACBAR. Detail pages are opened only for plausible health/medical candidates, with bounded concurrency (`max_detail_concurrency`, default 5) and a per-request timeout. `job_sources.acbar.max_pages` and `detail_limit` are **optional explicit safety caps only**: either cap marks the source and overall scan `PARTIAL`; neither is a default completion condition. See `profile.yaml.example` for the accounting semantics; every `job_sources` key you write there is honored exactly as written.
+- **Tier A: ACBAR Jobs** — core Afghanistan NGO/INGO job board. Normal discovery follows `?page=N` until ACBAR returns a real empty listing page (`END_REACHED`), deduplicates all current cards, and cross-checks the discovered total against the count published by ACBAR. Detail pages are opened only for plausible health/medical candidates, with bounded concurrency (`max_detail_concurrency`, default 5) and a per-request timeout. The shipped profile does not configure ACBAR page or detail budgets; ACBAR completion is the source's real end page.
 - **One recommendation authority** — `Recommended from this scan` is exactly the length of the recommendation collection the scan produced (`utils/recommendations.py`), and the CLI list, the dashboard Recommended view, and persisted scan activity all render that same collection; nothing recomputes recommendations independently. Broad discovery keeps programme/operations roles reviewable in the jobs list, but only roles with a positively MD/public-health-compatible classification are recommended.
 - **Tier B: ReliefWeb Afghanistan jobs** — secondary humanitarian source filtered for health/medical/public-health terms.
 

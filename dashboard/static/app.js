@@ -469,7 +469,6 @@ function renderAdvanced() {
         <span class="statusBadge ${statusClass(source.status || (source.ok ? "SCANNED" : "UNAVAILABLE"))}">${escapeHtml(scanStatusLabel(source.status || (source.ok ? "SCANNED" : "UNAVAILABLE")))}</span>
         <p>${escapeHtml(source.pages_requested || 0)} pages requested · ${escapeHtml(source.pages_succeeded || 0)} succeeded · ${escapeHtml(source.pages_failed || 0)} failed · ${escapeHtml(source.pagination_stop_reason || "UNKNOWN")}</p>
         ${source.source_listings_reported !== null && source.source_listings_reported !== undefined ? `<p class="sectionHelp">Source reports ${escapeHtml(source.source_listings_reported)} listings</p>` : ""}
-        ${source.configured_page_limit || source.configured_detail_limit ? `<p class="sectionHelp">Explicit limits: pages ${escapeHtml(source.configured_page_limit || "unbounded")}, details ${escapeHtml(source.configured_detail_limit || "unbounded")}</p>` : ""}
         <p class="sectionHelp">${escapeHtml(sourceSummaryLine(source))}</p>
         <p class="sectionHelp">Details: ${escapeHtml(source.detail_pages_attempted || 0)} attempted / ${escapeHtml(source.detail_pages_succeeded || 0)} succeeded / ${escapeHtml(source.detail_pages_failed || 0)} failed · ${escapeHtml(source.listing_fallback_used || 0)} listing fallbacks</p>
         ${source.source_url ? `<p class="sectionHelp">Official source: ${escapeHtml(source.source_url)}</p>` : ""}

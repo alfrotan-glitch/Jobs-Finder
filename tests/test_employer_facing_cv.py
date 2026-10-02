@@ -122,7 +122,7 @@ def test_cv_has_no_internal_labels_or_fabricated_year_totals():
     for token in forbidden:
         assert token.lower() not in cv.lower()
     summary = cv.split("PROFESSIONAL SUMMARY", 1)[1].split("\n\n", 1)[0]
-    assert not re.search(r"\b\d+(?:\.\d+)?\s+years\b", summary, flags=re.I)
+    assert not re.search(r"\b\d+(?:\.\d+)?\s+years\b", summary, flags=re.IGNORECASE)
     assert "conducted randomized trials" not in cv.lower()
 
 

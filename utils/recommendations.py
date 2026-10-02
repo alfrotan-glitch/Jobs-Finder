@@ -164,14 +164,16 @@ def evaluate_scan_jobs(scan: Any, profile: dict[str, Any], resume_text: str = ""
     is derived from the same (job, match) pairs.
     """
     from utils.medical_matcher import match_job_against_profile  # local import: no import cycle
-    from utils.tracker import log_discovered, log_medical_match
+    from utils.tracker import log_discovered_and_medical_match
 
     pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for job in scan.jobs:
-        log_discovered(job)
         job_data = _as_dict(job)
         report = match_job_against_profile(job_data, profile, resume_text=resume_text).to_dict()
         pairs.append((job_data, report))
-        log_medical_match(job.id, report)
+        # Discovery and its match now share one BEGIN IMMEDIATE/COMMIT pair.
+        # This is still sequential per scan, but removes the cross-connection
+        # race window when a dashboard and CLI touch the same WAL database.
+        log_discovered_and_medical_match(job, report)
     scan.record_match_results(pairs)
     return scan

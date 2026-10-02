@@ -202,9 +202,26 @@ $env:JOBS_FINDER_PORT=8081
 .\run_jobs_finder.bat
 ```
 
+### Auditing a Windows database lifecycle
+
+If a scan needs lifecycle diagnostics, opt in without logging vacancy contents:
+
+```powershell
+$env:JOBS_FINDER_DB_DIAGNOSTICS = "1"
+.\.venv\Scripts\python.exe main.py find 2> db-trace.log
+Remove-Item Env:JOBS_FINDER_DB_DIAGNOSTICS
+```
+
+Each `JOBS_FINDER_DB_TRACE` record contains only the process ID, thread ID,
+connection identity, canonical SQLite path, query-only flag, WAL/locking mode,
+schema version, transaction state, operation, and phase. The scan path uses one
+`BEGIN IMMEDIATE` transaction for each discovery/match pair; dashboard reads use
+query-only connections against an existing schema and do not run schema/WAL
+writes.
+
 ### The scan says sources unavailable
 
-This means the app could not reach active live sources from your network/environment. It does not mean there are no jobs. Try again later or open ACBAR/ReliefWeb manually.
+This means the app could not reach active discovery sources from your network or environment. It does not mean there are no jobs. Try again later or open ACBAR/ReliefWeb manually.
 
 ### Python package installation fails
 

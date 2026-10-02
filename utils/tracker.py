@@ -30,6 +30,8 @@ import json
 import os
 import sqlite3
 import stat
+import sys
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,6 +48,41 @@ DB_PATH = CANONICAL_DB_PATH
 
 class TrackerDatabaseError(sqlite3.OperationalError):
     """A local database cannot be used for the requested tracker operation."""
+
+
+def _database_diagnostics_enabled() -> bool:
+    """Return whether lifecycle diagnostics were explicitly requested.
+
+    The trace is opt-in because normal scans should stay quiet.  It reports
+    connection and SQLite state only; it deliberately never includes vacancy
+    values, SQL parameters, or match reports.
+    """
+    return os.environ.get("JOBS_FINDER_DB_DIAGNOSTICS", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _connection_snapshot(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Capture the state needed to audit a tracker write without job data."""
+    database = conn.execute("PRAGMA database_list").fetchone()
+    return {
+        "pid": os.getpid(),
+        "thread_id": threading.get_ident(),
+        "connection_id": f"0x{id(conn):x}",
+        "database_path": str(database[2] if database is not None else canonical_db_path()),
+        "query_only": int(conn.execute("PRAGMA query_only").fetchone()[0]),
+        "journal_mode": str(conn.execute("PRAGMA journal_mode").fetchone()[0]),
+        "locking_mode": str(conn.execute("PRAGMA locking_mode").fetchone()[0]),
+        "schema_version": int(conn.execute("PRAGMA schema_version").fetchone()[0]),
+        "in_transaction": bool(conn.in_transaction),
+    }
+
+
+def _trace_database(operation: str, phase: str, conn: sqlite3.Connection) -> None:
+    """Emit a safe, machine-readable lifecycle record when requested."""
+    if not _database_diagnostics_enabled():
+        return
+    snapshot = _connection_snapshot(conn)
+    snapshot.update({"operation": operation, "phase": phase})
+    print(f"JOBS_FINDER_DB_TRACE {json.dumps(snapshot, sort_keys=True)}", file=sys.stderr, flush=True)
 
 
 def canonical_db_path() -> Path:
@@ -136,9 +173,15 @@ def _database_error(path: Path, reason: str | BaseException) -> TrackerDatabaseE
 
 @contextmanager
 def _write_connection() -> Iterator[sqlite3.Connection]:
-    """Yield a tracker connection and translate write failures with context."""
+    """Yield a tracker connection and translate write failures with context.
+
+    Every write operation owns a fresh connection and closes it in this
+    context manager.  The optional trace makes that contract observable when
+    diagnosing a real CLI/dashboard run.
+    """
     conn = get_db()
     path = canonical_db_path()
+    _trace_database("_write_connection", "open", conn)
     try:
         yield conn
     except sqlite3.OperationalError as error:
@@ -146,10 +189,12 @@ def _write_connection() -> Iterator[sqlite3.Connection]:
             conn.rollback()
         except sqlite3.Error:
             pass
+        _trace_database("_write_connection", "rollback", conn)
         if _is_readonly_sqlite_error(error):
             raise _database_error(path, error) from error
         raise
     finally:
+        _trace_database("_write_connection", "close", conn)
         conn.close()
 
 FOUND = "FOUND"
@@ -241,6 +286,46 @@ def get_db() -> sqlite3.Connection:
         raise
 
 
+def _schema_is_ready_for_reads(conn: sqlite3.Connection) -> bool:
+    """Check the current schema without making a read connection a writer."""
+    tables = {
+        str(row[0])
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+    if not {"vacancies", "scan_runs"}.issubset(tables):
+        return False
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(vacancies)").fetchall()}
+    return "package_status" in columns
+
+
+def _read_connection() -> sqlite3.Connection:
+    """Open a query-only connection for dashboard/CLI reads.
+
+    ``get_db`` intentionally ensures the schema for a writer, but doing that
+    from every dashboard GET made a read process execute WAL/DDL work while a
+    scan was inserting and matching. Existing databases use this side-effect-
+    free path; a missing or legacy schema is initialized once through
+    ``get_db`` and then reopened read-only.
+    """
+    path = canonical_db_path()
+    if not path.exists():
+        return get_db()
+    conn = sqlite3.connect(str(path), timeout=5.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
+    if _schema_is_ready_for_reads(conn):
+        conn.execute("PRAGMA query_only=1")
+        _trace_database("_read_connection", "open", conn)
+        return conn
+    conn.close()
+    return get_db()
+
+
+def _close_read_connection(conn: sqlite3.Connection) -> None:
+    _trace_database("_read_connection", "close", conn)
+    conn.close()
+
+
 def _to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     if row is None:
         return None
@@ -283,6 +368,7 @@ def log_scan_result(result: Any) -> int:
     data = result.to_dict() if hasattr(result, "to_dict") else dict(result or {})
     timestamp = now_iso()
     with _write_connection() as conn:
+        _trace_database("log_scan_result", "before_insert", conn)
         cur = conn.execute(
             """
             INSERT INTO scan_runs (status, message, started_at, finished_at, result_json, created_at)
@@ -297,7 +383,10 @@ def log_scan_result(result: Any) -> int:
                 timestamp,
             ),
         )
+        _trace_database("log_scan_result", "after_insert", conn)
+        _trace_database("log_scan_result", "before_commit", conn)
         conn.commit()
+        _trace_database("log_scan_result", "after_commit", conn)
         return int(cur.lastrowid)
 
 
@@ -324,21 +413,21 @@ def _scan_row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
 
 
 def get_latest_scan() -> dict[str, Any] | None:
-    conn = get_db()
+    conn = _read_connection()
     try:
         row = conn.execute("SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1").fetchone()
         return _scan_row_to_dict(row)
     finally:
-        conn.close()
+        _close_read_connection(conn)
 
 
 def list_recent_scans(limit: int = 10) -> list[dict[str, Any]]:
-    conn = get_db()
+    conn = _read_connection()
     try:
         rows = conn.execute("SELECT * FROM scan_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [scan for row in rows if (scan := _scan_row_to_dict(row)) is not None]
     finally:
-        conn.close()
+        _close_read_connection(conn)
 
 
 def readiness_to_status(readiness: str) -> str:
@@ -350,7 +439,8 @@ def readiness_to_status(readiness: str) -> str:
     return REVIEWED
 
 
-def log_discovered(job: Any) -> None:
+def _discovered_data(job: Any) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], str]:
+    """Normalize a vacancy once for either public or atomic persistence."""
     data = _job_dict(job)
     metadata = data.get("metadata") or {}
     if not isinstance(metadata, dict):
@@ -368,52 +458,105 @@ def log_discovered(job: Any) -> None:
             "source_problems": source.get("problems") or [],
         }
     )
-    timestamp = now_iso()
+    return data, metadata, source, now_iso()
+
+
+def _insert_discovered(
+    conn: sqlite3.Connection,
+    data: dict[str, Any],
+    metadata: dict[str, Any],
+    source: dict[str, Any],
+    timestamp: str,
+) -> None:
+    """Insert/update the vacancy on an already-open tracker connection."""
+    _trace_database("log_discovered", "before_insert", conn)
+    conn.execute(
+        """
+        INSERT INTO vacancies
+        (id, title, company, location, source, url, apply_url, description, status,
+         metadata_json, discovered_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          title=excluded.title,
+          company=excluded.company,
+          location=excluded.location,
+          source=excluded.source,
+          url=excluded.url,
+          apply_url=excluded.apply_url,
+          description=excluded.description,
+          metadata_json=excluded.metadata_json,
+          updated_at=excluded.updated_at
+        """,
+        (
+            data.get("id"),
+            data.get("title") or "Untitled vacancy",
+            data.get("company") or "Unknown employer",
+            data.get("location") or "",
+            source.get("source_name") or data.get("platform") or metadata.get("source") or "",
+            source.get("vacancy_url") or data.get("url") or "",
+            source.get("apply_url") or "",
+            data.get("description") or "",
+            FOUND,
+            json.dumps(metadata, ensure_ascii=False),
+            timestamp,
+            timestamp,
+        ),
+    )
+    _trace_database("log_discovered", "after_insert", conn)
+
+
+def _update_medical_match(conn: sqlite3.Connection, job_id: str, report: dict[str, Any]) -> None:
+    """Update a match on an already-open tracker connection."""
+    readiness = str(report.get("readiness_status") or "")
+    status = readiness_to_status(readiness)
+    _trace_database("log_medical_match", "before_update", conn)
+    conn.execute(
+        "UPDATE vacancies SET match_json=?, readiness=?, status=?, updated_at=? WHERE id=?",
+        (json.dumps(report, ensure_ascii=False), readiness, status, now_iso(), job_id),
+    )
+    _trace_database("log_medical_match", "after_update", conn)
+
+
+def log_discovered(job: Any) -> None:
+    """Persist one discovery result and close its connection before returning."""
+    data, metadata, source, timestamp = _discovered_data(job)
     with _write_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO vacancies
-            (id, title, company, location, source, url, apply_url, description, status,
-             metadata_json, discovered_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-              title=excluded.title,
-              company=excluded.company,
-              location=excluded.location,
-              source=excluded.source,
-              url=excluded.url,
-              apply_url=excluded.apply_url,
-              description=excluded.description,
-              metadata_json=excluded.metadata_json,
-              updated_at=excluded.updated_at
-            """,
-            (
-                data.get("id"),
-                data.get("title") or "Untitled vacancy",
-                data.get("company") or "Unknown employer",
-                data.get("location") or "",
-                source.get("source_name") or data.get("platform") or metadata.get("source") or "",
-                source.get("vacancy_url") or data.get("url") or "",
-                source.get("apply_url") or "",
-                data.get("description") or "",
-                FOUND,
-                json.dumps(metadata, ensure_ascii=False),
-                timestamp,
-                timestamp,
-            ),
-        )
+        _insert_discovered(conn, data, metadata, source, timestamp)
+        _trace_database("log_discovered", "before_commit", conn)
         conn.commit()
+        _trace_database("log_discovered", "after_commit", conn)
 
 
 def log_medical_match(job_id: str, report: dict[str, Any]) -> None:
-    readiness = str(report.get("readiness_status") or "")
-    status = readiness_to_status(readiness)
+    """Persist one match result and close its connection before returning."""
     with _write_connection() as conn:
-        conn.execute(
-            "UPDATE vacancies SET match_json=?, readiness=?, status=?, updated_at=? WHERE id=?",
-            (json.dumps(report, ensure_ascii=False), readiness, status, now_iso(), job_id),
-        )
+        _update_medical_match(conn, job_id, report)
+        _trace_database("log_medical_match", "before_commit", conn)
         conn.commit()
+        _trace_database("log_medical_match", "after_commit", conn)
+
+
+def log_discovered_and_medical_match(job: Any, report: dict[str, Any]) -> None:
+    """Persist a production scan pair on one transaction and one connection.
+
+    The old scan path committed ``INSERT ... vacancies`` and then opened a
+    second connection for ``UPDATE vacancies``.  That was safe in a quiet,
+    single-process probe but left a race window for a dashboard/CLI overlap and
+    made the real Windows lifecycle differ from the isolated helper test.  A
+    scan pair now acquires the SQLite writer transaction once, inserts (or
+    refreshes) the vacancy, updates that same row, and commits once.  The
+    public single-operation helpers remain available for package/API actions.
+    """
+    data, metadata, source, timestamp = _discovered_data(job)
+    with _write_connection() as conn:
+        _trace_database("scan_pair", "before_begin_immediate", conn)
+        conn.execute("BEGIN IMMEDIATE")
+        _trace_database("scan_pair", "after_begin_immediate", conn)
+        _insert_discovered(conn, data, metadata, source, timestamp)
+        _update_medical_match(conn, str(data.get("id") or ""), report)
+        _trace_database("scan_pair", "before_commit", conn)
+        conn.commit()
+        _trace_database("scan_pair", "after_commit", conn)
 
 
 def update_tailored_resume(job_id: str, documents: dict[str, Any]) -> None:
@@ -428,6 +571,7 @@ def update_tailored_resume(job_id: str, documents: dict[str, Any]) -> None:
     package_status = str(package.get("package_status") or PACKAGE_READY_FOR_REVIEW)
     status = PACKAGE_NEEDS_INPUT if package_status == PACKAGE_STATUS_NEEDS_USER_INPUT else PACKAGE_READY
     with _write_connection() as conn:
+        _trace_database("update_tailored_resume", "before_update", conn)
         conn.execute(
             "UPDATE vacancies SET documents_json=?, package_json=?, package_status=?, status=?, updated_at=? WHERE id=?",
             (
@@ -439,7 +583,10 @@ def update_tailored_resume(job_id: str, documents: dict[str, Any]) -> None:
                 job_id,
             ),
         )
+        _trace_database("update_tailored_resume", "after_update", conn)
+        _trace_database("update_tailored_resume", "before_commit", conn)
         conn.commit()
+        _trace_database("update_tailored_resume", "after_commit", conn)
 
 
 def mark_applied_manually(job_id: str, *, confirmation: str = "") -> tuple[bool, str]:
@@ -451,22 +598,26 @@ def mark_applied_manually(job_id: str, *, confirmation: str = "") -> tuple[bool,
     if job.get("readiness") == "NOT_ELIGIBLE":
         return False, "Cannot mark a NOT_ELIGIBLE vacancy as applied."
     with _write_connection() as conn:
+        _trace_database("mark_applied_manually", "before_update", conn)
         conn.execute("UPDATE vacancies SET status=?, updated_at=? WHERE id=?", (APPLIED_MANUALLY, now_iso(), job_id))
+        _trace_database("mark_applied_manually", "after_update", conn)
+        _trace_database("mark_applied_manually", "before_commit", conn)
         conn.commit()
+        _trace_database("mark_applied_manually", "after_commit", conn)
     return True, "Recorded as applied manually."
 
 
 def get_job_by_id(job_id: str) -> dict[str, Any] | None:
-    conn = get_db()
+    conn = _read_connection()
     try:
         row = conn.execute("SELECT * FROM vacancies WHERE id=?", (job_id,)).fetchone()
         return _to_dict(row)
     finally:
-        conn.close()
+        _close_read_connection(conn)
 
 
 def list_jobs(limit: int = 100) -> list[dict[str, Any]]:
-    conn = get_db()
+    conn = _read_connection()
     try:
         rows = conn.execute(
             "SELECT * FROM vacancies ORDER BY discovered_at DESC, updated_at DESC LIMIT ?",
@@ -474,7 +625,7 @@ def list_jobs(limit: int = 100) -> list[dict[str, Any]]:
         ).fetchall()
         return [_to_dict(row) for row in rows if row is not None]
     finally:
-        conn.close()
+        _close_read_connection(conn)
 
 
 def _is_actionable_market_job(job: dict[str, Any]) -> bool:
@@ -502,21 +653,25 @@ def get_recommended_jobs(limit: int = 20) -> list[dict[str, Any]]:
 def delete_all() -> int:
     with _write_connection() as conn:
         count = conn.execute("SELECT COUNT(*) FROM vacancies").fetchone()[0]
+        _trace_database("delete_all", "before_delete", conn)
         conn.execute("DELETE FROM vacancies")
         conn.execute("DELETE FROM scan_runs")
+        _trace_database("delete_all", "after_delete", conn)
+        _trace_database("delete_all", "before_commit", conn)
         conn.commit()
+        _trace_database("delete_all", "after_commit", conn)
         return int(count)
 
 
 def stats() -> dict[str, int]:
-    conn = get_db()
+    conn = _read_connection()
     try:
         rows = conn.execute("SELECT status, COUNT(*) FROM vacancies GROUP BY status").fetchall()
         out = {str(row[0]): int(row[1]) for row in rows}
         out["TOTAL"] = sum(out.values())
         return out
     finally:
-        conn.close()
+        _close_read_connection(conn)
 
 
 def print_stats() -> None:

@@ -18,6 +18,8 @@ The repository and branch topology were inspected before repair work.
 
 The audit covers the production CLI/dashboard, canonical profile handling, CV import, matching, document generation, discovery/source reporting, tracker/recommendation accounting, tests, configuration, and documentation.
 
+Before the final push, the remote copy of this same fixed Arena branch was fetched and found to contain two concurrent canonical-profile commits (`3e5aa58`, `19e88b7`) not present in the initially mounted local ref. They were merge-integrated into this branch; the audited content was retained and the complete checks below were rerun after the merge.
+
 ## 2. Canonical applicant architecture
 
 `profile.yaml` in the project root is now the sole production applicant record. Runtime callers reach it through `utils.paths.CANONICAL_PROFILE_PATH` and the repository API in `utils.profile`:
@@ -131,12 +133,12 @@ Executed in this checkout using a freshly created project `.venv` on Python 3.11
 | Check | Result |
 | --- | --- |
 | Focused canonical/CV/document/matcher/dashboard regressions | **55 passed** |
-| Full test suite | **232 passed** in 9.67 s |
+| Full test suite | **232 passed** in 8.78 s |
 | Ruff | `ruff check .` — **passed** |
 | Bytecode compilation | `python -m compileall -q main.py dashboard utils tests` — **passed** |
 | Patch whitespace | `git diff --check` — **passed** |
 | Local canonical-profile smoke | **passed**: five roles, seven certificates, verified MD/registration/exit exam, `> 3` lower-bound preserved, council exam remains `Needs verification` |
-| Dashboard endpoint smoke | **passed** (five endpoints listed above) |
+| Dashboard endpoint smoke | **passed** (root page plus five API endpoints listed above) |
 
 The test run emitted one upstream FastAPI/Starlette TestClient deprecation warning about the installed `httpx` integration. It did not fail tests.
 

@@ -1,8 +1,8 @@
 """
 Deterministic MD-first eligibility matching.
 
-The matcher compares extracted vacancy requirements with verified profile/CV
-evidence.  It does not produce a single arbitrary score.  Every important
+The matcher compares extracted vacancy requirements with verified canonical
+profile evidence.  It does not produce a single arbitrary score.  Every important
 requirement is shown as Required/Preferred/Information → Met / Not met /
 Needs verification, with evidence and provenance.
 """
@@ -21,7 +21,11 @@ from utils.medical_requirements import (
     is_valid_application_url,
     is_valid_email,
 )
-from utils.profile import ProfileEvidence, build_profile_evidence
+from utils.profile import (
+    ProfileEvidence,
+    build_profile_evidence,
+    require_runtime_profile,
+)
 
 MET = "Met"
 NOT_MET = "Not met"
@@ -83,6 +87,10 @@ DIRECT_EVIDENCE_KEYS = {
     "license_number": ["license_number"],
     "license_document": ["license_document"],
     "medical_exit_exam": ["medical_exit_exam"],
+    # Deliberately no evidence alias for a Medical Council Exam. A verified
+    # Medical Exit Exam is not equivalent unless the vacancy explicitly uses
+    # exit-exam wording, so a council-exam requirement remains review work.
+    "medical_council_exam": [],
     "health_public_education": ["medical_education", "md_degree"],
     "medical_specialist": ["medical_specialist"],
     "specialist_obgyn": ["specialist_obgyn"],
@@ -123,12 +131,13 @@ HARD_CONSTRAINTS = {"gender_requirement", "nationality_requirement", "closing_da
 def match_job_against_profile(
     job: Any,
     profile: dict[str, Any],
-    resume_text: str = "",
     *,
     today: date | None = None,
 ) -> MatchReport:
+    """Match only a runtime applicant profile, never CV/import/cache text."""
+    profile = require_runtime_profile(profile)
     extracted = extract_requirements_from_job(job, today=today)
-    evidence = build_profile_evidence(profile, resume_text=resume_text, today=today)
+    evidence = build_profile_evidence(profile, today=today)
     return match_extracted_requirements(extracted, evidence, today=today)
 
 
@@ -296,7 +305,7 @@ def _direct_match(requirement: Requirement, evidence: ProfileEvidence, keys: lis
             label=requirement.label,
             required=requirement.required,
             status=MET,
-            explanation="Profile/CV evidence supports this requirement.",
+            explanation="Verified canonical-profile evidence supports this requirement.",
             evidence=snippets[:4],
             required_evidence=requirement.evidence,
             value=requirement.value,
@@ -307,7 +316,7 @@ def _direct_match(requirement: Requirement, evidence: ProfileEvidence, keys: lis
         label=requirement.label,
         required=requirement.required,
         status=NEEDS_VERIFICATION,
-        explanation="No verified profile or CV evidence was found. This is not treated as absent; please verify it in My Profile.",
+        explanation="No verified canonical-profile evidence was found. This is not treated as absent; please verify it in My Profile.",
         evidence=[],
         required_evidence=requirement.evidence,
         value=requirement.value,
@@ -316,6 +325,13 @@ def _direct_match(requirement: Requirement, evidence: ProfileEvidence, keys: lis
 
 
 def _years_match(requirement: Requirement, evidence: ProfileEvidence) -> RequirementMatch:
+    """Compare experience without converting a lower bound into an exact total.
+
+    A verified ``> 3``/``3+`` claim proves a three-year requirement, but not a
+    five-year requirement. In the latter case the applicant may in fact have
+    five years; the canonical profile simply does not prove it, so the only
+    honest status is ``Needs verification`` rather than ``Not met``.
+    """
     required_years = float(requirement.value or 0)
     candidate_keys = [requirement.key]
     if requirement.key == "general_experience_years":
@@ -323,15 +339,18 @@ def _years_match(requirement: Requirement, evidence: ProfileEvidence) -> Require
     elif requirement.key == "afghanistan_health_experience_years":
         candidate_keys.extend(["public_health_experience_years", "clinical_experience_years"])
 
-    known_values: list[float] = []
+    known_values: list[tuple[float, bool]] = []
     snippets: list[str] = []
     for key in candidate_keys:
-        for value in evidence.verified_values(key):
+        for item in evidence.items.get(key, []):
+            if not item.verified:
+                continue
             try:
-                known_values.append(float(value))
+                known_values.append((float(item.value), item.lower_bound))
             except (TypeError, ValueError):
-                pass
-        snippets.extend(evidence.evidence_text(key, verified_only=True))
+                continue
+            if item.quote:
+                snippets.append(item.quote)
 
     if not known_values:
         return RequirementMatch(
@@ -346,26 +365,49 @@ def _years_match(requirement: Requirement, evidence: ProfileEvidence) -> Require
             criticality=requirement.criticality,
         )
 
-    best = max(known_values)
-    if best >= required_years:
+    best = max(value for value, _ in known_values)
+    if any(value >= required_years for value, _ in known_values):
+        matching_lower_bounds = [value for value, lower_bound in known_values if lower_bound and value >= required_years]
+        wording = (
+            f"A verified lower-bound claim establishes at least {max(matching_lower_bounds):g} years, meeting the {required_years:g}-year requirement."
+            if matching_lower_bounds
+            else f"Verified experience is {best:g} years, meeting the {required_years:g}-year requirement."
+        )
         return RequirementMatch(
             key=requirement.key,
             label=requirement.label,
             required=requirement.required,
             status=MET,
-            explanation=f"Verified experience is {best:g} years, meeting the {required_years:g}-year requirement.",
-            evidence=snippets[:4] or [f"{best:g} years in profile/CV"],
+            explanation=wording,
+            evidence=snippets[:4] or [f"{best:g} years in canonical profile"],
             required_evidence=requirement.evidence,
             value=requirement.value,
             criticality=requirement.criticality,
         )
+
+    if any(lower_bound for _, lower_bound in known_values):
+        return RequirementMatch(
+            key=requirement.key,
+            label=requirement.label,
+            required=requirement.required,
+            status=NEEDS_VERIFICATION,
+            explanation=(
+                f"Verified profile evidence establishes at least {best:g} years, but it is a lower-bound claim "
+                f"and cannot prove the {required_years:g}-year requirement. Confirm the exact duration before applying."
+            ),
+            evidence=snippets[:4] or [f"more than {best:g} years in canonical profile"],
+            required_evidence=requirement.evidence,
+            value=requirement.value,
+            criticality=requirement.criticality,
+        )
+
     return RequirementMatch(
         key=requirement.key,
         label=requirement.label,
         required=requirement.required,
         status=NOT_MET,
         explanation=f"Verified experience is {best:g} years, below the {required_years:g}-year requirement.",
-        evidence=snippets[:4] or [f"{best:g} years in profile/CV"],
+        evidence=snippets[:4] or [f"{best:g} years in canonical profile"],
         required_evidence=requirement.evidence,
         value=requirement.value,
         criticality=requirement.criticality,

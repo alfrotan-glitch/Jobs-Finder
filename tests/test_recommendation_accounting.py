@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 
 import main
 from dashboard import server
+from utils import profile as profile_repository
 from utils import tracker
 from utils.discovery import Job, ScanResult, SourceReport
 from utils.medical_requirements import analyze_professional_role
@@ -34,8 +35,8 @@ MD_PROFILE = {
     "medical_education": [{"degree": "MD (Doctor of Medicine)", "verified": True}],
     "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
     "medical_exit_exam": {"status": "Completed", "verified": True},
-    "clinical_experience": {"years": 6},
-    "ngo_humanitarian_experience": {"years": 5},
+    "clinical_experience": {"years": 6, "verified": True},
+    "ngo_humanitarian_experience": {"years": 5, "verified": True},
     "work_history": [
         {
             "title": "TFU Medical Doctor",
@@ -46,7 +47,7 @@ MD_PROFILE = {
             "skills": ["IMAM", "CMAM", "HMIS", "supervision", "reporting"],
         }
     ],
-    "preferences": {"locations": ["Afghanistan"], "field_deployment": True},
+    "preferences": {"locations": [{"name": "Afghanistan", "verified": True}], "field_deployment": {"value": True, "verified": True}},
     "languages": [
         {"name": "Dari", "level": "Native", "verified": True},
         {"name": "English", "level": "Professional", "verified": True},
@@ -230,14 +231,13 @@ def test_cli_scan_prints_exactly_the_authoritative_collection(tmp_path, monkeypa
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(server, "PROFILE_PATH", tmp_path / "profile.yaml")
-    monkeypatch.setattr(server, "UPLOADS_DIR", tmp_path / "resumes")
+    monkeypatch.setattr(profile_repository, "CANONICAL_PROFILE_PATH", tmp_path / "profile.yaml")
     monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
     return TestClient(server.app)
 
 
 def test_dashboard_find_recommended_and_scan_activity_agree(client, monkeypatch):
-    (server.PROFILE_PATH).write_text(yaml.safe_dump(dict(MD_PROFILE)), encoding="utf-8")
+    (profile_repository.canonical_profile_path()).write_text(yaml.safe_dump(dict(MD_PROFILE)), encoding="utf-8")
 
     async def fake_scan(profile):
         return scan_with(MD_JOB, NUTRITION_TRAINER_JOB, PM_JOB, CLIC_JOB, PHARMACIST_JOB)

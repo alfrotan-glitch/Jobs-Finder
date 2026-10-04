@@ -15,7 +15,7 @@ def profile():
         "medical_education": [{"degree": "MD", "verified": True}],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},
-        "clinical_experience": {"years": 4, "settings": ["clinic", "hospital"]},
+        "clinical_experience": {"years": 4, "settings": ["clinic", "hospital"], "verified": True},
         "skills": {"medical": ["Clinical care", "Patient assessment"], "public_health": ["Nutrition", "TSFP", "HMIS"], "management": ["Supervision", "Reporting"]},
         "work_history": [
             {"title": "Medical Doctor", "organization": "Verified Clinic", "location": "Kabul", "start": "2022-01", "end": "Present", "description": "Clinical consultations, patient assessment, diagnosis, treatment, referral and HMIS reporting.", "verified": True},
@@ -85,7 +85,7 @@ def test_tailoring_changes_between_clinical_and_nutrition_roles(tmp_path):
 
 def test_package_json_contains_review_warnings_for_verification(tmp_path):
     prof = profile()
-    prof["clinical_experience"] = {"years": ""}
+    prof["clinical_experience"] = {"years": "", "verified": False}
     prof["work_history"] = []
     job = make_job("Medical Doctor", "MD required. 3 years clinical experience. Send CV to hr@example.org by 2026-12-31.")
     report = match_job_against_profile(job, prof, today=date(2026, 10, 1)).to_dict()

@@ -2,7 +2,7 @@
 Review-first tailored document generation.
 
 The output is deterministic and conservative. It uses only facts from the
-profile/CV evidence and the match report. It never invents qualifications; open
+canonical profile and the match report. It never invents qualifications; open
 items are listed as verification warnings instead of being claimed.
 
 DOCUMENT EVIDENCE GATE (canonical rule for every employer-facing artifact —
@@ -14,7 +14,7 @@ TXT, and therefore also the DOCX/PDF renders derived from the same text):
   cover-letter claim may only contain items that are explicitly verified
   (``verified: true`` per the canonical contract in ``utils.profile``) or
   that the authoritative matcher marked MET from verified evidence.
-* Unverified profile/CV items are never silently promoted into factual
+* Unverified profile items are never silently promoted into factual
   content. They are surfaced in ``review_warnings`` instead, so nothing is
   lost but nothing unconfirmed is claimed to an employer.
 * There is no generic hardcoded applicant description: the professional
@@ -23,17 +23,12 @@ TXT, and therefore also the DOCX/PDF renders derived from the same text):
 
 CONTACT/IDENTITY CONTRACT (single rule for employer-facing contact data):
 
-* Name/email/phone/location/linkedin from ``profile.personal`` are DISPLAY
-  data, not credential claims: they are printed in generated documents even
-  while the personal block is still an unconfirmed draft (e.g. fresh from a
-  CV import), because the user must be able to review them in place, and
-  legitimate contact data must never be suppressed or invented.
-* Display never implies verification: contact/identity values only become
-  verified evidence for matching (gender/nationality/location requirements)
-  via explicit personal verification (``personal.verification.<field>:
-  true``, one field at a time).
-* Known placeholder contact values are replaced with the explicit review
-  marker ``CONFIRM BEFORE SUBMISSION`` so unresolved contact data cannot be sent.
+* Name/email/phone/location/linkedin are factual applicant data. They are
+  printed only when their own ``personal.verification.<field>: true`` flag is
+  present; a fresh CV draft or merely non-empty text is not enough.
+* Missing, unverified, or placeholder name/email/phone values are replaced
+  with the generic review marker ``CONFIRM BEFORE SUBMISSION``. Unverified
+  location/linkedin lines are omitted rather than claimed.
 * While identity/contact fields are not explicitly verified, the application
   package keeps a blocking "confirm identity/contact" item, so a draft import
   is visible as unresolved and the package is never presented as fully ready.
@@ -54,12 +49,25 @@ from utils.profile import (
     is_verified_flag,
     parse_profile_date,
     personal_field_is_verified,
+    require_runtime_profile,
 )
 
 
 def _full_name(profile: dict[str, Any]) -> str:
+    """Return a name only when both displayed name components are verified."""
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
-    return " ".join(part for part in [personal.get("first_name", ""), personal.get("last_name", "")] if part).strip() or "CONFIRM BEFORE SUBMISSION"
+    first = personal.get("first_name", "")
+    last = personal.get("last_name", "")
+    if (
+        first
+        and last
+        and not is_unresolved_value(first)
+        and not is_unresolved_value(last)
+        and personal_field_is_verified(profile, "first_name")
+        and personal_field_is_verified(profile, "last_name")
+    ):
+        return f"{first} {last}".strip()
+    return "CONFIRM BEFORE SUBMISSION"
 
 
 def _is_placeholder_contact(value: Any, key: str = "") -> bool:
@@ -77,9 +85,16 @@ def _is_placeholder_contact(value: Any, key: str = "") -> bool:
     return False
 
 
-def _safe_contact_value(personal: dict[str, Any], key: str) -> str:
+def _safe_contact_value(profile: dict[str, Any], key: str) -> str:
+    """Return a contact value only with its own explicit verification flag."""
+    personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     value = personal.get(key)
-    if value and not _is_placeholder_contact(value, key):
+    if (
+        value
+        and not is_unresolved_value(value)
+        and not _is_placeholder_contact(value, key)
+        and personal_field_is_verified(profile, key)
+    ):
         return str(value)
     return "CONFIRM BEFORE SUBMISSION"
 
@@ -118,27 +133,17 @@ def _language_lines(profile: dict[str, Any], *, verified_only: bool = False) -> 
 
 
 def _contact_lines(profile: dict[str, Any]) -> list[str]:
-    """Employer-facing contact lines, per the CONTACT/IDENTITY CONTRACT.
-
-    Contact data is display data for the applicant's own application: it is
-    printed even while still an unconfirmed draft (so the user can review it
-    in place, and legitimate contact data is never suppressed), but known
-    placeholder values are replaced with the explicit CONFIRM BEFORE
-    SUBMISSION marker, and nothing here ever counts as verified evidence --
-    only explicit personal-field verification does that (see utils.profile).
-    """
+    """Employer-facing contact lines, gated by per-field verification."""
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     lines = []
     for key, label in [("email", "Email"), ("phone", "Phone")]:
-        value = personal.get(key)
-        if value or _is_placeholder_contact(value, key):
-            lines.append(f"{label}: {_safe_contact_value(personal, key)}")
+        # Keep a generic marker visible when a contact value is absent or
+        # unverified so a review package cannot accidentally look send-ready.
+        lines.append(f"{label}: {_safe_contact_value(profile, key)}")
     for key, label in [("location", "Location"), ("linkedin", "LinkedIn")]:
-        # Unresolved placeholders ("Needs verification" etc.) are internal
-        # review markers and must never be printed into an employer-facing
-        # document; the line is simply omitted until the value is resolved.
-        if personal.get(key) and not is_unresolved_value(personal.get(key)):
-            lines.append(f"{label}: {personal[key]}")
+        value = personal.get(key)
+        if value and not is_unresolved_value(value) and personal_field_is_verified(profile, key):
+            lines.append(f"{label}: {value}")
     return lines
 
 
@@ -848,16 +853,15 @@ def generate_tailored_documents(
     job: dict[str, Any],
     profile: dict[str, Any],
     match_report: dict[str, Any],
-    resume_text: str = "",
 ) -> dict[str, Any]:
-    """
-    Generate a vacancy-specific CV and cover letter for user review.
+    """Generate a vacancy-specific CV and cover letter from profile.yaml facts.
 
-    The documents are deterministic: they select and order existing profile/CV
-    evidence against the vacancy requirements.  They do not invent facts, hidden
-    license numbers, references, dates, or unavailable documents.
+    The documents are deterministic: they select and order verified canonical
+    profile evidence against vacancy requirements.  CV imports, caches, and
+    draft profiles are rejected rather than becoming a second applicant source.
     """
-    evidence = build_profile_evidence(profile, resume_text=resume_text)
+    profile = require_runtime_profile(profile)
+    evidence = build_profile_evidence(profile)
     name = _full_name(profile)
     contact = _contact_lines(profile)
     title = job.get("title") or "the advertised role"
@@ -908,7 +912,7 @@ def generate_tailored_documents(
 
     # Languages: only explicitly verified languages (name + resolved level +
     # verified: true) may be listed as factual CV content. Unverified mentions
-    # (profile drafts or CV text) are review warnings, never CV facts.
+    # (unverified profile data) are review warnings, never employer-facing facts.
     languages = _language_lines(profile, verified_only=True)
     unverified_languages = [item for item in _language_lines(profile) if item not in languages]
 
@@ -1006,9 +1010,12 @@ def generate_tailored_documents(
     credential_sentences: list[str] = []
     if education:
         credential_sentences.append(f"my medical education includes {education[0]}")
-    if _requirement_met(match_report, "license_registration"):
+    # The report is useful context, but it is not a second evidence store. A
+    # stale/mismatched report must never make this renderer claim a credential
+    # absent from the profile mapping supplied right now.
+    if _requirement_met(match_report, "license_registration") and evidence.has_verified("license_registration"):
         credential_sentences.append("I meet the professional medical registration/license requirement stated for the role")
-    if _requirement_met(match_report, "medical_exit_exam"):
+    if _requirement_met(match_report, "medical_exit_exam") and evidence.has_verified("medical_exit_exam"):
         credential_sentences.append("my Medical Exit Examination is included in my professional record")
     if languages:
         credential_sentences.append(f"my language profile includes {', '.join(languages)}")
@@ -1027,10 +1034,9 @@ def generate_tailored_documents(
     ])
     if signature_title:
         cover_lines.append(signature_title)
-    personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     cover_lines.extend([
-        f"Email: {_safe_contact_value(personal, 'email')}",
-        f"Phone: {_safe_contact_value(personal, 'phone')}",
+        f"Email: {_safe_contact_value(profile, 'email')}",
+        f"Phone: {_safe_contact_value(profile, 'phone')}",
     ])
 
     return {
@@ -1049,7 +1055,7 @@ def generate_tailored_documents(
             "profile_fields": ["personal", "medical_education", "license_registration", "medical_exit_exam", "work_history", "skills", "languages", "certificates"],
             "job_source_url": facts.get("source_url") or metadata.get("source_url") or job.get("url"),
             "application_url": facts.get("application_url") or job.get("apply_url"),
-            "tailoring_method": "ranked profile/CV evidence against extracted vacancy requirements and source text",
+            "tailoring_method": "ranked canonical-profile evidence against extracted vacancy requirements and source text",
         },
     }
 
@@ -1137,11 +1143,11 @@ def _infer_form_fields(job: dict[str, Any], profile: dict[str, Any]) -> list[str
     language_summary = "; ".join(_language_lines(profile, verified_only=True)) or "enter only languages you have verified in profile.yaml"
     fields = [
         f"Full name: {_full_name(profile)}",
-        f"Email: {_safe_contact_value(personal, 'email')}",
-        f"Phone: {_safe_contact_value(personal, 'phone')}",
-        f"Current location: {personal.get('location') if personal.get('location') and not is_unresolved_value(personal.get('location')) else 'confirm before submit'}",
+        f"Email: {_safe_contact_value(profile, 'email')}",
+        f"Phone: {_safe_contact_value(profile, 'phone')}",
+        f"Current location: {personal.get('location') if personal.get('location') and not is_unresolved_value(personal.get('location')) and personal_field_is_verified(profile, 'location') else 'confirm before submit'}",
         f"Position applied for: {job.get('title', 'confirm exact title')}",
-        "Education: use only education shown in the reviewed profile/CV",
+        "Education: use only education shown in the reviewed canonical profile",
         "License/registration: enter only explicitly verified details; leave number/date blank when missing",
         "Medical Exit Exam: include only when explicitly verified in the profile",
         "Work history with dates exactly as listed in the tailored CV",
@@ -1277,7 +1283,7 @@ def _email_body(
     title: str,
     company: str,
     location: str,
-    personal: dict[str, Any],
+    profile: dict[str, Any],
     highlights: list[str],
     include_cover_letter: bool,
     background_sentence: str = "",
@@ -1311,8 +1317,8 @@ def _email_body(
     if signature_title:
         lines.append(signature_title)
     lines.extend([
-        f"Email: {_safe_contact_value(personal, 'email')}",
-        f"Phone: {_safe_contact_value(personal, 'phone')}",
+        f"Email: {_safe_contact_value(profile, 'email')}",
+        f"Phone: {_safe_contact_value(profile, 'phone')}",
     ])
     return "\n".join(lines).strip() + "\n"
 
@@ -1449,13 +1455,16 @@ def generate_application_package(
         missing.append("Confirmed personal email address")
     if not personal.get("phone") or _is_placeholder_contact(personal.get("phone"), "phone"):
         missing.append("Confirmed phone number")
-    # CONTACT/IDENTITY CONTRACT: draft (e.g. CV-imported) contact data is
-    # displayed in the documents for review, but each identity/contact field
-    # stays a visible blocker until it is explicitly confirmed under
-    # personal.verification.<field>.
+    # CONTACT/IDENTITY CONTRACT: every printed identity/contact field must be
+    # present, resolved, and explicitly confirmed on its own. A generic
+    # document marker is never enough for a package to be review-ready.
     identity_fields = ["first_name", "last_name", "email", "phone"]
-    unverified_identity = [field for field in identity_fields if personal.get(field) and not personal_field_is_verified(profile, field)]
-    if unverified_identity:
+    unresolved_identity = [
+        field
+        for field in identity_fields
+        if not personal.get(field) or is_unresolved_value(personal.get(field)) or not personal_field_is_verified(profile, field)
+    ]
+    if unresolved_identity:
         missing.append("Identity/contact details reviewed and confirmed")
     for item in blocking_user_inputs + [m for m in missing if m not in blocking_user_inputs]:
         action = f"Provide/confirm: {item}"
@@ -1491,7 +1500,7 @@ def generate_application_package(
                 title=title,
                 company=company,
                 location=str(job.get("location") or ""),
-                personal=personal,
+                profile=profile,
                 highlights=_email_highlights(docs.get("selected_vacancy_fit_evidence") or []),
                 include_cover_letter=bool(generated_paths.get("cover_letter") or docs.get("cover_letter")),
                 background_sentence=_professional_background_sentence(profile),
@@ -1509,7 +1518,7 @@ def generate_application_package(
         online_application = {"url": online_url, "form_fields_checklist": form_fields}
         user_actions.extend([
             "Open the application URL/form manually",
-            "Complete each form field using the checklist and verified profile/CV facts only",
+            "Complete each form field using the checklist and verified canonical-profile facts only",
             "Upload the final reviewed files requested by the form",
             "Do not bypass CAPTCHA, login, MFA, or other security controls",
             "Submit only after explicit user confirmation",
@@ -1682,7 +1691,6 @@ def prepare_application_bundle(
     profile: dict[str, Any],
     match_report: dict[str, Any],
     *,
-    resume_text: str = "",
     out_dir: str | Path = "documents/applications",
 ) -> dict[str, Any]:
     """Generate documents, application package, and file exports for one job.
@@ -1691,11 +1699,12 @@ def prepare_application_bundle(
     vacancies.  A deterministic NOT_ELIGIBLE match means the pipeline must not
     create positive CV/cover-letter artifacts for that role.
     """
+    profile = require_runtime_profile(profile)
     if str(match_report.get("readiness_status") or "") == NOT_ELIGIBLE_STATUS:
         raise ValueError(
             f"Refusing to prepare application documents for NOT_ELIGIBLE vacancy {job.get('id') or job.get('title') or ''}".strip()
         )
-    docs = generate_tailored_documents(job, profile, match_report, resume_text=resume_text)
+    docs = generate_tailored_documents(job, profile, match_report)
     expected_paths = _expected_document_paths(job, out_dir)
     package = generate_application_package(
         job,

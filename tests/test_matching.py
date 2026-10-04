@@ -15,8 +15,8 @@ def base_profile(**updates):
         "medical_education": [{"degree": "MD", "verified": True}],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},
-        "clinical_experience": {"years": 2},
-        "preferences": {"locations": ["Kabul", "Afghanistan"]},
+        "clinical_experience": {"years": 2, "verified": True},
+        "preferences": {"locations": [{"name": "Kabul", "verified": True}, {"name": "Afghanistan", "verified": True}]},
         "languages": [
             {"name": "Dari", "level": "Native", "verified": True},
             {"name": "Pashto", "level": "Fluent", "verified": True},
@@ -57,7 +57,7 @@ def test_ready_to_apply_when_required_facts_are_verified():
 
 
 def test_needs_verification_for_unverified_experience_years():
-    profile = base_profile(clinical_experience={"years": ""})
+    profile = base_profile(clinical_experience={"years": "", "verified": False})
     report = match_job_against_profile(job("Medical Doctor required. Minimum 3 years clinical experience. Apply to hr@example.org by 2026-12-31."), profile, today=date(2026, 10, 1)).to_dict()
 
     assert report["readiness_status"] == NEEDS_VERIFICATION_STATUS

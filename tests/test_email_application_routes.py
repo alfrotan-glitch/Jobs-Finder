@@ -29,9 +29,9 @@ def md_profile():
         ],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},
-        "clinical_experience": {"years": 4},
-        "ngo_humanitarian_experience": {"years": 2},
-        "preferences": {"locations": ["Kabul", "Afghanistan"], "field_deployment": "yes", "willing_to_relocate": "yes"},
+        "clinical_experience": {"years": 4, "verified": True},
+        "ngo_humanitarian_experience": {"years": 2, "verified": True},
+        "preferences": {"locations": [{"name": "Kabul", "verified": True}, {"name": "Afghanistan", "verified": True}], "field_deployment": {"value": "yes", "verified": True}, "willing_to_relocate": {"value": "yes", "verified": True}},
         "work_history": [
             {
                 "title": "Medical Doctor",

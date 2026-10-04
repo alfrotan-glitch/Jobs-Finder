@@ -1,0 +1,21 @@
+Jane Doe
+Medical Doctor (MD)
+Email: jane.doe@example.org
+Phone: +93 70 000 0000
+Kabul, Afghanistan
+
+Education:
+Doctor of Medicine (MD), Example Medical University, 2016
+
+License:
+Afghan Medical Council registration, valid medical license
+
+Medical Exit Exam: Completed in 2017
+
+Languages: English (fluent), Dari (native), Pashto (fluent)
+
+Work Experience:
+2018-2023 Medical Officer, Example Clinic, Kabul
+- Provided clinical consultations for 5 years
+
+Certificates: Basic Life Support, Advanced Cardiac Life Support

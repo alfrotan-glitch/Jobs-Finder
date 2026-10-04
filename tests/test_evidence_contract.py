@@ -75,8 +75,8 @@ def test_is_unresolved_value_catches_common_placeholders_without_truthiness():
 def test_relocation_and_deployment_placeholders_never_become_evidence():
     profile = {
         "preferences": {
-            "willing_to_relocate": "Needs verification",
-            "field_deployment": "Unknown",
+            "willing_to_relocate": {"value": "Needs verification", "verified": False},
+            "field_deployment": {"value": "Unknown", "verified": False},
         }
     }
     evidence = build_profile_evidence(profile)
@@ -87,8 +87,8 @@ def test_relocation_and_deployment_placeholders_never_become_evidence():
 def test_relocation_and_deployment_resolve_when_explicitly_answered():
     profile = {
         "preferences": {
-            "willing_to_relocate": "Yes",
-            "field_deployment": "No",
+            "willing_to_relocate": {"value": "Yes", "verified": True},
+            "field_deployment": {"value": "No", "verified": True},
         }
     }
     evidence = build_profile_evidence(profile)
@@ -174,7 +174,7 @@ def test_personal_identity_fields_require_explicit_personal_verification():
         "personal": {
             "first_name": "Jane",
             "last_name": "Doe",
-            "email": "jane.doe@example.org",
+            "email": "sample.owner@example.org",
             "phone": "+93700000000",
             "gender": "female",
             "nationality": "Afghan",
@@ -192,7 +192,7 @@ def test_personal_identity_fields_verify_individually():
         "personal": {
             "first_name": "Jane",
             "last_name": "Doe",
-            "email": "jane.doe@example.org",
+            "email": "sample.owner@example.org",
             "gender": "female",
             "nationality": "Afghan",
             "location": "Kabul",
@@ -211,7 +211,7 @@ def test_personal_fields_verify_only_through_their_own_flag():
         "personal": {
             "first_name": "Jane",
             "last_name": "Doe",
-            "email": "jane.doe@example.org",
+            "email": "sample.owner@example.org",
             "gender": "female",
             "nationality": "Afghan",
             "verification": {"first_name": True, "last_name": True, "email": True, "gender": True, "nationality": True},

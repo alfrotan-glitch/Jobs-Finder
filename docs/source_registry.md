@@ -21,7 +21,7 @@ A failed or unavailable source is never represented as "0 jobs". Overall scan st
 
 ## Tier B — Secondary active sources
 
-- **ReliefWeb** (`official_name`: ReliefWeb Afghanistan jobs) — current public jobs search HTML, queried for Afghanistan health/medical/nutrition vacancies. Afghanistan cards are normalized and their public detail pages are enriched before medical relevance is decided. The scan is bounded by `job_sources.reliefweb.limit` (registry default 20).
+- **ReliefWeb** (`official_name`: ReliefWeb Afghanistan jobs) — current public jobs search HTML, queried for Afghanistan health/medical/nutrition vacancies. Afghanistan cards are normalized and their public detail pages are enriched before medical relevance is decided. The maintained route requests **one** result page, bounded by `job_sources.reliefweb.limit` (registry default 20); it is not a full pagination crawler. A page that reaches the bound is reported `RESULT_LIMIT_REACHED` / `PARTIAL`, while fewer results are the observable end of that one-page route.
 
 ## Manual official routes
 

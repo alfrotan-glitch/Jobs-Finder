@@ -95,7 +95,7 @@ def test_source_override_blocks_are_strict_mappings():
 
 
 def test_cv_import_does_not_materialize_source_defaults_or_budgets():
-    profile = build_profile_from_cv_text("Jane Doe\nMedical Doctor\njane@example.org", resume_path="cv.txt")
+    profile = build_profile_from_cv_text("Sample Applicant\nMedical Doctor\nsample@example.org")
     acbar = profile["job_sources"]["acbar"]
     reliefweb = profile["job_sources"]["reliefweb"]
     assert acbar == {}

@@ -22,6 +22,7 @@ import re
 from datetime import date
 
 import pytest
+import yaml
 
 import main
 from utils import discovery, tracker
@@ -30,7 +31,7 @@ PROFILE_YAML = """
 personal:
   first_name: Jane
   last_name: Doe
-  email: jane.doe@example.org
+  email: sample.owner@example.org
   gender: male
   nationality: Afghan
   verification:
@@ -53,8 +54,10 @@ medical_exit_exam:
   verified: true
 clinical_experience:
   years: 6
+  verified: true
 ngo_humanitarian_experience:
   years: 5
+  verified: true
 work_history:
   - title: TFU Medical Doctor
     organization: ACF
@@ -66,8 +69,12 @@ languages:
   - {name: Dari, level: Native, verified: true}
   - {name: English, level: Professional, verified: true}
 preferences:
-  locations: [Afghanistan]
-  field_deployment: true
+  locations:
+    - name: Afghanistan
+      verified: true
+  field_deployment:
+    value: true
+    verified: true
 sources:
   enabled: [acbar]
 job_sources:
@@ -194,10 +201,9 @@ def test_full_cli_scan_is_uncapped_and_counts_agree(tmp_path, monkeypatch, capsy
     monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
     client = _fake_acbar()
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: client())
-    profile_path = tmp_path / "profile.yaml"
-    profile_path.write_text(PROFILE_YAML, encoding="utf-8")
-
-    profile = main.load_profile(str(profile_path))
+    # Unit-level orchestration receives an explicit fixture mapping. Runtime
+    # commands themselves resolve only the canonical profile repository.
+    profile = yaml.safe_load(PROFILE_YAML)
     capsys.readouterr()
 
     asyncio.run(main.cmd_scan(profile))
@@ -232,9 +238,7 @@ def test_scan_collection_survives_persistence_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
     client = _fake_acbar()
     monkeypatch.setattr(discovery.httpx, "AsyncClient", lambda **kwargs: client())
-    profile_path = tmp_path / "profile.yaml"
-    profile_path.write_text(PROFILE_YAML, encoding="utf-8")
-    profile = main.load_profile(str(profile_path))
+    profile = yaml.safe_load(PROFILE_YAML)
     asyncio.run(main.cmd_scan(profile))
 
     scan = tracker.get_latest_scan()

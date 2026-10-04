@@ -1,8 +1,8 @@
 """
 Deterministic MD-first eligibility matching.
 
-The matcher compares extracted vacancy requirements with verified profile/CV
-evidence.  It does not produce a single arbitrary score.  Every important
+The matcher compares extracted vacancy requirements with verified canonical
+profile evidence.  It does not produce a single arbitrary score.  Every important
 requirement is shown as Required/Preferred/Information → Met / Not met /
 Needs verification, with evidence and provenance.
 """
@@ -21,7 +21,7 @@ from utils.medical_requirements import (
     is_valid_application_url,
     is_valid_email,
 )
-from utils.profile import ProfileEvidence, build_profile_evidence
+from utils.profile import ProfileEvidence, build_profile_evidence, require_runtime_profile
 
 MET = "Met"
 NOT_MET = "Not met"
@@ -123,12 +123,13 @@ HARD_CONSTRAINTS = {"gender_requirement", "nationality_requirement", "closing_da
 def match_job_against_profile(
     job: Any,
     profile: dict[str, Any],
-    resume_text: str = "",
     *,
     today: date | None = None,
 ) -> MatchReport:
+    """Match only a runtime applicant profile, never CV/import/cache text."""
+    profile = require_runtime_profile(profile)
     extracted = extract_requirements_from_job(job, today=today)
-    evidence = build_profile_evidence(profile, resume_text=resume_text, today=today)
+    evidence = build_profile_evidence(profile, today=today)
     return match_extracted_requirements(extracted, evidence, today=today)
 
 
@@ -296,7 +297,7 @@ def _direct_match(requirement: Requirement, evidence: ProfileEvidence, keys: lis
             label=requirement.label,
             required=requirement.required,
             status=MET,
-            explanation="Profile/CV evidence supports this requirement.",
+            explanation="Verified canonical-profile evidence supports this requirement.",
             evidence=snippets[:4],
             required_evidence=requirement.evidence,
             value=requirement.value,
@@ -307,7 +308,7 @@ def _direct_match(requirement: Requirement, evidence: ProfileEvidence, keys: lis
         label=requirement.label,
         required=requirement.required,
         status=NEEDS_VERIFICATION,
-        explanation="No verified profile or CV evidence was found. This is not treated as absent; please verify it in My Profile.",
+        explanation="No verified canonical-profile evidence was found. This is not treated as absent; please verify it in My Profile.",
         evidence=[],
         required_evidence=requirement.evidence,
         value=requirement.value,
@@ -354,7 +355,7 @@ def _years_match(requirement: Requirement, evidence: ProfileEvidence) -> Require
             required=requirement.required,
             status=MET,
             explanation=f"Verified experience is {best:g} years, meeting the {required_years:g}-year requirement.",
-            evidence=snippets[:4] or [f"{best:g} years in profile/CV"],
+            evidence=snippets[:4] or [f"{best:g} years in canonical profile"],
             required_evidence=requirement.evidence,
             value=requirement.value,
             criticality=requirement.criticality,
@@ -365,7 +366,7 @@ def _years_match(requirement: Requirement, evidence: ProfileEvidence) -> Require
         required=requirement.required,
         status=NOT_MET,
         explanation=f"Verified experience is {best:g} years, below the {required_years:g}-year requirement.",
-        evidence=snippets[:4] or [f"{best:g} years in profile/CV"],
+        evidence=snippets[:4] or [f"{best:g} years in canonical profile"],
         required_evidence=requirement.evidence,
         value=requirement.value,
         criticality=requirement.criticality,

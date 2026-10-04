@@ -2,7 +2,7 @@
 Review-first tailored document generation.
 
 The output is deterministic and conservative. It uses only facts from the
-profile/CV evidence and the match report. It never invents qualifications; open
+canonical profile and the match report. It never invents qualifications; open
 items are listed as verification warnings instead of being claimed.
 
 DOCUMENT EVIDENCE GATE (canonical rule for every employer-facing artifact —
@@ -14,7 +14,7 @@ TXT, and therefore also the DOCX/PDF renders derived from the same text):
   cover-letter claim may only contain items that are explicitly verified
   (``verified: true`` per the canonical contract in ``utils.profile``) or
   that the authoritative matcher marked MET from verified evidence.
-* Unverified profile/CV items are never silently promoted into factual
+* Unverified profile items are never silently promoted into factual
   content. They are surfaced in ``review_warnings`` instead, so nothing is
   lost but nothing unconfirmed is claimed to an employer.
 * There is no generic hardcoded applicant description: the professional
@@ -54,6 +54,7 @@ from utils.profile import (
     is_verified_flag,
     parse_profile_date,
     personal_field_is_verified,
+    require_runtime_profile,
 )
 
 
@@ -848,16 +849,15 @@ def generate_tailored_documents(
     job: dict[str, Any],
     profile: dict[str, Any],
     match_report: dict[str, Any],
-    resume_text: str = "",
 ) -> dict[str, Any]:
-    """
-    Generate a vacancy-specific CV and cover letter for user review.
+    """Generate a vacancy-specific CV and cover letter from profile.yaml facts.
 
-    The documents are deterministic: they select and order existing profile/CV
-    evidence against the vacancy requirements.  They do not invent facts, hidden
-    license numbers, references, dates, or unavailable documents.
+    The documents are deterministic: they select and order verified canonical
+    profile evidence against vacancy requirements.  CV imports, caches, and
+    draft profiles are rejected rather than becoming a second applicant source.
     """
-    evidence = build_profile_evidence(profile, resume_text=resume_text)
+    profile = require_runtime_profile(profile)
+    evidence = build_profile_evidence(profile)
     name = _full_name(profile)
     contact = _contact_lines(profile)
     title = job.get("title") or "the advertised role"
@@ -908,7 +908,7 @@ def generate_tailored_documents(
 
     # Languages: only explicitly verified languages (name + resolved level +
     # verified: true) may be listed as factual CV content. Unverified mentions
-    # (profile drafts or CV text) are review warnings, never CV facts.
+    # (unverified profile data) are review warnings, never employer-facing facts.
     languages = _language_lines(profile, verified_only=True)
     unverified_languages = [item for item in _language_lines(profile) if item not in languages]
 
@@ -1049,7 +1049,7 @@ def generate_tailored_documents(
             "profile_fields": ["personal", "medical_education", "license_registration", "medical_exit_exam", "work_history", "skills", "languages", "certificates"],
             "job_source_url": facts.get("source_url") or metadata.get("source_url") or job.get("url"),
             "application_url": facts.get("application_url") or job.get("apply_url"),
-            "tailoring_method": "ranked profile/CV evidence against extracted vacancy requirements and source text",
+            "tailoring_method": "ranked canonical-profile evidence against extracted vacancy requirements and source text",
         },
     }
 
@@ -1141,7 +1141,7 @@ def _infer_form_fields(job: dict[str, Any], profile: dict[str, Any]) -> list[str
         f"Phone: {_safe_contact_value(personal, 'phone')}",
         f"Current location: {personal.get('location') if personal.get('location') and not is_unresolved_value(personal.get('location')) else 'confirm before submit'}",
         f"Position applied for: {job.get('title', 'confirm exact title')}",
-        "Education: use only education shown in the reviewed profile/CV",
+        "Education: use only education shown in the reviewed canonical profile",
         "License/registration: enter only explicitly verified details; leave number/date blank when missing",
         "Medical Exit Exam: include only when explicitly verified in the profile",
         "Work history with dates exactly as listed in the tailored CV",
@@ -1509,7 +1509,7 @@ def generate_application_package(
         online_application = {"url": online_url, "form_fields_checklist": form_fields}
         user_actions.extend([
             "Open the application URL/form manually",
-            "Complete each form field using the checklist and verified profile/CV facts only",
+            "Complete each form field using the checklist and verified canonical-profile facts only",
             "Upload the final reviewed files requested by the form",
             "Do not bypass CAPTCHA, login, MFA, or other security controls",
             "Submit only after explicit user confirmation",
@@ -1682,7 +1682,6 @@ def prepare_application_bundle(
     profile: dict[str, Any],
     match_report: dict[str, Any],
     *,
-    resume_text: str = "",
     out_dir: str | Path = "documents/applications",
 ) -> dict[str, Any]:
     """Generate documents, application package, and file exports for one job.
@@ -1691,11 +1690,12 @@ def prepare_application_bundle(
     vacancies.  A deterministic NOT_ELIGIBLE match means the pipeline must not
     create positive CV/cover-letter artifacts for that role.
     """
+    profile = require_runtime_profile(profile)
     if str(match_report.get("readiness_status") or "") == NOT_ELIGIBLE_STATUS:
         raise ValueError(
             f"Refusing to prepare application documents for NOT_ELIGIBLE vacancy {job.get('id') or job.get('title') or ''}".strip()
         )
-    docs = generate_tailored_documents(job, profile, match_report, resume_text=resume_text)
+    docs = generate_tailored_documents(job, profile, match_report)
     expected_paths = _expected_document_paths(job, out_dir)
     package = generate_application_package(
         job,

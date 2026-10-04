@@ -358,7 +358,7 @@ function renderProfileDetails() {
   const details = state.profileDetails?.details || {};
   const summary = details.summary || state.profile?.summary || {};
   if (!exists) {
-    $("profileHeader").innerHTML = emptyState("No profile loaded", "Create your local profile or import a CV draft for review.");
+    $("profileHeader").innerHTML = emptyState("No profile loaded", "Create your canonical local profile. A CV preview never creates or replaces it.");
     for (const id of ["profileSummaryBox", "profileExperienceBox", "profileEducationBox", "profileRegistrationBox", "profileExitExamBox", "profileTrainingBox", "profileSkillsBox", "profileLanguagesBox"]) {
       $(id).innerHTML = `<p class="sectionHelp">No profile data available.</p>`;
     }
@@ -661,7 +661,7 @@ async function refresh() {
 
 async function findJobs() {
   if (state.profile && state.profile.exists === false) {
-    setStatus("Your local profile is missing. Create or import a profile before scanning for jobs.", "error");
+    setStatus("Your canonical local profile is missing. Create profile.yaml before scanning for jobs; CV preview does not create it.", "error");
     switchTab("profile");
     return;
   }
@@ -737,7 +737,9 @@ async function importCv() {
   setStatus("Importing CV…", "warn");
   try {
     const data = await apiJson("/api/import-cv", { method: "POST", body: form });
-    state.profileReview = data;
+    // Import is a request-local, unverified preview.  It must never replace
+    // the canonical applicant state shown in My Profile.
+    $("advancedLog").textContent = JSON.stringify(data.preview || data, null, 2);
     setStatus(data.message, "warn");
     await refresh();
   } catch (error) {

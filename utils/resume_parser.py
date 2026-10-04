@@ -8,20 +8,20 @@ The parser never writes inferred facts into profile.yaml.
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
-
-CACHE_DIR = Path(__file__).parent.parent / ".cache"
-CACHE_DIR.mkdir(exist_ok=True)
 
 
 TEXT_EXTENSIONS = {".txt", ".md", ".markdown", ".rst", ".csv"}
 
 
 def extract_resume_text(resume_path: str) -> str:
-    """
-    Extract text from a PDF or text CV.
-    Returns cached text if the file hasn't changed.
+    """Extract text from the explicitly supplied CV file.
+
+    Extraction is intentionally uncached.  A ``.cache/resume_<hash>.txt``
+    file used to be trusted as an input merely because its name matched a CV
+    hash.  That made stale or sample text capable of entering applicant
+    matching.  Resume text is now read only from the file supplied to this
+    function and is never a standalone applicant-profile source.
     """
     if not resume_path:
         return ""
@@ -29,30 +29,15 @@ def extract_resume_text(resume_path: str) -> str:
     if not path.exists() or not path.is_file():
         return ""
 
-    try:
-        file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return ""
-    cache_file = CACHE_DIR / f"resume_{file_hash}.txt"
-
-    if cache_file.exists():
-        return cache_file.read_text(encoding="utf-8", errors="replace")
-
-    text = ""
     if path.suffix.lower() in TEXT_EXTENSIONS:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    elif path.suffix.lower() == ".pdf":
-        text = _extract_pdf_text(path)
-    else:
-        # Last-resort text read for unusual but text-like uploads.
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except UnicodeDecodeError:
-            text = ""
-
-    if text:
-        cache_file.write_text(text, encoding="utf-8")
-    return text
+        return path.read_text(encoding="utf-8", errors="replace")
+    if path.suffix.lower() == ".pdf":
+        return _extract_pdf_text(path)
+    # Last-resort text read for unusual but text-like uploads.
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, UnicodeDecodeError):
+        return ""
 
 
 def _extract_pdf_text(path: Path) -> str:

@@ -160,7 +160,7 @@ def collect_scan_recommendations(pairs: list[tuple[dict[str, Any], dict[str, Any
     return entries
 
 
-def evaluate_scan_jobs(scan: Any, profile: dict[str, Any], resume_text: str = "") -> Any:
+def evaluate_scan_jobs(scan: Any, profile: dict[str, Any]) -> Any:
     """Match everything the scan retained, persist outcomes, and record them.
 
     This is the single orchestration used identically by the CLI and the
@@ -176,7 +176,7 @@ def evaluate_scan_jobs(scan: Any, profile: dict[str, Any], resume_text: str = ""
     pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for job in scan.jobs:
         job_data = _as_dict(job)
-        report = match_job_against_profile(job_data, profile, resume_text=resume_text).to_dict()
+        report = match_job_against_profile(job_data, profile).to_dict()
         pairs.append((job_data, report))
         # Discovery and its match now share one BEGIN IMMEDIATE/COMMIT pair.
         # This is still sequential per scan, but removes the cross-connection

@@ -15,6 +15,9 @@ applications.db-shm
 .pytest_cache/
 
 # User/private data and generated application artifacts
+# profile.yaml is the one canonical local applicant record. The remaining
+# profile/resume paths below are quarantined legacy artifacts: the app never
+# reads them as applicant data.
 profile.yaml
 profile.yaml.bak
 resumes/

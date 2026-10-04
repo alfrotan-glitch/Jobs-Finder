@@ -4,10 +4,10 @@ from utils import tracker
 from utils.profile import build_profile_evidence
 
 
-def test_cv_claims_are_not_verified_and_unknown_language_stays_unverified():
+def test_runtime_evidence_uses_profile_only_and_unknown_language_stays_unverified():
     profile = {"languages": [{"name": "English", "level": "Needs verification"}]}
-    evidence = build_profile_evidence(profile, "MD, registered physician with English language skills")
-    assert not any(item.verified for item in evidence.items["md_degree"])
+    evidence = build_profile_evidence(profile)
+    assert not evidence.has("md_degree")
     assert not any(item.verified for item in evidence.items["language_english"])
 
 

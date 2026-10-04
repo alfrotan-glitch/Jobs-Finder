@@ -92,12 +92,11 @@ def test_cv_import_location_preference_is_not_silently_verified():
     assert not evidence.has_verified("preferred_location")
 
 
-def test_cv_import_does_not_satisfy_matcher_requirements():
-    from utils.medical_matcher import (
-        NOT_ELIGIBLE_STATUS,
-        READY_TO_APPLY,
-        match_job_against_profile,
-    )
+def test_cv_import_preview_cannot_enter_matcher_requirements():
+    import pytest
+
+    from utils.medical_matcher import match_job_against_profile
+    from utils.profile import CanonicalProfileError
 
     profile = build_profile_from_cv_text(SYNTHETIC_CV, resume_path="cv.txt")
     job = {
@@ -109,6 +108,5 @@ def test_cv_import_does_not_satisfy_matcher_requirements():
         "apply_url": "hr@example.org",
         "description": "Medical Degree required. Afghan Medical Council registration required. 3 years clinical experience required. Apply to hr@example.org by 2026-12-31.",
     }
-    report = match_job_against_profile(job, profile).to_dict()
-    assert report["readiness_status"] != READY_TO_APPLY
-    assert report["readiness_status"] != NOT_ELIGIBLE_STATUS
+    with pytest.raises(CanonicalProfileError, match="CV import preview"):
+        match_job_against_profile(job, profile)

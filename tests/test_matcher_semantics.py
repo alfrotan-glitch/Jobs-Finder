@@ -62,8 +62,8 @@ def test_string_boolean_preferences_never_resolve_semantically():
         evidence = build_profile_evidence(profile)
         assert not evidence.has("willing_to_relocate"), raw
         assert not evidence.has("field_deployment"), raw
-    # Literal yes/no token strings DO resolve (that is their documented meaning).
-    evidence = build_profile_evidence({"preferences": {"willing_to_relocate": "true", "field_deployment": "false"}})
+    # A valid yes/no token also needs its adjacent literal verified flag.
+    evidence = build_profile_evidence({"preferences": {"willing_to_relocate": {"value": "true", "verified": True}, "field_deployment": {"value": "false", "verified": True}}})
     assert evidence.verified_values("willing_to_relocate") == [True]
     assert evidence.verified_values("field_deployment") == [False]
 
@@ -104,7 +104,7 @@ def test_license_copy_available_yes_with_verification_counts():
     assert evidence.has_verified("license_document")
 
 
-def test_experience_years_from_unverified_cv_text_never_meet_requirements():
+def test_missing_profile_experience_never_meets_requirements():
     profile = {
         "personal": {"first_name": "Jane", "last_name": "Doe", "email": "doctor@example.org", "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True}},
         "medical_education": [{"degree": "MD", "verified": True}],
@@ -121,7 +121,6 @@ def test_experience_years_from_unverified_cv_text_never_meet_requirements():
             "description": "MD required. 3 years clinical experience required. Apply to hr@example.org by 2026-12-31.",
         },
         profile,
-        resume_text="Experienced physician with 10 years of clinical experience in hospitals.",
         today=date(2026, 10, 1),
     ).to_dict()
     assert report["readiness_status"] == NEEDS_VERIFICATION_STATUS

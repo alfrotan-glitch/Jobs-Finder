@@ -10,14 +10,14 @@ import yaml
 from fastapi.testclient import TestClient
 
 from dashboard import server
+from utils import profile as profile_repository
 from utils import tracker
 from utils.discovery import ScanResult, SourceReport
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(server, "PROFILE_PATH", tmp_path / "profile.yaml")
-    monkeypatch.setattr(server, "UPLOADS_DIR", tmp_path / "resumes")
+    monkeypatch.setattr(profile_repository, "CANONICAL_PROFILE_PATH", tmp_path / "profile.yaml")
     monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
     return TestClient(server.app)
 
@@ -51,16 +51,19 @@ SYNTHETIC_CV = (
 )
 
 
-def test_import_cv_creates_draft_that_needs_review(client):
+def test_import_cv_returns_unverified_preview_without_creating_a_profile(client, tmp_path):
     response = client.post(
         "/api/import-cv",
         files={"file": ("cv.txt", io.BytesIO(SYNTHETIC_CV.encode("utf-8")), "text/plain")},
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["is_draft"] is True
-    assert body["fields"]
-    assert all(field["status"] != "Verified" for field in body["fields"])
+    assert body["persisted"] is False
+    assert body["preview"]["fields"]
+    assert all(field["status"] != "Verified" for field in body["preview"]["fields"])
+    assert not profile_repository.canonical_profile_path().exists()
+    assert not (tmp_path / "profile.yaml.bak").exists()
+    assert not (tmp_path / "resumes").exists()
 
 
 def test_import_cv_rejects_unsupported_file_type(client):
@@ -71,20 +74,23 @@ def test_import_cv_rejects_unsupported_file_type(client):
     assert response.status_code == 400
 
 
-def test_import_cv_backs_up_existing_profile(client, tmp_path):
-    (tmp_path / "profile.yaml").write_text("personal:\n  first_name: Existing\n", encoding="utf-8")
+def test_import_cv_cannot_overwrite_or_create_a_competing_profile(client, tmp_path):
+    canonical = profile_repository.canonical_profile_path()
+    original = "personal:\n  first_name: Existing\n"
+    canonical.write_text(original, encoding="utf-8")
     response = client.post(
         "/api/import-cv",
         files={"file": ("cv.txt", io.BytesIO(SYNTHETIC_CV.encode("utf-8")), "text/plain")},
     )
     assert response.status_code == 200
-    backup = tmp_path / "profile.yaml.bak"
-    assert backup.exists()
-    assert "Existing" in backup.read_text(encoding="utf-8")
+    assert response.json()["persisted"] is False
+    assert canonical.read_text(encoding="utf-8") == original
+    assert not (tmp_path / "profile.yaml.bak").exists()
+    assert not (tmp_path / "resumes").exists()
 
 
 def test_confirm_endpoint_rejects_unknown_field(client):
-    server.PROFILE_PATH.write_text("personal:\n  first_name: Jane\n", encoding="utf-8")
+    profile_repository.canonical_profile_path().write_text("personal:\n  first_name: Jane\n", encoding="utf-8")
     response = client.post("/api/profile/confirm", json={"field": "not_a_real_field"})
     assert response.status_code == 400
 
@@ -95,12 +101,12 @@ def test_confirm_endpoint_flips_only_the_requested_verified_flag(client):
         "medical_education": [{"degree": "MD", "verified": False}],
         "license_registration": {"status": "Mentioned in CV; verify details", "verified": False},
     }
-    server.PROFILE_PATH.write_text(yaml.safe_dump(profile), encoding="utf-8")
+    profile_repository.canonical_profile_path().write_text(yaml.safe_dump(profile), encoding="utf-8")
 
     response = client.post("/api/profile/confirm", json={"field": "medical_education"})
     assert response.status_code == 200
 
-    updated = yaml.safe_load(server.PROFILE_PATH.read_text(encoding="utf-8"))
+    updated = yaml.safe_load(profile_repository.canonical_profile_path().read_text(encoding="utf-8"))
     assert updated["medical_education"][0]["verified"] is True
     # Unrelated field must not be silently verified by this call.
     assert updated["license_registration"]["verified"] is False
@@ -118,7 +124,7 @@ def test_confirm_endpoint_supports_confirming_one_personal_field(client):
             "location": "Kabul",
         },
     }
-    server.PROFILE_PATH.write_text(yaml.safe_dump(profile), encoding="utf-8")
+    profile_repository.canonical_profile_path().write_text(yaml.safe_dump(profile), encoding="utf-8")
 
     review = client.get("/api/profile/review").json()
     nationality_row = next(f for f in review["fields"] if f["key"] == "nationality")
@@ -131,7 +137,7 @@ def test_confirm_endpoint_supports_confirming_one_personal_field(client):
     response = client.post("/api/profile/confirm", json={"field": "personal:nationality"})
     assert response.status_code == 200
 
-    updated = yaml.safe_load(server.PROFILE_PATH.read_text(encoding="utf-8"))
+    updated = yaml.safe_load(profile_repository.canonical_profile_path().read_text(encoding="utf-8"))
     assert updated["personal"]["verification"]["nationality"] is True
     assert updated["personal"]["verification"].get("location") is not True
 
@@ -150,12 +156,12 @@ def test_confirm_endpoint_supports_confirming_a_specific_language_with_level(cli
             {"name": "Dari", "level": "Needs verification", "verified": False},
         ],
     }
-    server.PROFILE_PATH.write_text(yaml.safe_dump(profile), encoding="utf-8")
+    profile_repository.canonical_profile_path().write_text(yaml.safe_dump(profile), encoding="utf-8")
 
     response = client.post("/api/profile/confirm", json={"field": "language:English", "level": "Fluent"})
     assert response.status_code == 200
 
-    updated = yaml.safe_load(server.PROFILE_PATH.read_text(encoding="utf-8"))
+    updated = yaml.safe_load(profile_repository.canonical_profile_path().read_text(encoding="utf-8"))
     by_name = {item["name"]: item for item in updated["languages"]}
     assert by_name["English"]["verified"] is True
     assert by_name["English"]["level"] == "Fluent"
@@ -164,21 +170,21 @@ def test_confirm_endpoint_supports_confirming_a_specific_language_with_level(cli
 
 def test_confirm_endpoint_rejects_language_confirmation_without_a_level(client):
     profile = {"languages": [{"name": "English", "level": "Needs verification", "verified": False}]}
-    server.PROFILE_PATH.write_text(yaml.safe_dump(profile), encoding="utf-8")
+    profile_repository.canonical_profile_path().write_text(yaml.safe_dump(profile), encoding="utf-8")
     response = client.post("/api/profile/confirm", json={"field": "language:English"})
     assert response.status_code == 400
 
 
 def test_confirm_endpoint_rejects_placeholder_level_text(client):
     profile = {"languages": [{"name": "English", "level": "Needs verification", "verified": False}]}
-    server.PROFILE_PATH.write_text(yaml.safe_dump(profile), encoding="utf-8")
+    profile_repository.canonical_profile_path().write_text(yaml.safe_dump(profile), encoding="utf-8")
     response = client.post("/api/profile/confirm", json={"field": "language:English", "level": "Unknown"})
     assert response.status_code == 400
 
 
 def test_confirm_endpoint_rejects_language_not_present(client):
     profile = {"languages": [{"name": "Dari", "level": "Native", "verified": False}]}
-    server.PROFILE_PATH.write_text(yaml.safe_dump(profile), encoding="utf-8")
+    profile_repository.canonical_profile_path().write_text(yaml.safe_dump(profile), encoding="utf-8")
     response = client.post("/api/profile/confirm", json={"field": "language:French", "level": "Fluent"})
     assert response.status_code == 400
 
@@ -218,7 +224,7 @@ def test_find_requires_a_profile(client):
 
 
 def test_find_returns_authoritative_complete_scan_summary(client, monkeypatch):
-    server.PROFILE_PATH.write_text("personal: {}\n", encoding="utf-8")
+    profile_repository.canonical_profile_path().write_text("personal: {}\n", encoding="utf-8")
     report = SourceReport(
         id="acbar", name="ACBAR", tier="A", attempted=True, ok=True,
         status="PARTIAL", pages_requested=2, pages_succeeded=1, pages_failed=1,
@@ -245,7 +251,7 @@ def test_find_returns_authoritative_complete_scan_summary(client, monkeypatch):
 
 def test_professional_title_is_confirmed_as_a_personal_field(client):
     profile = {"personal": {"first_name": "Jane", "last_name": "Doe", "professional_title": "Medical Doctor"}}
-    server.PROFILE_PATH.write_text(yaml.safe_dump(profile), encoding="utf-8")
+    profile_repository.canonical_profile_path().write_text(yaml.safe_dump(profile), encoding="utf-8")
 
     review = client.get("/api/profile/review").json()
     title_row = next(f for f in review["fields"] if f["key"] == "professional_title")
@@ -255,7 +261,7 @@ def test_professional_title_is_confirmed_as_a_personal_field(client):
     response = client.post("/api/profile/confirm", json={"field": "personal:professional_title"})
     assert response.status_code == 200
 
-    updated = yaml.safe_load(server.PROFILE_PATH.read_text(encoding="utf-8"))
+    updated = yaml.safe_load(profile_repository.canonical_profile_path().read_text(encoding="utf-8"))
     assert updated["personal"]["verification"]["professional_title"] is True
     assert "professional_title" not in {key for key in updated if key != "personal"}
 

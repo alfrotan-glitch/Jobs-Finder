@@ -75,8 +75,8 @@ def test_is_unresolved_value_catches_common_placeholders_without_truthiness():
 def test_relocation_and_deployment_placeholders_never_become_evidence():
     profile = {
         "preferences": {
-            "willing_to_relocate": "Needs verification",
-            "field_deployment": "Unknown",
+            "willing_to_relocate": {"value": "Needs verification", "verified": False},
+            "field_deployment": {"value": "Unknown", "verified": False},
         }
     }
     evidence = build_profile_evidence(profile)
@@ -87,8 +87,8 @@ def test_relocation_and_deployment_placeholders_never_become_evidence():
 def test_relocation_and_deployment_resolve_when_explicitly_answered():
     profile = {
         "preferences": {
-            "willing_to_relocate": "Yes",
-            "field_deployment": "No",
+            "willing_to_relocate": {"value": "Yes", "verified": True},
+            "field_deployment": {"value": "No", "verified": True},
         }
     }
     evidence = build_profile_evidence(profile)

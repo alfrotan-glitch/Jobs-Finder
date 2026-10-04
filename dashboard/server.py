@@ -8,12 +8,11 @@ logic.
 
 from __future__ import annotations
 
-import uuid
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import uvicorn
-import yaml
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,16 +27,17 @@ from utils.discovery import (
 )
 from utils.documents import prepare_application_bundle
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
-from utils.paths import CANONICAL_DB_PATH, CANONICAL_PROFILE_PATH, PROJECT_ROOT
+from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.profile import (
     PERSONAL_VERIFICATION_FIELDS,
+    CanonicalProfileError,
     build_profile_evidence,
     is_unresolved_value,
-    save_profile,
+    load_canonical_profile,
+    save_canonical_profile,
 )
 from utils.profile_builder import build_profile_from_cv_file
 from utils.recommendations import evaluate_scan_jobs
-from utils.resume_parser import extract_resume_text
 from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
 from utils.tracker import (
     get_job_by_id,
@@ -55,24 +55,38 @@ from utils.tracker import (
 # The dashboard and CLI intentionally expose the same canonical locations.
 ROOT = PROJECT_ROOT
 DB_PATH = CANONICAL_DB_PATH
-PROFILE_PATH = CANONICAL_PROFILE_PATH
-UPLOADS_DIR = ROOT / "resumes"
 
 app = FastAPI(title="Jobs-Finder")
 app.mount("/static", StaticFiles(directory=str(ROOT / "dashboard" / "static")), name="static")
 templates = Jinja2Templates(directory=str(ROOT / "dashboard" / "templates"))
 
 
-def load_profile(required: bool = False) -> dict[str, Any]:
-    if not PROFILE_PATH.exists():
-        if required:
-            raise HTTPException(status_code=400, detail="profile.yaml is missing. Copy profile.yaml.example and enter verified facts.")
-        return {}
-    return yaml.safe_load(PROFILE_PATH.read_text(encoding="utf-8")) or {}
+def _runtime_profile(required: bool = False) -> dict[str, Any]:
+    """HTTP adapter around the sole canonical applicant-profile repository.
+
+    This deliberately performs no YAML/path handling of its own.  In
+    particular it cannot fall back to profile.yaml.example, an import draft,
+    a backup, or a resume cache.
+    """
+    try:
+        return load_canonical_profile(required=required)
+    except CanonicalProfileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
+    preferences = profile.get("preferences") or {}
+    preferences = preferences if isinstance(preferences, dict) else {}
+
+    def display_locations(items: Any) -> list[str]:
+        values: list[str] = []
+        for item in items if isinstance(items, list) else []:
+            value = (item.get("name") or item.get("value") or item.get("location")) if isinstance(item, dict) else item
+            if value and not is_unresolved_value(value):
+                values.append(str(value))
+        return values
+
     professional_title = personal.get("professional_title") or ""
     return {
         "name": " ".join(str(personal.get(key, "")).strip() for key in ["first_name", "last_name"]).strip(),
@@ -80,11 +94,8 @@ def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
         "email": personal.get("email", ""),
         "phone": personal.get("phone", ""),
         "location": personal.get("location", ""),
-        "resume_path": profile.get("resume_path", ""),
-        "roles": (profile.get("preferences") or {}).get("roles", []) if isinstance(profile.get("preferences"), dict) else [],
-        "locations": (profile.get("preferences") or {}).get("locations", []) if isinstance(profile.get("preferences"), dict) else [],
-        "is_draft": str(profile.get("profile_status", "")).upper() == "DRAFT",
-        "draft_note": profile.get("profile_status_note", ""),
+        "roles": preferences.get("roles", []) if isinstance(preferences.get("roles"), list) else [],
+        "locations": display_locations(preferences.get("locations")),
     }
 
 
@@ -252,8 +263,10 @@ def _field_status(evidence, key: str) -> str:
 
 
 def _profile_review_payload(profile: dict[str, Any]) -> dict[str, Any]:
-    resume_text = extract_resume_text(profile.get("resume_path", ""))
-    evidence = build_profile_evidence(profile, resume_text=resume_text)
+    # Runtime readiness is derived from canonical profile.yaml only.  CV
+    # imports are transient previews and resume/cache text is never evidence
+    # for the production applicant.
+    evidence = build_profile_evidence(profile)
     fields = []
     for key, label, confirm_field in REVIEW_FIELDS:
         status = _field_status(evidence, key)
@@ -266,11 +279,7 @@ def _profile_review_payload(profile: dict[str, Any]) -> dict[str, Any]:
                 "confirm_field": confirm_field if status != "Missing" else None,
             }
         )
-    return {
-        "is_draft": str(profile.get("profile_status", "")).upper() == "DRAFT",
-        "draft_note": profile.get("profile_status_note", ""),
-        "fields": fields,
-    }
+    return {"fields": fields}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -285,13 +294,13 @@ def health():
 
 @app.get("/api/profile")
 def api_profile():
-    profile = load_profile(False)
+    profile = _runtime_profile(False)
     return {"exists": bool(profile), "summary": profile_summary(profile)}
 
 
 @app.get("/api/profile/details")
 def api_profile_details():
-    profile = load_profile(False)
+    profile = _runtime_profile(False)
     if not profile:
         return {"exists": False, "details": {}}
     return {"exists": True, "details": _profile_details(profile)}
@@ -319,7 +328,7 @@ def api_generated_file(path: str):
 
 @app.get("/api/profile/review")
 def api_profile_review():
-    profile = load_profile(False)
+    profile = _runtime_profile(False)
     if not profile:
         return {"exists": False, "is_draft": False, "draft_note": "", "fields": []}
     return {"exists": True, **_profile_review_payload(profile)}
@@ -341,7 +350,7 @@ async def api_profile_confirm(request: Request):
     field = str((payload or {}).get("field") or "")
     if not _is_confirmable(field):
         raise HTTPException(status_code=400, detail=f"Unsupported field: {field}")
-    profile = load_profile(True)
+    profile = _runtime_profile(True)
 
     if field.startswith("language:"):
         # A language is only meaningfully verified once both an explicit
@@ -389,38 +398,36 @@ async def api_profile_confirm(request: Request):
             raise HTTPException(status_code=400, detail=f"{field} is not present in profile.yaml.")
         target["verified"] = True
 
-    save_profile(profile, PROFILE_PATH)
+    save_canonical_profile(profile)
     return {"ok": True, "message": f"{field} marked verified in profile.yaml.", "review": _profile_review_payload(profile)}
 
 
 @app.post("/api/import-cv")
 async def api_import_cv(file: UploadFile = File(...)):
-    """Build a DRAFT profile from an uploaded CV for the user to review.
+    """Return an unverified, request-local CV preview without changing state.
 
-    The result always needs review: nothing extracted from the CV is written
-    as verified. If profile.yaml already exists it is preserved as
-    profile.yaml.bak before being replaced, so a browser-based import never
-    silently destroys facts the user has already confirmed.
+    The upload is placed in a system temporary directory only long enough for
+    local text extraction, then deleted.  It never writes profile.yaml, a
+    backup, a draft profile, ``resumes/``, or a resume cache.  Consequently an
+    imported sample CV can never become the production applicant.
     """
     allowed_suffixes = {".pdf", ".txt", ".md", ".markdown", ".rst", ".csv"}
     suffix = Path(file.filename or "cv.txt").suffix.lower() or ".txt"
     if suffix not in allowed_suffixes:
         raise HTTPException(status_code=400, detail="Unsupported file type. Upload a PDF or plain-text CV.")
     content = await file.read()
-    UPLOADS_DIR.mkdir(exist_ok=True)
-    stored_path = UPLOADS_DIR / f"cv_{uuid.uuid4().hex}{suffix}"
-    stored_path.write_bytes(content)
+    with tempfile.TemporaryDirectory(prefix="jobs-finder-cv-preview-") as directory:
+        uploaded_path = Path(directory) / f"uploaded_cv{suffix}"
+        uploaded_path.write_bytes(content)
+        # An empty path is intentional: no temporary upload location can be
+        # retained in a profile-shaped preview or canonical applicant record.
+        preview = build_profile_from_cv_file(str(uploaded_path), resume_path="")
 
-    profile = build_profile_from_cv_file(str(stored_path))
-
-    if PROFILE_PATH.exists():
-        backup_path = PROFILE_PATH.parent / f"{PROFILE_PATH.name}.bak"
-        backup_path.write_text(PROFILE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
-    save_profile(profile, PROFILE_PATH)
     return {
         "ok": True,
-        "message": "Draft profile created from your CV. Review every field below before scanning or applying.",
-        **_profile_review_payload(profile),
+        "persisted": False,
+        "message": "CV import preview only. Your canonical profile.yaml was not changed; manually add only facts you confirm.",
+        "preview": _profile_review_payload(preview),
     }
 
 
@@ -433,7 +440,7 @@ def api_settings():
     configurable from the UI, it is presented as current configuration, not
     as a control.
     """
-    profile = load_profile(False)
+    profile = _runtime_profile(False)
     acbar_cfg = ((profile.get("job_sources") or {}).get("acbar") or {}) if isinstance(profile, dict) else {}
     reliefweb_cfg = ((profile.get("job_sources") or {}).get("reliefweb") or {}) if isinstance(profile, dict) else {}
     return {
@@ -499,13 +506,13 @@ def api_scans(limit: int = 10):
 
 @app.post("/api/find")
 async def api_find():
-    profile = load_profile(True)
+    profile = _runtime_profile(True)
     scan = await run_discovery_scan(profile)
-    resume_text = extract_resume_text(profile.get("resume_path", ""))
     # One shared orchestration identical to the CLI (utils/recommendations.py):
     # store, match, record — the recommendation collection in the response is
-    # the exact collection the summary counted.
-    evaluate_scan_jobs(scan, profile, resume_text)
+    # the exact collection the summary counted.  Runtime applicant evidence is
+    # the canonical profile only, never CV/cache text.
+    evaluate_scan_jobs(scan, profile)
     result = scan.to_dict()
     log_scan_result(result)
     return result
@@ -521,16 +528,15 @@ def api_job(job_id: str):
 
 @app.post("/api/jobs/{job_id}/prepare")
 def api_prepare(job_id: str):
-    profile = load_profile(True)
+    profile = _runtime_profile(True)
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Vacancy not found")
-    resume_text = extract_resume_text(profile.get("resume_path", ""))
-    report = match_job_against_profile(job, profile, resume_text=resume_text).to_dict()
+    report = match_job_against_profile(job, profile).to_dict()
     log_medical_match(job_id, report)
     if report.get("readiness_status") == NOT_ELIGIBLE_STATUS:
         raise HTTPException(status_code=409, detail="This vacancy is NOT_ELIGIBLE; no application package was generated.")
-    docs = prepare_application_bundle(job, profile, report, resume_text=resume_text)
+    docs = prepare_application_bundle(job, profile, report)
     update_tailored_resume(job_id, docs)
     return {"job_id": job_id, "documents": docs.get("generated_paths", {}), "package": docs.get("application_package", {})}
 

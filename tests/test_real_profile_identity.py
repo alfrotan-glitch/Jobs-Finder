@@ -80,7 +80,7 @@ def confirmed_profile():
             {"name": "Dari", "level": "Native", "verified": True},
             {"name": "English", "level": "Fluent", "verified": True},
         ],
-        "preferences": {"locations": ["Kabul", "Afghanistan"]},
+        "preferences": {"locations": [{"name": "Kabul", "verified": True}, {"name": "Afghanistan", "verified": True}]},
     }
 
 

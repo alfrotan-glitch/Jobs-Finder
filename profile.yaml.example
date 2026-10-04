@@ -20,20 +20,10 @@
 #     you for review, but it can never satisfy a hard job requirement and is
 #     never printed as a confirmed credential in a generated CV/cover letter.
 #
-# There are TWO kinds of `verified: true` fields below:
-#   (A) A flag that sits beside ONE specific claim or block and confirms only
-#       that claim/block (e.g. `personal.verification.gender`,
-#       `personal.verification.email`, `medical_education[].verified`,
-#       `license_registration.verified`, `medical_exit_exam.verified`, each
-#       `languages[].verified`, each `work_history[].verified`). Setting it
-#       to `true` confirms exactly that fact/block and nothing else.
-#   (B) A small number of plain scalar number fields that have NO sibling
-#       `verified` flag at all (`clinical_experience.years`,
-#       `ngo_humanitarian_experience.years`). These are the one deliberate
-#       exception: because you type the number directly, and a CV import
-#       NEVER fills them in (it always leaves them blank), simply entering a
-#       real number here already is your confirmation -- do not type a
-#       number you have not personally verified.
+# Every factual claim has an adjacent verification flag.  For example,
+# `clinical_experience.verified` verifies only its stated years, and
+# `medical_education[].verified` verifies only that one education entry.
+# There are no inferred or presence-based verification exceptions.
 # ---------------------------------------------------------------------------
 
 personal:
@@ -63,7 +53,8 @@ personal:
     linkedin: false
     professional_title: false
 
-resume_path: ""  # Optional local CV/PDF path; profile.yaml remains source of truth.
+# CV files are preview-only imports. They are never a runtime evidence source
+# and no local document path is stored in the canonical applicant profile.
 
 medical_education: []
 # Add entries only after review. `verified: true` confirms one education entry.
@@ -91,12 +82,10 @@ medical_exit_exam:
   verified: false     # Set to true only once you have personally confirmed this.
 
 clinical_experience:
-  years: ""   # Add a number only when verified. This field has NO separate
-              # `verified` flag (see note (B) at the top of this file): a CV
-              # import never fills this in, so typing a real number here IS
-              # itself your confirmation -- do not enter a number you have
-              # not personally verified.
+  years: ""   # Add only a confirmed value. Lower-bound wording such as "> 3"
+              # is allowed when you know the minimum but not an exact total.
   settings: []
+  verified: false  # Only literal true verifies this duration claim.
 
 # Each work_history entry may include: title, organization, location, start,
 # end, bullets/description, and `verified: true`. `verified: true` on an
@@ -152,20 +141,21 @@ languages: []
 certificates: []
 
 ngo_humanitarian_experience:
-  years: ""   # Add a number only when verified (same no-separate-flag rule
-              # as clinical_experience.years above).
+  years: ""   # Add only a confirmed value (or a confirmed lower bound, e.g. "> 3").
   organizations: []
+  verified: false  # Only literal true verifies this duration claim.
 
 preferences:
   roles: []
-  # These locations have no separate `verified` flag either: typing a real
-  # location here (not left as "Needs verification") is itself your
-  # confirmation that it is a genuine current/preferred location. A CV
-  # import never fills in a real location here -- it always leaves this as
-  # "Needs verification" until you edit it yourself.
+  # Each preferred location is a separate claim and must be explicitly
+  # verified. Example: {name: Kabul, verified: true}
   locations: []
-  willing_to_relocate: "Needs verification"   # Yes / No / Needs verification
-  field_deployment: "Needs verification"      # Yes / No / Needs verification
+  willing_to_relocate:
+    value: "Needs verification"   # Yes / No / Needs verification
+    verified: false
+  field_deployment:
+    value: "Needs verification"   # Yes / No / Needs verification
+    verified: false
 
 sources:
   enabled: []     # Empty means use maintained active sources: ACBAR + ReliefWeb.

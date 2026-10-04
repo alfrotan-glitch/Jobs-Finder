@@ -31,7 +31,7 @@ PROFILE_YAML = """
 personal:
   first_name: Jane
   last_name: Doe
-  email: jane.doe@example.org
+  email: sample.owner@example.org
   gender: male
   nationality: Afghan
   verification:

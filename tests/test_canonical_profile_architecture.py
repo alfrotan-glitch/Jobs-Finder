@@ -21,6 +21,7 @@ from utils import profile as profile_repository
 from utils import resume_parser, tracker
 from utils.documents import prepare_application_bundle
 from utils.medical_matcher import match_job_against_profile
+from utils.paths import PROJECT_ROOT
 from utils.profile import (
     CanonicalProfileError,
     CanonicalProfileMissingError,
@@ -30,6 +31,12 @@ from utils.profile import (
     save_canonical_profile,
 )
 from utils.recommendations import evaluate_scan_jobs
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+SAMPLE_CV = (FIXTURES / "sample_jane_doe_cv.txt").read_text(encoding="utf-8")
+SAMPLE_NAME = SAMPLE_CV.splitlines()[0]
+SAMPLE_EMAIL = next(line.split(":", 1)[1].strip() for line in SAMPLE_CV.splitlines() if line.startswith("Email:"))
 
 
 CANONICAL_TEST_PROFILE = {
@@ -90,6 +97,20 @@ def _medical_job() -> dict:
             "vacancy_url": "https://jobs.example.org/vacancies/canonical-profile-job",
         },
     }
+
+
+def test_sample_identity_is_isolated_to_the_test_fixture():
+    """No source file outside tests/fixtures may contain the sample applicant."""
+    excluded_parts = {".git", ".venv", ".pytest_cache", "__pycache__"}
+    for path in PROJECT_ROOT.rglob("*"):
+        if not path.is_file() or excluded_parts.intersection(path.parts) or path == FIXTURES / "sample_jane_doe_cv.txt":
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        assert SAMPLE_NAME not in text, path
+        assert SAMPLE_EMAIL not in text, path
 
 
 def test_profile_example_is_never_a_runtime_fallback(tmp_path, monkeypatch):
@@ -158,8 +179,8 @@ def test_all_runtime_entry_points_and_major_subsystems_share_one_canonical_profi
         ]
     )
     assert "Canonical Applicant" in rendered
-    assert "Jane Doe" not in rendered
-    assert "jane.doe@example.org" not in rendered
+    assert SAMPLE_NAME not in rendered
+    assert SAMPLE_EMAIL not in rendered
 
 
 def test_database_has_no_applicant_profile_store(isolated_canonical_profile):
@@ -183,7 +204,7 @@ def test_legacy_resume_cache_cannot_supply_sample_identity_to_production_matchin
     legacy_cache.mkdir()
     digest = hashlib.sha256(source_cv.read_bytes()).hexdigest()
     (legacy_cache / f"resume_{digest}.txt").write_text(
-        "Jane Doe\njane.doe@example.org\n", encoding="utf-8"
+        f"{SAMPLE_NAME}\n{SAMPLE_EMAIL}\n", encoding="utf-8"
     )
     assert resume_parser.extract_resume_text(str(source_cv)) == source_cv.read_text(encoding="utf-8")
 
@@ -193,15 +214,15 @@ def test_legacy_resume_cache_cannot_supply_sample_identity_to_production_matchin
     bundle = prepare_application_bundle(job, canonical, report, out_dir=tmp_path / "documents")
     generated = Path(bundle["generated_paths"]["tailored_cv"]["txt"]).read_text(encoding="utf-8")
     production_output = json.dumps({"match": report, "document": generated})
-    assert "Jane Doe" not in production_output
-    assert "jane.doe@example.org" not in production_output
+    assert SAMPLE_NAME not in production_output
+    assert SAMPLE_EMAIL not in production_output
 
 
 def test_import_cv_is_preview_only_and_cannot_create_an_alternate_profile(
     isolated_canonical_profile, tmp_path, capsys
 ):
     source_cv = tmp_path / "sample-cv.txt"
-    source_cv.write_text("Jane Doe\nMedical Doctor (MD)\njane.doe@example.org\n", encoding="utf-8")
+    source_cv.write_text(SAMPLE_CV, encoding="utf-8")
     before = profile_repository.canonical_profile_path().read_text(encoding="utf-8")
 
     main.cmd_import_cv(str(source_cv))
@@ -250,5 +271,5 @@ def test_real_runtime_profile_identity_is_consistent_and_contains_no_invented_re
         ]
     )
     assert "Dr. Allah Yar Frotan" in rendered
-    assert "Jane Doe" not in rendered
-    assert "jane.doe@example.org" not in rendered
+    assert SAMPLE_NAME not in rendered
+    assert SAMPLE_EMAIL not in rendered

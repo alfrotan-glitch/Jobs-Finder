@@ -174,7 +174,7 @@ def test_personal_identity_fields_require_explicit_personal_verification():
         "personal": {
             "first_name": "Jane",
             "last_name": "Doe",
-            "email": "jane.doe@example.org",
+            "email": "sample.owner@example.org",
             "phone": "+93700000000",
             "gender": "female",
             "nationality": "Afghan",
@@ -192,7 +192,7 @@ def test_personal_identity_fields_verify_individually():
         "personal": {
             "first_name": "Jane",
             "last_name": "Doe",
-            "email": "jane.doe@example.org",
+            "email": "sample.owner@example.org",
             "gender": "female",
             "nationality": "Afghan",
             "location": "Kabul",
@@ -211,7 +211,7 @@ def test_personal_fields_verify_only_through_their_own_flag():
         "personal": {
             "first_name": "Jane",
             "last_name": "Doe",
-            "email": "jane.doe@example.org",
+            "email": "sample.owner@example.org",
             "gender": "female",
             "nationality": "Afghan",
             "verification": {"first_name": True, "last_name": True, "email": True, "gender": True, "nationality": True},

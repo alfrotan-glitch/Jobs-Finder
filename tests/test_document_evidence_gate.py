@@ -335,11 +335,7 @@ def test_cv_import_draft_profile_cannot_enter_matching_or_document_generation():
     from utils.profile import CanonicalProfileError
     from utils.profile_builder import build_profile_from_cv_text
 
-    cv_text = (
-        "Jane Doe\nMedical Doctor (MD)\nEmail: jane.doe@example.org\n"
-        "Phone: +93 70 111 2233\nLicense: Afghan Medical Council registration\n"
-        "Languages: English (fluent), Dari (native)\n"
-    )
+    cv_text = (Path(__file__).parent / "fixtures" / "sample_jane_doe_cv.txt").read_text(encoding="utf-8")
     preview = build_profile_from_cv_text(cv_text, resume_path="cv.txt")
     job = _job("MD required. Afghan Medical Council registration required. Fluent English. Apply to hr@example.org by 2026-12-31.")
 

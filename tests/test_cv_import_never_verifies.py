@@ -5,32 +5,13 @@ Uses a synthetic CV claiming an MD, license/registration, fluent English,
 `verified: true` anywhere in the resulting profile.
 """
 
+from pathlib import Path
+
 from utils.profile import build_profile_evidence
 from utils.profile_builder import build_profile_from_cv_text
 
-SYNTHETIC_CV = """
-Jane Doe
-Medical Doctor (MD)
-Email: jane.doe@example.org
-Phone: +93 70 000 0000
-Kabul, Afghanistan
-
-Education:
-Doctor of Medicine (MD), Example Medical University, 2016
-
-License:
-Afghan Medical Council registration, valid medical license
-
-Medical Exit Exam: Completed in 2017
-
-Languages: English (fluent), Dari (native), Pashto (fluent)
-
-Work Experience:
-2018-2023 Medical Officer, Example Clinic, Kabul
-- Provided clinical consultations for 5 years
-
-Certificates: Basic Life Support, Advanced Cardiac Life Support
-"""
+FIXTURES = Path(__file__).parent / "fixtures"
+SYNTHETIC_CV = (FIXTURES / "sample_jane_doe_cv.txt").read_text(encoding="utf-8")
 
 
 def _walk_verified_flags(node, path=""):

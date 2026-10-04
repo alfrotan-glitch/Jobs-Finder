@@ -4,6 +4,7 @@ return.
 """
 
 import io
+from pathlib import Path
 
 import pytest
 import yaml
@@ -44,11 +45,7 @@ def test_profile_review_empty_when_no_profile(client):
     assert body["fields"] == []
 
 
-SYNTHETIC_CV = (
-    "Jane Doe\nMedical Doctor (MD)\nEmail: jane.doe@example.org\n"
-    "License: Afghan Medical Council registration, valid medical license\n"
-    "Medical Exit Exam: Completed\nLanguages: English (fluent)\n"
-)
+SYNTHETIC_CV = (Path(__file__).parent / "fixtures" / "sample_jane_doe_cv.txt").read_text(encoding="utf-8")
 
 
 def test_import_cv_returns_unverified_preview_without_creating_a_profile(client, tmp_path):

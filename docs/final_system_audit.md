@@ -40,6 +40,8 @@ Conservative omissions are intentional:
 - no invented current employer or current title;
 - no unconfirmed nationality, gender, relocation, or field-deployment assertion.
 
+The three owner-supplied professional references are private local metadata only. They are deliberately excluded from matching, qualification/employment evidence, and default Master/tailored CV output. A vacancy that requests references receives a generic manual checklist; release of approved contact details remains an owner decision.
+
 ## 3. Verification and evidence repairs
 
 The codebase now enforces one literal verification rule: only an adjacent Boolean `verified: true` counts. String values such as `"true"`, `"yes"`, `1`, missing flags, and placeholder text do not count.
@@ -132,7 +134,7 @@ Normal ACBAR discovery requests successive listing pages until an actual empty l
 
 ReliefWeb is accurately documented as a bounded one-result-page secondary route, not a full pagination crawler. The default bound is 20. If the first result page reaches that bound, the source reports `RESULT_LIMIT_REACHED` and the overall scan is partial; fewer results are only the observable end of that one-page route.
 
-No live external market scan was run for this audit. The final acceptance gate also attempted read-only connectivity probes to the official ACBAR and ReliefWeb listing URLs; both ended with a TLS/SSL EOF connection error in this environment, before vacancy data was parsed or stored. Therefore this report makes **no claim** that there were zero jobs or that the live Afghanistan job market was empty. Network/source failure must remain an environment limitation (`SOURCES_UNAVAILABLE`, `PARTIAL_SCAN`, or `SCAN_FAILED` as applicable), not a market conclusion.
+No live external market scan was run for this audit. Read-only official-listing connectivity probes were retried on **2026-10-06T16:04:03+00:00**: both `https://www.acbar.org/en/jobs` and `https://reliefweb.int/jobs?search=Afghanistan%20health%20medical%20nutrition` failed before receiving an HTTP response with `httpx.ConnectError: TLS/SSL connection has been closed (EOF) (_ssl.c:992)`. No listing/detail HTML was parsed, no vacancy was created, and no scan result was persisted. Therefore this report makes **no claim** that there were zero jobs or that the live Afghanistan job market was empty. Network/source failure must remain an environment limitation (`SOURCES_UNAVAILABLE`, `PARTIAL_SCAN`, or `SCAN_FAILED` as applicable), not a market conclusion.
 
 ## 9. Tests and static/runtime checks
 
@@ -141,7 +143,7 @@ Executed in this checkout using a freshly created project `.venv` on Python 3.11
 | Check | Result |
 | --- | --- |
 | Targeted dashboard/canonical-profile/provenance/security regressions | **39 passed, 1 skipped** |
-| Final full suite with the ignored local `profile.yaml` present | **242 passed** in 8.39 s |
+| Final full suite with the ignored local `profile.yaml` present | **243 passed** in 8.29 s |
 | Ruff | `python -m ruff check .` — **passed** |
 | Bytecode compilation | `python -m compileall -q main.py dashboard utils tests` — **passed** |
 | Dashboard JavaScript syntax | `node --check dashboard/static/app.js` — **passed** |

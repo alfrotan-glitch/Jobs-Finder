@@ -119,6 +119,8 @@ python main.py master-cv
 
 It writes TXT, DOCX, and PDF files under ignored `documents/master_cv/`. The Master CV contains no vacancy, employer, target-role, or application wording; it is a general presentation of the canonical profile. `prepare` is the separate downstream step that analyzes one vacancy and creates a vacancy-specific CV without modifying either `profile.yaml` or the Master CV.
 
+Professional references may be stored as private local metadata, but they are not matching, employment, or credential evidence and are never printed in the Master CV or a vacancy-specific CV by default. When a vacancy asks for references, the package presents a generic manual checklist; the owner decides whether to release approved contact details.
+
 ### Local dashboard privacy
 
 The dashboard is a local workstation interface, not a hosted multi-user service:

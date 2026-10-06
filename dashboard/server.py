@@ -472,16 +472,31 @@ def api_settings():
     }
 
 
+def _scan_context(scan: dict[str, Any]) -> dict[str, str] | None:
+    """Small, explicit provenance record for a persisted scan collection.
+
+    Recommendation rows are stored scan results, not a live market feed. The
+    dashboard needs this timestamp/status context alongside the authoritative
+    collection so it can never imply that a historical scan is current.
+    """
+    if not isinstance(scan, dict) or not scan:
+        return None
+    return {
+        "status": str(scan.get("status") or ""),
+        "started_at": str(scan.get("started_at") or ""),
+        "finished_at": str(scan.get("finished_at") or ""),
+    }
+
+
 @app.get("/api/recommended")
 def api_recommended(limit: int = 200):
-    """Serve the same recommendation collection the scan itself produced.
+    """Serve the authoritative recommendation collection with its provenance.
 
-    The authoritative per-scan collection is persisted inside the scan run by
-    the backend; this endpoint returns it verbatim (only overlaying current
-    package/progress state from the tracker for cards that have since had a
-    package generated). When no scan run with a stored collection exists yet,
-    the stored-history view is served instead, which applies the same
-    recommendation gate via utils/recommendations.py.
+    The collection is persisted within its scan run and returned verbatim
+    (except current package/progress overlays). ``data_origin`` and ``scan``
+    explicitly identify saved scan data; this endpoint never represents a
+    historical result as a fresh live-source result. If no scan collection
+    exists, the stored-history view uses the same recommendation gate.
     """
     latest = get_latest_scan() or {}
     entries = latest.get("recommendations")
@@ -493,8 +508,8 @@ def api_recommended(limit: int = 200):
             if row:
                 entry = {**entry, "status": row.get("status") or entry.get("status"), "package_status": row.get("package_status") or entry.get("package_status")}
             merged.append(entry)
-        return {"jobs": merged[:limit]}
-    return {"jobs": get_recommended_jobs(limit=limit)}
+        return {"jobs": merged[:limit], "data_origin": "latest_saved_scan", "scan": _scan_context(latest)}
+    return {"jobs": get_recommended_jobs(limit=limit), "data_origin": "stored_history", "scan": None}
 
 
 @app.get("/api/jobs")

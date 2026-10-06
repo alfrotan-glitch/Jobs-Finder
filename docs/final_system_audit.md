@@ -110,7 +110,8 @@ Recommendation accounting has one authority in `utils.recommendations`:
 - scan recommendations are collected once from `(job, match)` pairs;
 - `recommended_from_scan == len(scan.recommendations)` is structural;
 - CLI scan output, dashboard scan response/activity, and persisted scan collection use that same list;
-- the stored-history view applies the same recommendation gate and ordering.
+- the stored-history view applies the same recommendation gate and ordering;
+- recommendation API responses include a saved-scan timestamp/status context (or an explicit stored-history origin), and the dashboard visibly labels that provenance rather than implying a live refresh.
 
 ## 8. Discovery and source status
 
@@ -124,7 +125,7 @@ Normal ACBAR discovery requests successive listing pages until an actual empty l
 
 ReliefWeb is accurately documented as a bounded one-result-page secondary route, not a full pagination crawler. The default bound is 20. If the first result page reaches that bound, the source reports `RESULT_LIMIT_REACHED` and the overall scan is partial; fewer results are only the observable end of that one-page route.
 
-No live external market scan was run for this audit. Therefore this report makes **no claim** that there were zero jobs or that the live Afghanistan job market was empty. Network/source failure must remain an environment limitation (`SOURCES_UNAVAILABLE`, `PARTIAL_SCAN`, or `SCAN_FAILED` as applicable), not a market conclusion.
+No live external market scan was run for this audit. The final acceptance gate also attempted read-only connectivity probes to the official ACBAR and ReliefWeb listing URLs; both ended with a TLS/SSL EOF connection error in this environment, before vacancy data was parsed or stored. Therefore this report makes **no claim** that there were zero jobs or that the live Afghanistan job market was empty. Network/source failure must remain an environment limitation (`SOURCES_UNAVAILABLE`, `PARTIAL_SCAN`, or `SCAN_FAILED` as applicable), not a market conclusion.
 
 ## 9. Tests and static/runtime checks
 
@@ -133,7 +134,8 @@ Executed in this checkout using a freshly created project `.venv` on Python 3.11
 | Check | Result |
 | --- | --- |
 | Focused canonical/CV/document/matcher/dashboard regressions | **55 passed** |
-| Full test suite | **232 passed** in 8.78 s |
+| Initial full test suite with local private profile present | **232 passed** in 8.78 s |
+| Final acceptance suite without a private `profile.yaml` mounted | **233 passed, 1 skipped** (the skip is the intentionally local real-profile integration assertion) |
 | Ruff | `ruff check .` — **passed** |
 | Bytecode compilation | `python -m compileall -q main.py dashboard utils tests` — **passed** |
 | Patch whitespace | `git diff --check` — **passed** |

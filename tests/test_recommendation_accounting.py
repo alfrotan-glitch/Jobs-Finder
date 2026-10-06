@@ -251,8 +251,14 @@ def test_dashboard_find_recommended_and_scan_activity_agree(client, monkeypatch)
     ordered_ids = [entry["id"] for entry in body["recommendations"]]
     assert not any(entry["title"] == "Project Manager" for entry in body["recommendations"])
 
-    recommended = client.get("/api/recommended").json()["jobs"]
+    recommended_response = client.get("/api/recommended").json()
+    recommended = recommended_response["jobs"]
     assert [entry["id"] for entry in recommended] == ordered_ids
+    # Recommendation rows are stored scan data, never implied to be a live
+    # market result. The API returns the precise scan context for the UI.
+    assert recommended_response["data_origin"] == "latest_saved_scan"
+    assert recommended_response["scan"]["started_at"] == body["started_at"]
+    assert recommended_response["scan"]["finished_at"] == body["finished_at"]
 
     latest = client.get("/api/scan/latest").json()["scan"]
     assert latest["summary"]["recommended_from_scan"] == 2

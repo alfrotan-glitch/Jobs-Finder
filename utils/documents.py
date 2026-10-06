@@ -496,12 +496,13 @@ def _education_lines(items: list[Any], *, limit: int | None = None) -> list[str]
     lines: list[str] = []
     for item in _verified_dict_items(items):
         degree = _resolved_entry_value(item, "degree")
+        field = _resolved_entry_value(item, "field", "field_of_study", "specialization")
         institution = _resolved_entry_value(item, "institution")
         start = _resolved_entry_value(item, "start")
         end = _resolved_entry_value(item, "end")
         year = _resolved_entry_value(item, "graduation_year")
         years = f"{start}–{end}" if start and end else year
-        parts = [part for part in [degree, institution, years] if part]
+        parts = [part for part in [degree, field, institution, years] if part]
         line = " — ".join(parts).strip()
         if line and line not in lines:
             lines.append(line)
@@ -847,6 +848,99 @@ def _render_canonical_cv_text(model: dict[str, Any]) -> str:
         language_line = "  |  ".join(f"{name}{(' — ' + level) if level else ''}" for name, level in model["languages"])
         lines.extend(["LANGUAGES", f"- {language_line}", ""])
     return "\n".join(lines).strip() + "\n"
+
+
+def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
+    """Build a position-neutral master-CV model from verified canonical facts.
+
+    This is deliberately separate from vacancy tailoring. It preserves the
+    supplied work-history order and verified competency inventory; it receives
+    no vacancy, match report, employer, or target-title input, so a role's
+    wording and priority can never become a new canonical applicant fact.
+    """
+    profile = require_runtime_profile(profile)
+    evidence = build_profile_evidence(profile)
+    raw_education_items = _profile_list(profile, "medical_education")
+    education = _education_lines(raw_education_items)
+    work_entries, unverified_work = _split_work_entries(profile)
+    verified_skills, unverified_skills = _skills_by_verification(profile)
+    certs_verified, unverified_certs = _certificates_by_verification(profile)
+    languages = _language_lines(profile, verified_only=True)
+    unverified_languages = [item for item in _language_lines(profile) if item not in languages]
+
+    # The canonical profile keeps the owner's source order. In contrast to a
+    # vacancy CV, there is no relevance score and therefore no role-specific
+    # reordering or selection.
+    experience = [
+        {
+            "role": _resolved_entry_value(entry, "title"),
+            "org": _resolved_entry_value(entry, "organization"),
+            "loc": _resolved_entry_value(entry, "location"),
+            "dates": _experience_dates(entry),
+            "bullets": _split_substantive_bullets(_entry_text_values(entry)),
+        }
+        for entry in work_entries
+    ]
+    model = {
+        "name": _full_name(profile),
+        "headline": _verified_profile_title(profile, evidence) or "Medical Doctor",
+        "contact_lines": _contact_lines(profile),
+        "profile": _verified_summary_sentence(profile, evidence, {}, {}),
+        "strengths": _safe_bullets(verified_skills),
+        "experience": experience,
+        "education": education,
+        "registration": evidence.evidence_text("license_registration", verified_only=True) if evidence.has_verified("license_registration") else [],
+        "exit_exam": evidence.evidence_text("medical_exit_exam", verified_only=True) if evidence.has_verified("medical_exit_exam") else [],
+        "certifications": _safe_bullets(certs_verified),
+        "languages": _language_pairs(languages),
+    }
+    warnings: list[str] = []
+    for entry in unverified_work:
+        label = _experience_header(entry) if isinstance(entry, dict) else str(entry).strip()
+        if label:
+            warnings.append(f"Unverified work history omitted from master CV: {label}")
+    if unverified_skills:
+        warnings.append("Unverified skills omitted from master CV: " + ", ".join(unverified_skills[:15]))
+    if unverified_certs:
+        warnings.append("Unverified certificates/training omitted from master CV: " + ", ".join(unverified_certs[:15]))
+    if unverified_languages:
+        warnings.append("Unverified languages omitted from master CV: " + ", ".join(unverified_languages[:10]))
+
+    return {
+        "generated_at": date.today().isoformat(),
+        "position_neutral": True,
+        "master_cv_model": model,
+        "master_cv_text": _render_canonical_cv_text(model),
+        "review_warnings": warnings,
+        "provenance": {
+            "profile_fields": ["personal", "professional_summary", "medical_education", "license_registration", "medical_exit_exam", "work_history", "skills", "languages", "certificates"],
+            "tailoring_method": "none — position-neutral presentation of verified canonical-profile evidence only",
+        },
+    }
+
+
+def write_master_cv(
+    profile: dict[str, Any],
+    *,
+    out_dir: str | Path = "documents/master_cv",
+) -> dict[str, Any]:
+    """Write TXT/DOCX/PDF position-neutral master-CV artifacts locally.
+
+    The output belongs under the ignored documents directory and never writes
+    back into ``profile.yaml``. Vacancy-specific CVs continue to use
+    ``prepare_application_bundle`` downstream of matching/tailoring.
+    """
+    master = generate_master_cv(profile)
+    out = Path(out_dir)
+    base = out / f"{_safe_slug(_full_name(profile), max_len=70)}_position_neutral_master_cv"
+    master["generated_paths"] = _write_text_docx_pdf(
+        master["master_cv_text"],
+        base,
+        document_type="cv",
+        metadata={"document_kind": "position-neutral master CV"},
+        canonical_cv_model=master["master_cv_model"],
+    )
+    return master
 
 
 def generate_tailored_documents(

@@ -55,7 +55,7 @@ def _mixed_profile():
             "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True},
         },
         "medical_education": [
-            {"degree": "MD", "institution": "Kabul Medical University", "verified": True},
+            {"degree": "MD", "institution": "Example Medical University", "verified": True},
             {"degree": "MD", "institution": "Unverified Diploma Mill", "verified": False},
         ],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},

@@ -12,7 +12,7 @@ from typing import Any
 import yaml
 
 from utils.discovery import run_discovery_scan
-from utils.documents import prepare_application_bundle
+from utils.documents import prepare_application_bundle, write_master_cv
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.paths import CANONICAL_DB_PATH
 from utils.profile import CanonicalProfileError, load_canonical_profile
@@ -147,6 +147,20 @@ def print_recommended(limit: int = 20) -> None:
     _print_recommendation_entries(jobs)
 
 
+def cmd_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
+    """Write the local, position-neutral master CV from canonical evidence."""
+    master = write_master_cv(profile)
+    print("Position-neutral master CV prepared from verified canonical-profile evidence.")
+    print("Generated files:")
+    for label, value in (master.get("generated_paths") or {}).items():
+        print(f"- {label}: {value}")
+    if master.get("review_warnings"):
+        print("Review warnings:")
+        for warning in master["review_warnings"]:
+            print(f"- {warning}")
+    return master
+
+
 def cmd_prepare(profile: dict[str, Any], job_id: str) -> dict[str, Any] | None:
     job = get_job_by_id(job_id)
     if not job:
@@ -243,7 +257,7 @@ def main() -> None:
     import_cv = sub.add_parser("import-cv", help="Preview unverified CV facts; never writes a profile")
     import_cv.add_argument("cv_path")
 
-
+    sub.add_parser("master-cv", help="Write a position-neutral master CV from verified canonical-profile evidence")
 
     server = sub.add_parser("server", help="Launch the web dashboard")
     server.add_argument("--host", default="127.0.0.1")
@@ -275,6 +289,8 @@ def main() -> None:
     profile = _require_canonical_profile()
     if args.command == "find":
         asyncio.run(cmd_scan(profile))
+    elif args.command == "master-cv":
+        cmd_master_cv(profile)
     elif args.command == "prepare":
         cmd_prepare(profile, args.job_id)
     elif args.command == "open":

@@ -109,6 +109,16 @@ python main.py import-cv path/to/cv.pdf
 
 Review the output, then manually add only facts you personally confirm to canonical `profile.yaml` before scanning or preparing documents.
 
+### Position-neutral Master CV
+
+Generate or refresh the local Master CV only from verified canonical evidence:
+
+```bash
+python main.py master-cv
+```
+
+It writes TXT, DOCX, and PDF files under ignored `documents/master_cv/`. The Master CV contains no vacancy, employer, target-role, or application wording; it is a general presentation of the canonical profile. `prepare` is the separate downstream step that analyzes one vacancy and creates a vacancy-specific CV without modifying either `profile.yaml` or the Master CV.
+
 ### Local dashboard privacy
 
 The dashboard is a local workstation interface, not a hosted multi-user service:

@@ -30,7 +30,7 @@ Before the final push, the remote copy of this same fixed Arena branch was fetch
 - The SQLite database is a vacancy/scan/package store, not an applicant-profile store.
 - The local `profile.yaml` remains Git-ignored; it was not added to the commit.
 
-The owner-supplied canonical profile, when mounted in a private local runtime, is for **Dr. Allah Yar Frotan**, Medical Doctor (MD) and Health & Nutrition Specialist in Kabul, Afghanistan. It contains the supplied contact data, MD education, valid registration/license status without invented identifiers or dates, verified Medical Exit Exam, five supplied roles, seven supplied certificates/trainings, and verified Dari/Persian, English, and Pashto levels. The acceptance checkout intentionally does not include that ignored private file; the real-profile integration assertion therefore skips there rather than manufacturing a fallback profile.
+The owner-supplied canonical profile is present only in the private local runtime and contains the confirmed identity/contact data, medical education, registration status without invented identifiers or dates, Medical Exit Exam, supplied work history, certificates/training, and language levels. Its values are intentionally not repeated in tracked documentation. The local profile remains Git-ignored, and a real-profile integration assertion validates only structural/evidence invariants rather than embedding private applicant data in the repository.
 
 Conservative omissions are intentional:
 
@@ -88,7 +88,7 @@ The document pipeline:
 - refuses packages for deterministic `NOT_ELIGIBLE` vacancies;
 - never sends email, submits forms, bypasses CAPTCHA/MFA/login, or marks an application applied without explicit user confirmation.
 
-Three different role packages were regression-tested against one master mapping; each tailored output varied while the source profile stayed byte-for-byte unchanged.
+A position-neutral Master CV can be written locally from verified canonical evidence only. It receives no vacancy, employer, target-title, or application input, and writes ignored TXT/DOCX/PDF artifacts under `documents/master_cv/`. Three different role packages were regression-tested against one master mapping; each tailored output varied while the source profile stayed byte-for-byte unchanged.
 
 ## 7. Dashboard, CLI, and database
 
@@ -141,7 +141,7 @@ Executed in this checkout using a freshly created project `.venv` on Python 3.11
 | Check | Result |
 | --- | --- |
 | Targeted dashboard/canonical-profile/provenance/security regressions | **39 passed, 1 skipped** |
-| Final full suite without a private `profile.yaml` mounted | **239 passed, 1 skipped** in 9.53 s (the skip is the intentionally local real-profile integration assertion) |
+| Final full suite with the ignored local `profile.yaml` present | **242 passed** in 8.39 s |
 | Ruff | `python -m ruff check .` — **passed** |
 | Bytecode compilation | `python -m compileall -q main.py dashboard utils tests` — **passed** |
 | Dashboard JavaScript syntax | `node --check dashboard/static/app.js` — **passed** |

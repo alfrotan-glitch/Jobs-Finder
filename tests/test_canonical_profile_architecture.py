@@ -252,9 +252,13 @@ def test_real_runtime_profile_identity_is_consistent_and_contains_no_invented_re
 
     profile = load_canonical_profile(required=True)
     personal = profile["personal"]
-    assert f"{personal['first_name']} {personal['last_name']}" == "Dr. Allah Yar Frotan"
-    assert personal["professional_title"] == "Medical Doctor (MD) | Health & Nutrition Specialist"
-    assert personal["location"] == "Kabul, Afghanistan"
+    # Keep actual applicant data out of tracked source. The private profile
+    # itself carries the owner-confirmed values; this integration test proves
+    # only that resolved/verified identity and core credential fields flow
+    # through the real runtime without inventing sensitive identifiers.
+    for key in ["first_name", "last_name", "professional_title", "email", "phone", "location"]:
+        assert str(personal.get(key) or "").strip()
+        assert personal.get("verification", {}).get(key) is True
     assert profile["license_registration"]["number"] == ""
     assert profile["license_registration"]["issue_date"] == ""
     assert profile["license_registration"]["expiry_date"] == ""
@@ -269,6 +273,6 @@ def test_real_runtime_profile_identity_is_consistent_and_contains_no_invented_re
             bundle["application_package"]["email_draft"]["body"],
         ]
     )
-    assert "Dr. Allah Yar Frotan" in rendered
+    assert f"{personal['first_name']} {personal['last_name']}" in rendered
     assert SAMPLE_NAME not in rendered
     assert SAMPLE_EMAIL not in rendered

@@ -1,6 +1,6 @@
 # Final system audit — Jobs-Finder
 
-**Audit date:** 2026-10-04  
+**Audit date:** 2026-10-06
 **Repository:** `alfrotan-glitch/Jobs-Finder`  
 **Working branch:** `arena/01a10495-jobs-finder`
 
@@ -30,7 +30,7 @@ Before the final push, the remote copy of this same fixed Arena branch was fetch
 - The SQLite database is a vacancy/scan/package store, not an applicant-profile store.
 - The local `profile.yaml` remains Git-ignored; it was not added to the commit.
 
-The local canonical profile was created from the supplied, position-neutral facts for **Dr. Allah Yar Frotan**, Medical Doctor (MD) and Health & Nutrition Specialist in Kabul, Afghanistan. It contains the supplied contact data, MD education, valid registration/license status without invented identifiers or dates, verified Medical Exit Exam, five supplied roles, seven supplied certificates/trainings, and verified Dari/Persian, English, and Pashto levels.
+The owner-supplied canonical profile, when mounted in a private local runtime, is for **Dr. Allah Yar Frotan**, Medical Doctor (MD) and Health & Nutrition Specialist in Kabul, Afghanistan. It contains the supplied contact data, MD education, valid registration/license status without invented identifiers or dates, verified Medical Exit Exam, five supplied roles, seven supplied certificates/trainings, and verified Dari/Persian, English, and Pashto levels. The acceptance checkout intentionally does not include that ignored private file; the real-profile integration assertion therefore skips there rather than manufacturing a fallback profile.
 
 Conservative omissions are intentional:
 
@@ -56,7 +56,7 @@ Notable repairs:
 
 CV import is intentionally limited to an in-memory `DRAFT` preview:
 
-- uploads are held in a system temporary directory only for extraction;
+- dashboard uploads are accepted only as supported PDF/plain-text formats, streamed through an 8 MiB limit, and held in a system temporary directory only for extraction;
 - no imported CV path, cache, backup, YAML profile, or database applicant record is created;
 - no extracted fact can be marked verified by the importer;
 - draft previews are rejected by matching and document generation;
@@ -105,6 +105,13 @@ The dashboard was runtime-smoke-tested with the local profile:
 
 The settings response confirmed that background scanning and automatic submission are disabled. The dashboard does not keep a separate mutable applicant profile.
 
+Browser-facing dashboard hardening is also enforced centrally:
+
+- Swagger/ReDoc/OpenAPI endpoints are disabled; the supported interfaces are the dashboard and CLI;
+- every dashboard response is marked `no-store`/private and carries CSP, anti-frame, no-referrer, no-sniff, and restrictive browser-permission headers;
+- the dashboard does not enable CORS, and foreign-origin/referer state-changing browser requests are rejected before they can start a scan, alter verification, prepare a package, or mark an application;
+- these are defence-in-depth privacy controls for the loopback-first workstation app, not authentication. Public/shared-network deployment still requires real access control and TLS.
+
 Recommendation accounting has one authority in `utils.recommendations`:
 
 - scan recommendations are collected once from `(job, match)` pairs;
@@ -133,14 +140,14 @@ Executed in this checkout using a freshly created project `.venv` on Python 3.11
 
 | Check | Result |
 | --- | --- |
-| Focused canonical/CV/document/matcher/dashboard regressions | **55 passed** |
-| Initial full test suite with local private profile present | **232 passed** in 8.78 s |
-| Final acceptance suite without a private `profile.yaml` mounted | **233 passed, 1 skipped** (the skip is the intentionally local real-profile integration assertion) |
-| Ruff | `ruff check .` — **passed** |
+| Targeted dashboard/canonical-profile/provenance/security regressions | **39 passed, 1 skipped** |
+| Final full suite without a private `profile.yaml` mounted | **239 passed, 1 skipped** in 9.53 s (the skip is the intentionally local real-profile integration assertion) |
+| Ruff | `python -m ruff check .` — **passed** |
 | Bytecode compilation | `python -m compileall -q main.py dashboard utils tests` — **passed** |
+| Dashboard JavaScript syntax | `node --check dashboard/static/app.js` — **passed** |
 | Patch whitespace | `git diff --check` — **passed** |
-| Local canonical-profile smoke | **passed**: five roles, seven certificates, verified MD/registration/exit exam, `> 3` lower-bound preserved, council exam remains `Needs verification` |
-| Dashboard endpoint smoke | **passed** (root page plus five API endpoints listed above) |
+| Dashboard endpoint smoke without a private profile | **passed**: root, health, profile, recommendations, and scan endpoints returned HTTP 200; profile reported absent rather than loading a fallback |
+| CI configuration | The cross-platform GitHub Actions matrix now runs Ruff, Python compilation, JavaScript syntax validation, and pytest before reporting success. |
 
 The test run emitted one upstream FastAPI/Starlette TestClient deprecation warning about the installed `httpx` integration. It did not fail tests.
 

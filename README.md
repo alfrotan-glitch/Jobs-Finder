@@ -83,9 +83,11 @@ python -m pytest -q
 The same suite also runs automatically in GitHub Actions CI
 (`.github/workflows/tests.yml`) on `ubuntu-latest` and `windows-latest`
 with Python 3.11 and 3.12 for every push and pull request to `main`, so
-test execution is verified on both Linux and Windows. The Windows one-click
-start script (`run_jobs_finder.bat`) is reviewed and assertion-covered but
-is not itself executed by CI.
+test execution is verified on both Linux and Windows. Before pytest, CI also
+runs Ruff, compiles the Python entry points/modules/tests, and checks the
+dashboard JavaScript syntax with Node. The Windows one-click start script
+(`run_jobs_finder.bat`) is reviewed and assertion-covered but is not itself
+executed by CI.
 
 ## Profile/CV setup
 
@@ -106,6 +108,17 @@ python main.py import-cv path/to/cv.pdf
 ```
 
 Review the output, then manually add only facts you personally confirm to canonical `profile.yaml` before scanning or preparing documents.
+
+### Local dashboard privacy
+
+The dashboard is a local workstation interface, not a hosted multi-user service:
+
+- It binds to `127.0.0.1` by default. Do not bind it to a shared or public network without adding real access control and a TLS reverse proxy.
+- Browser responses use no-store cache headers, restrictive content/frame/referrer policies, and no CORS opt-in. State-changing browser requests with a foreign `Origin` or `Referer` are rejected.
+- Interactive API documentation endpoints are disabled; the supported interface is the dashboard and the documented CLI.
+- Dashboard CV previews accept PDF or plain-text formats only, stream the upload through an 8 MiB bound, process it in a temporary directory, and delete the temporary input before responding. This is a preview boundary, not a profile-import feature.
+
+These browser protections reduce accidental local exposure; they are **not** authentication or a reason to expose the dashboard publicly.
 
 ## Find jobs
 

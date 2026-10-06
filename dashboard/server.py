@@ -11,10 +11,11 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -56,9 +57,83 @@ from utils.tracker import (
 ROOT = PROJECT_ROOT
 DB_PATH = CANONICAL_DB_PATH
 
-app = FastAPI(title="Jobs-Finder")
+# CV previews are transient and intentionally bounded.  The dashboard is a
+# local workstation tool, not a general-purpose file-processing service; an
+# upload above this size offers no practical CV-review benefit and could force
+# the server to buffer excessive private data in memory.
+MAX_CV_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MiB
+CV_UPLOAD_CHUNK_BYTES = 64 * 1024
+
+# The product does not expose a public API surface, so Swagger/ReDoc/OpenAPI
+# endpoints are disabled rather than leaving interactive documentation on a
+# dashboard that may display private applicant data.
+app = FastAPI(title="Jobs-Finder", docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=str(ROOT / "dashboard" / "static")), name="static")
 templates = Jinja2Templates(directory=str(ROOT / "dashboard" / "templates"))
+
+
+def _is_same_origin_browser_request(request: Request) -> bool:
+    """Accept same-origin browser writes while rejecting cross-site requests.
+
+    Jobs-Finder deliberately has no browser authentication because its normal
+    deployment is the loopback-only local dashboard.  This check is a focused
+    CSRF boundary for the rare case a user explicitly binds it elsewhere: a
+    browser that sends Origin or Referer metadata may change state only from
+    the dashboard's own origin.  Header-less non-browser calls remain useful
+    for local CLI/test tooling and are not an authentication mechanism.
+    """
+    expected = urlsplit(str(request.base_url))
+    supplied = request.headers.get("origin") or request.headers.get("referer")
+    if not supplied:
+        return True
+    candidate = urlsplit(supplied)
+    return candidate.scheme == expected.scheme and candidate.netloc == expected.netloc
+
+
+@app.middleware("http")
+async def _protect_browser_responses(request: Request, call_next):
+    """Apply privacy defaults and same-origin protection to every route."""
+    if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and not _is_same_origin_browser_request(request):
+        response = JSONResponse(
+            status_code=403,
+            content={"detail": "Cross-origin state-changing requests are not allowed."},
+        )
+    else:
+        response = await call_next(request)
+
+    # Profile details, generated documents, and scan history are private local
+    # data.  Keep them out of browser/proxy caches and prohibit framing and
+    # MIME sniffing. The CSP matches the shipped self-hosted HTML/CSS/JS only.
+    response.headers.setdefault("Cache-Control", "no-store, max-age=0, private")
+    response.headers.setdefault("Pragma", "no-cache")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
+        "object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "font-src 'self'; connect-src 'self'",
+    )
+    return response
+
+
+async def _read_bounded_cv_upload(file: UploadFile) -> bytes:
+    """Read an uploaded CV in bounded chunks, rejecting it before parsing."""
+    data = bytearray()
+    while True:
+        chunk = await file.read(CV_UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            return bytes(data)
+        data.extend(chunk)
+        if len(data) > MAX_CV_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"CV upload is too large. The maximum supported size is {MAX_CV_UPLOAD_BYTES // (1024 * 1024)} MiB.",
+            )
 
 
 def _runtime_profile(required: bool = False) -> dict[str, Any]:
@@ -426,9 +501,16 @@ async def api_import_cv(file: UploadFile = File(...)):
     """
     allowed_suffixes = {".pdf", ".txt", ".md", ".markdown", ".rst", ".csv"}
     suffix = Path(file.filename or "cv.txt").suffix.lower() or ".txt"
-    if suffix not in allowed_suffixes:
-        raise HTTPException(status_code=400, detail="Unsupported file type. Upload a PDF or plain-text CV.")
-    content = await file.read()
+    try:
+        if suffix not in allowed_suffixes:
+            raise HTTPException(status_code=400, detail="Unsupported file type. Upload a PDF or plain-text CV.")
+        content = await _read_bounded_cv_upload(file)
+    finally:
+        # Starlette normally cleans this up after the request, but closing it
+        # here makes the preview's non-retention guarantee explicit on both
+        # success and every early error path.
+        await file.close()
+
     with tempfile.TemporaryDirectory(prefix="jobs-finder-cv-preview-") as directory:
         uploaded_path = Path(directory) / f"uploaded_cv{suffix}"
         uploaded_path.write_bytes(content)

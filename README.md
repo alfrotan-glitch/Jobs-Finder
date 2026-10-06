@@ -65,7 +65,7 @@ The dashboard binds to `127.0.0.1` by default and is not exposed to the LAN. Cho
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp profile.yaml.example profile.yaml
+# profile.yaml is already the tracked canonical applicant record.
 python main.py server --host 127.0.0.1 --port 8080
 ```
 
@@ -91,13 +91,15 @@ executed by CI.
 
 ## Profile/CV setup
 
-`profile.yaml` at the repository root is the **only** production applicant record. The CLI, dashboard, matching, recommendations, readiness checks, and document/package generation all resolve that one file through the same profile repository. `profile.yaml.example` is a schema/template only; it is never loaded as applicant data or used as a fallback.
+`profile.yaml` at the repository root is the **only** production applicant record and is Git-tracked. It is the shared source used by the Agent workspace, GitHub, and a normal `git pull` in the Windows Desktop checkout. The CLI, dashboard, matching, recommendations, readiness checks, Master-CV generation, and document/package generation all resolve that one file through the same profile repository. `profile.yaml.example` is schema documentation only; it is never loaded as applicant data, copied as a runtime profile, or used as a fallback.
 
 Important rules:
 
+- Change the one tracked `profile.yaml` directly; commit and push it to synchronize the authorized canonical record between checkouts.
 - Leave missing facts blank or marked `Needs verification`.
 - Every claim, including experience duration, location preference, and deployment preference, needs its own adjacent literal `verified: true` before it is verified evidence.
-- Do not enter license numbers, issue dates, expiry dates, certificates, references, or document paths unless you personally confirm them.
+- Do not invent license numbers, issue dates, expiry dates, document paths, credentials, or language levels.
+- Professional references are private metadata inside this canonical record: they are not matching, employment, or credential evidence and are excluded from default CVs, cover letters, and application-package serialization. Release requires a vacancy-specific need and the owner's explicit approval.
 - The database stores vacancies, scans, match outputs, and packages — never a second applicant profile.
 - Resume extraction caches are not used. A CV is not runtime applicant evidence.
 
@@ -119,7 +121,7 @@ python main.py master-cv
 
 It writes TXT, DOCX, and PDF files under ignored `documents/master_cv/`. The Master CV contains no vacancy, employer, target-role, or application wording; it is a general presentation of the canonical profile. `prepare` is the separate downstream step that analyzes one vacancy and creates a vacancy-specific CV without modifying either `profile.yaml` or the Master CV.
 
-Professional references may be stored as private local metadata, but they are not matching, employment, or credential evidence and are never printed in the Master CV or a vacancy-specific CV by default. When a vacancy asks for references, the package presents a generic manual checklist; the owner decides whether to release approved contact details.
+Professional references are private metadata in the canonical profile, but they are not matching, employment, or credential evidence and are never printed in the Master CV or a vacancy-specific CV by default. When a vacancy asks for references, the package presents a generic manual checklist; the owner decides whether to release approved contact details.
 
 ### Local dashboard privacy
 

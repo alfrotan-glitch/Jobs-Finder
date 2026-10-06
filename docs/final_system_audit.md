@@ -28,9 +28,9 @@ Before the final push, the remote copy of this same fixed Arena branch was fetch
 - `save_canonical_profile()` atomically writes only that path and accepts no caller-selected path.
 - `profile.yaml.example` is a schema/template only, never a fallback.
 - The SQLite database is a vacancy/scan/package store, not an applicant-profile store.
-- The local `profile.yaml` remains Git-ignored; it was not added to the commit.
+- The repository-root `profile.yaml` is the one Git-tracked canonical applicant record. It synchronizes through ordinary Git push/pull between the Agent workspace, GitHub, and the Windows Desktop checkout.
 
-The owner-supplied canonical profile is present only in the private local runtime and contains the confirmed identity/contact data, medical education, registration status without invented identifiers or dates, Medical Exit Exam, supplied work history, certificates/training, and language levels. Its values are intentionally not repeated in tracked documentation. The local profile remains Git-ignored, and a real-profile integration assertion validates only structural/evidence invariants rather than embedding private applicant data in the repository.
+The owner explicitly authorized tracking the real canonical profile. It retains the confirmed identity, medical education, registration status without invented identifiers or dates, Medical Exit Exam, supplied work history, and private reference metadata. Runtime boundaries remain unchanged: professional references are excluded from evidence, matching, default CVs, cover letters, and automatic package serialization. The test suite validates that the tracked file is the only runtime applicant source and that Master-CV and vacancy-tailoring workflows consume it without creating another profile.
 
 Conservative omissions are intentional:
 
@@ -40,7 +40,7 @@ Conservative omissions are intentional:
 - no invented current employer or current title;
 - no unconfirmed nationality, gender, relocation, or field-deployment assertion.
 
-The three owner-supplied professional references are private local metadata only. They are deliberately excluded from matching, qualification/employment evidence, and default Master/tailored CV output. A vacancy that requests references receives a generic manual checklist; release of approved contact details remains an owner decision.
+The three owner-supplied professional references are private metadata in the tracked canonical record. They are deliberately excluded from matching, qualification/employment evidence, and default Master/tailored CV output. A vacancy that requests references receives a generic manual checklist; release of approved contact details remains an owner decision.
 
 ## 3. Verification and evidence repairs
 
@@ -143,7 +143,7 @@ Executed in this checkout using a freshly created project `.venv` on Python 3.11
 | Check | Result |
 | --- | --- |
 | Targeted dashboard/canonical-profile/provenance/security regressions | **39 passed, 1 skipped** |
-| Final full suite with the ignored local `profile.yaml` present | **243 passed** in 8.29 s |
+| Final full suite with the tracked canonical `profile.yaml` present | **243 passed, 1 warning** in 7.72 s |
 | Ruff | `python -m ruff check .` — **passed** |
 | Bytecode compilation | `python -m compileall -q main.py dashboard utils tests` — **passed** |
 | Dashboard JavaScript syntax | `node --check dashboard/static/app.js` — **passed** |
@@ -157,7 +157,7 @@ No direct Windows filesystem checkout or interactive Windows-launcher execution 
 
 ## 10. Remaining limits and user actions
 
-1. `profile.yaml` is private local data. Before use, the owner should review it directly and only add future facts, dates, identifiers, documents, or preferences when confirmed.
+1. `profile.yaml` is the authorized tracked canonical record. Before use, the owner should review it directly and only add future facts, dates, identifiers, documents, or preferences when confirmed.
 2. A Medical Council Exam requirement remains deliberately unresolved unless the applicant provides verified council-exam evidence or the vacancy explicitly establishes equivalence to the Medical Exit Exam.
 3. The exact duration beyond `> 3` years remains intentionally unasserted. Higher thresholds require verified exact/adequate evidence.
 4. ReliefWeb coverage is bounded by design and clearly marked partial when the configured first-page bound is reached.

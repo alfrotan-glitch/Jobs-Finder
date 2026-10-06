@@ -1,8 +1,9 @@
 """Regression coverage for the one-applicant canonical profile architecture.
 
 Test-only profile mappings are deliberately created under pytest temporary
-paths.  They are not production records.  The production identity check reads
-the ignored, repository-root canonical file only when it is present locally.
+paths. They are not production records. The repository-root tracked
+``profile.yaml`` is the one real production record, and the integration test
+below proves the Master-CV and tailoring paths consume it directly.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import main
 from dashboard import server
 from utils import profile as profile_repository
 from utils import resume_parser, tracker
-from utils.documents import prepare_application_bundle
+from utils.documents import prepare_application_bundle, write_master_cv
 from utils.medical_matcher import match_job_against_profile
 from utils.paths import PROJECT_ROOT
 from utils.profile import (
@@ -240,28 +241,39 @@ def test_experience_duration_requires_its_own_verified_flag():
     assert verified.evidence_text("clinical_experience_years", verified_only=True) == ["more than 3 years clinical experience"]
 
 
-def test_real_runtime_profile_identity_is_consistent_and_contains_no_invented_registration_data(tmp_path):
-    """Local integration assertion for the ignored production applicant file.
-
-    A clean CI checkout has no private profile.yaml by design, so it skips this
-    test.  In a real local runtime it proves the confirmed applicant identity
-    flows unchanged into matching and generated documents.
-    """
-    if not profile_repository.canonical_profile_path().exists():
-        pytest.skip("profile.yaml is ignored private runtime data and is absent in this checkout")
+def test_tracked_runtime_profile_is_the_real_source_for_master_cv_and_tailoring(tmp_path):
+    """The committed owner profile flows unchanged into both document paths."""
+    canonical_path = profile_repository.canonical_profile_path()
+    assert canonical_path == (PROJECT_ROOT / "profile.yaml").resolve()
+    assert canonical_path.is_file()
 
     profile = load_canonical_profile(required=True)
     personal = profile["personal"]
-    # Keep actual applicant data out of tracked source. The private profile
-    # itself carries the owner-confirmed values; this integration test proves
-    # only that resolved/verified identity and core credential fields flow
-    # through the real runtime without inventing sensitive identifiers.
-    for key in ["first_name", "last_name", "professional_title", "email", "phone", "location"]:
-        assert str(personal.get(key) or "").strip()
-        assert personal.get("verification", {}).get(key) is True
+    assert f"{personal['first_name']} {personal['last_name']}" == "Dr. Allah Yar Frotan"
+    assert personal["professional_title"] == "Medical Doctor / Health & Nutrition Specialist"
+    assert personal["verification"]["first_name"] is True
+    assert personal["verification"]["last_name"] is True
+    assert personal["verification"]["professional_title"] is True
+    assert len(profile["work_history"]) == 5
+    assert profile["work_history"][0]["start"] == ""
+    assert profile["work_history"][0]["end"] == ""
+    assert profile["work_history"][1]["start"] == ""
+    assert profile["work_history"][1]["end"] == ""
+    assert [(entry["start"], entry["end"]) for entry in profile["work_history"][2:]] == [
+        ("2020-10", "2020-12"),
+        ("2020-12", "2021-08"),
+        ("2019-05", "2019-09"),
+    ]
     assert profile["license_registration"]["number"] == ""
     assert profile["license_registration"]["issue_date"] == ""
     assert profile["license_registration"]["expiry_date"] == ""
+    assert profile["license_registration"]["document_path"] == ""
+
+    master = write_master_cv(profile, out_dir=tmp_path / "master-cv")
+    master_text = Path(master["generated_paths"]["txt"]).read_text(encoding="utf-8")
+    assert master["position_neutral"] is True
+    assert "Dr. Allah Yar Frotan" in master_text
+    assert "Medical Doctor / Health & Nutrition Specialist" in master_text
 
     job = _medical_job()
     report = match_job_against_profile(job, profile, today=date(2026, 10, 1)).to_dict()
@@ -273,6 +285,6 @@ def test_real_runtime_profile_identity_is_consistent_and_contains_no_invented_re
             bundle["application_package"]["email_draft"]["body"],
         ]
     )
-    assert f"{personal['first_name']} {personal['last_name']}" in rendered
+    assert "Dr. Allah Yar Frotan" in rendered
     assert SAMPLE_NAME not in rendered
     assert SAMPLE_EMAIL not in rendered

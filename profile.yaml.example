@@ -1,5 +1,8 @@
-# Jobs-Finder verified profile
-# Copy this file to profile.yaml and edit only with verified facts.
+# Jobs-Finder profile schema documentation
+# This file documents the YAML shape only. It is never runtime applicant data,
+# is never copied or loaded as a fallback, and must not contain a real or
+# sample applicant. The tracked repository-root profile.yaml is the single
+# canonical applicant record.
 # The product can tailor wording, but it must not invent applicant facts.
 #
 # ---------------------------------------------------------------------------

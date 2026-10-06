@@ -331,7 +331,7 @@ def load_canonical_profile(*, required: bool = False) -> dict[str, Any]:
         if required:
             raise CanonicalProfileMissingError(
                 f"Canonical applicant profile is missing: {path}. "
-                "Create profile.yaml from profile.yaml.example, then enter only confirmed facts."
+                "Restore the tracked repository-root profile.yaml; profile.yaml.example is documentation only."
             )
         return {}
     try:

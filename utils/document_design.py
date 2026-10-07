@@ -243,23 +243,47 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
 
 
 def parse_cover_letter_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Split a generated cover letter into its body and signature block.
+
+    The signature block (``Sincerely,`` plus the name, professional title, and
+    contact lines) is separated from the body so the renderer can lay it out
+    once, in the right position, instead of letting it flow as body text.
+    """
     metadata = metadata or {}
     job = metadata.get("job") or {}
     package = metadata.get("package") or {}
     lines = [ln.rstrip() for ln in (text or "").splitlines()]
     subject = ""
     body_lines: list[str] = []
-    signature = ""
+    signature: dict[str, str] = {"name": "", "title": "", "email": "", "phone": ""}
+    in_signature = False
     for line in lines:
         stripped = line.strip()
         if stripped.lower().startswith("subject:"):
             subject = stripped.split(":", 1)[1].strip()
             continue
-        if stripped:
-            body_lines.append(stripped)
-    if body_lines and body_lines[-1].lower() not in {"sincerely,", "regards,"}:
-        signature = body_lines[-1]
-    name = _full_name_from_package(package) or signature or "CONFIRM BEFORE SUBMISSION"
+        if not stripped:
+            continue
+        if stripped.lower() in {"sincerely,", "sincerely", "yours sincerely,"}:
+            in_signature = True
+            continue
+        if in_signature:
+            lowered = stripped.lower()
+            if lowered.startswith("email:"):
+                signature["email"] = stripped.split(":", 1)[1].strip()
+                continue
+            if lowered.startswith("phone:"):
+                signature["phone"] = stripped.split(":", 1)[1].strip()
+                continue
+            if not signature["name"]:
+                signature["name"] = stripped
+                continue
+            if not signature["title"]:
+                signature["title"] = stripped
+                continue
+            continue
+        body_lines.append(stripped)
+    name = signature["name"] or _full_name_from_package(package) or "CONFIRM BEFORE SUBMISSION"
     contact = _contact_from_package(package)
     target_role = str(job.get("title") or package.get("job_title") or "Target Role")
     target_org = str(job.get("company") or package.get("company") or "Target Organization")
@@ -277,6 +301,7 @@ def parse_cover_letter_text(text: str, metadata: dict[str, Any] | None = None) -
         "target_location": target_location,
         "reference": reference,
         "body_lines": body_lines,
+        "signature": signature,
         "raw_text": text or "",
     }
 
@@ -815,78 +840,89 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
 
 
 def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
+    """Render the cover letter with the same design system and auto-pagination.
 
-    fonts = _register_fonts()
-    serif, serif_bold, sans, sans_bold = fonts
-    width, height = A4
-    cnv = canvas.Canvas(str(path), pagesize=A4)
-    cnv.setTitle(f"{model.get('name')} — Cover Letter")
-    cnv.setAuthor(model.get("name") or "CONFIRM BEFORE SUBMISSION")
-    cnv.setFillColor(_c("#FFFFFF"))
-    cnv.rect(0, 0, width, height, stroke=0, fill=1)
-    cnv.setFillColor(_c(Theme.deep))
-    cnv.rect(0, height - 11, width, 11, stroke=0, fill=1)
-    cnv.setStrokeColor(_c(Theme.gold))
-    cnv.setLineWidth(1.2)
-    cnv.line(42, height - 48, width - 42, height - 48)
-    cnv.setFont(serif_bold, 24)
-    cnv.setFillColor(_c(Theme.deep))
-    cnv.drawString(42, height - 82, model.get("name") or "CONFIRM BEFORE SUBMISSION")
-    cnv.setFont(sans, 9.5)
-    cnv.setFillColor(_c(Theme.teal))
-    cnv.drawString(44, height - 101, model.get("headline") or "Medical Professional")
+    Content flows naturally across pages, so a longer verified letter can never
+    place its signature above its own closing paragraphs.
+    """
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer
+
+    serif, serif_bold, sans, sans_bold = _register_fonts()
+    doc = SimpleDocTemplate(
+        str(path), pagesize=A4, rightMargin=20 * mm, leftMargin=20 * mm,
+        topMargin=14 * mm, bottomMargin=15 * mm,
+        title=f"{model.get('name')} — Cover Letter",
+        author=model.get("name") or "CONFIRM BEFORE SUBMISSION",
+        subject="Application letter",
+    )
+    styles = getSampleStyleSheet()
+
+    def esc(value: Any) -> str:
+        import html
+
+        return html.escape(str(value or ""))
+
+    name_style = ParagraphStyle("CLName", parent=styles["Title"], fontName=serif_bold, fontSize=20, leading=23, textColor=colors.HexColor(Theme.deep), spaceAfter=1, alignment=0)
+    headline_style = ParagraphStyle("CLHeadline", parent=styles["Normal"], fontName=sans, fontSize=10.2, leading=12.6, textColor=colors.HexColor(Theme.teal), spaceAfter=2)
+    contact_style = ParagraphStyle("CLContact", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.6, textColor=colors.HexColor(Theme.muted), spaceAfter=6)
+    target_style = ParagraphStyle("CLTarget", parent=styles["Normal"], fontName=sans_bold, fontSize=9.2, leading=11.6, textColor=colors.HexColor(Theme.deep), spaceAfter=1)
+    recipient_style = ParagraphStyle("CLRecipient", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.6, textColor=colors.HexColor(Theme.muted), spaceAfter=8)
+    section_style = ParagraphStyle("CLSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=9.4, leading=11.4, textColor=colors.HexColor(Theme.deep), spaceBefore=4, spaceAfter=3)
+    subject_style = ParagraphStyle("CLSubject", parent=styles["Normal"], fontName=sans_bold, fontSize=9.6, leading=12, textColor=colors.HexColor(Theme.ink), spaceAfter=8)
+    body_style = ParagraphStyle("CLBody", parent=styles["Normal"], fontName=sans, fontSize=9.1, leading=12.4, textColor=colors.HexColor(Theme.ink), spaceAfter=6)
+    bullet_style = ParagraphStyle("CLBullet", parent=body_style, leftIndent=12, firstLineIndent=-8, bulletIndent=0, spaceAfter=3, bulletFontName=sans, bulletFontSize=8.4, bulletColor=colors.HexColor(Theme.teal))
+    signature_style = ParagraphStyle("CLSignature", parent=styles["Normal"], fontName=serif_bold, fontSize=12, leading=14, textColor=colors.HexColor(Theme.deep), spaceBefore=4)
+    signature_meta_style = ParagraphStyle("CLSignatureMeta", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.4, textColor=colors.HexColor(Theme.muted), spaceAfter=1)
+
+    def footer(canvas, document):
+        canvas.saveState()
+        canvas.setStrokeColor(colors.HexColor(Theme.rule))
+        canvas.setLineWidth(0.5)
+        canvas.line(20 * mm, 12 * mm, A4[0] - 20 * mm, 12 * mm)
+        canvas.setFont(sans, 7)
+        canvas.setFillColor(colors.HexColor(Theme.muted))
+        canvas.drawString(20 * mm, 8 * mm, f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Cover Letter")
+        canvas.drawRightString(A4[0] - 20 * mm, 8 * mm, f"Page {document.page}")
+        canvas.restoreState()
+
+    story: list[Any] = [
+        Paragraph(esc(model.get("name")), name_style),
+        Paragraph(esc(model.get("headline") or "Application Letter"), headline_style),
+    ]
     contact = model.get("contact") or {}
-    contact_line = " | ".join([x for x in [contact.get("location"), contact.get("phone"), contact.get("email")] if x])
-    cnv.setFont(sans, 7.8)
-    cnv.setFillColor(_c(Theme.muted))
-    cnv.drawString(44, height - 118, contact_line)
-    y = height - 155
-    cnv.setFont(sans_bold, 7.0)
-    cnv.setFillColor(_c(Theme.gold))
-    cnv.drawString(44, y, "APPLICATION LETTER")
-    cnv.setFont(sans_bold, 8.3)
-    cnv.setFillColor(_c(Theme.deep))
-    target = f"{model.get('target_role')} — {model.get('target_org')}"
-    cnv.drawString(150, y, target[:98])
-    y -= 15
-    cnv.setFont(sans, 7.2)
-    cnv.setFillColor(_c(Theme.muted))
-    recipient = f"To: Hiring Committee, {model.get('target_org')}"
-    cnv.drawString(150, y, recipient[:112])
+    contact_line = " | ".join(str(value) for value in [contact.get("location"), contact.get("phone"), contact.get("email")] if value)
+    if contact_line:
+        story.append(Paragraph(esc(contact_line), contact_style))
+    story.append(HRFlowable(width="100%", thickness=0.9, color=colors.HexColor(Theme.gold), spaceBefore=1, spaceAfter=9))
+    target_line = " — ".join(str(value) for value in [model.get("target_role"), model.get("target_org")] if value)
+    if target_line:
+        story.append(Paragraph(esc(target_line), target_style))
+    recipient = f"To: Hiring Committee, {model.get('target_org')}" if model.get("target_org") else "To: Hiring Committee"
     if model.get("reference"):
-        cnv.drawRightString(width - 68, y, f"Reference: {model.get('reference')}")
-    y -= 28
-    y = _draw_section(cnv, "Subject", 90, y, width - 180, fonts)
-    y = _draw_wrapped(cnv, model.get("subject") or "Application", 90, y, width - 180, font=sans_bold, size=9.0, leading=12)
-    y -= 12
-    cnv.setStrokeColor(_c(Theme.gold))
-    cnv.setLineWidth(1.1)
-    cnv.line(90, y + 7, 90, 158)
+        recipient += f" | Reference: {model.get('reference')}"
+    story.append(Paragraph(esc(recipient), recipient_style))
+    story.append(Paragraph("SUBJECT", section_style))
+    story.append(Paragraph(esc(model.get("subject") or model.get("target_role") or "Application"), subject_style))
     for line in model.get("body_lines", []):
-        if line.lower().startswith("subject:"):
-            continue
-        if line in {model.get("name"), "Sincerely,"}:
-            continue
         if line.startswith("-"):
-            y = _draw_bullet(cnv, _clean_bullet(line), 112, y, width - 202, fonts, size=8.35, leading=11.2)
+            story.append(Paragraph(esc(_clean_bullet(line)), bullet_style, bulletText="\u2022"))
         else:
-            y = _draw_wrapped(cnv, line, 112, y, width - 202, font=sans, size=8.55, leading=11.5)
-        y -= 6
-    y = max(y, 112)
-    cnv.setFont(sans, 8.7)
-    cnv.setFillColor(_c(Theme.ink))
-    cnv.drawString(112, y, "Sincerely,")
-    cnv.setFont(serif_bold, 12)
-    cnv.setFillColor(_c(Theme.deep))
-    cnv.drawString(112, y - 22, model.get("name") or "CONFIRM BEFORE SUBMISSION")
-    cnv.setStrokeColor(_c(Theme.rule))
-    cnv.line(42, 38, width - 42, 38)
-    cnv.setFont(sans, 6.6)
-    cnv.setFillColor(_c(Theme.muted))
-    cnv.drawString(42, 25, f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Cover Letter")
-    cnv.save()
+            story.append(Paragraph(esc(line), body_style))
+    signature = model.get("signature") or {}
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Sincerely,", body_style))
+    story.append(Paragraph(esc(model.get("name") or signature.get("name") or "CONFIRM BEFORE SUBMISSION"), signature_style))
+    if signature.get("title"):
+        story.append(Paragraph(esc(signature["title"]), signature_meta_style))
+    if signature.get("email"):
+        story.append(Paragraph(esc(f"Email: {signature['email']}"), signature_meta_style))
+    if signature.get("phone"):
+        story.append(Paragraph(esc(f"Phone: {signature['phone']}"), signature_meta_style))
+    doc.build(story, onFirstPage=footer, onLaterPages=footer)
 
 
 def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
@@ -936,7 +972,7 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
     doc.add_paragraph("SUBJECT", style="JF Section")
     doc.add_paragraph(model.get("subject") or model.get("target_role") or "Application", style="JF Section")
     for line in model.get("body_lines", []):
-        if line.lower().startswith("subject:") or line in {model.get("name"), "Sincerely,"}:
+        if line.lower().startswith("subject:"):
             continue
         if line.startswith("-"):
             p = doc.add_paragraph(style="JF Body")
@@ -946,7 +982,11 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
         else:
             doc.add_paragraph(line, style="JF Body")
     doc.add_paragraph("Sincerely,", style="JF Body")
-    doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="JF Signature")
+    doc.add_paragraph((model.get("signature") or {}).get("name") or model.get("name") or "CONFIRM BEFORE SUBMISSION", style="JF Signature")
+    signature = model.get("signature") or {}
+    for value in [signature.get("title"), f"Email: {signature['email']}" if signature.get("email") else "", f"Phone: {signature['phone']}" if signature.get("phone") else ""]:
+        if value:
+            doc.add_paragraph(value, style="JF Contact")
     for section in doc.sections:
         f = section.footer.paragraphs[0]
         f.alignment = WD_ALIGN_PARAGRAPH.CENTER

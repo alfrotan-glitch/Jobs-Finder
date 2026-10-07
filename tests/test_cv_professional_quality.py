@@ -625,3 +625,36 @@ def test_tracked_profile_has_no_private_or_invented_precision_after_cv_work():
     for entry in work:
         for line in entry.get("responsibilities") or []:
             assert not re.search(r"(?<![\w-])\d+\s*(?:patients|beneficiaries|budget|USD|AFN|clinics)\b", line), line
+
+
+def test_cover_letter_renders_signature_after_the_closing_paragraph(tmp_path):
+    """A long verified letter must not place its signature above its own text.
+
+    The cover letter is rendered as flowing content, so the closing paragraph,
+    "Sincerely,", the name, and the contact lines always appear in that order in
+    every format, no matter how long the verified evidence makes the letter.
+    """
+    profile = _profile()
+    job = _nutrition_job()
+    report = match_job_against_profile(job, profile, today=TODAY).to_dict()
+    bundle = prepare_application_bundle(job, profile, report, out_dir=tmp_path)
+    paths = bundle["generated_paths"]["cover_letter"]
+
+    txt = Path(paths["txt"]).read_text(encoding="utf-8")
+    docx_text = " ".join(_docx_text(paths["docx"]).split())
+    pdf_text = " ".join(_pdf_text(paths["pdf"]).split())
+
+    for flat in [docx_text, pdf_text]:
+        closing = flat.index("Thank you for considering my application.")
+        assert closing < flat.index("Sincerely,")
+        # The signature name is the one that follows the closing paragraph, not
+        # the letterhead at the top of the page.
+        signature_name = flat.index("Dr. Allah Yar Frotan", closing)
+        assert flat.index("Sincerely,") < signature_name < flat.index("Email: alfrotan@gmail.com")
+        # The signature block is printed exactly once.
+        assert flat.count("Sincerely,") == 1
+        assert flat.count("Medical Doctor / Health & Nutrition Specialist") == 1
+
+    # The canonical text keeps the same order and the letter still fits one page.
+    assert txt.index("Sincerely,") < txt.rindex("Dr. Allah Yar Frotan")
+    assert _pdf_pages(paths["pdf"]) == 1

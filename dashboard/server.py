@@ -26,7 +26,7 @@ from utils.discovery import (
     RELIEFWEB_DEFAULT_TIMEOUT_SECONDS,
     run_discovery_scan,
 )
-from utils.documents import prepare_application_bundle
+from utils.documents import prepare_application_bundle, write_master_cv
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.profile import (
@@ -626,6 +626,25 @@ async def api_find():
     result = scan.to_dict()
     log_scan_result(result)
     return result
+
+
+@app.post("/api/master-cv")
+def api_master_cv():
+    """Write the position-neutral Master CV from verified canonical evidence.
+
+    This is a local generation action, not a submission. It reads only the
+    canonical profile, writes TXT/DOCX/PDF under ignored ``documents/``, and
+    never mutates ``profile.yaml``.
+    """
+    profile = _runtime_profile(True)
+    master = write_master_cv(profile)
+    return {
+        "ok": True,
+        "position_neutral": bool(master.get("position_neutral")),
+        "documents": master.get("generated_paths", {}),
+        "review_warnings": master.get("review_warnings", []),
+        "no_submission_performed": True,
+    }
 
 
 @app.get("/api/jobs/{job_id}")

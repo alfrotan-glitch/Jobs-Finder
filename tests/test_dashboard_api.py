@@ -265,3 +265,88 @@ def test_professional_title_is_confirmed_as_a_personal_field(client):
     review_after = client.get("/api/profile/review").json()
     title_after = next(f for f in review_after["fields"] if f["key"] == "professional_title")
     assert title_after["status"] == "Verified"
+
+
+# ---------------------------------------------------------------------------
+# Position-neutral Master CV from the dashboard
+#
+# The dashboard's Master CV button is a local generation action: it must be
+# driven by the canonical profile, must produce all three artifacts, and must
+# never mutate the canonical profile or claim an application was submitted.
+# ---------------------------------------------------------------------------
+
+
+CANONICAL_DASHBOARD_PROFILE = {
+    "personal": {
+        "first_name": "Dashboard",
+        "last_name": "Applicant",
+        "professional_title": "Medical Doctor / Health & Nutrition Specialist",
+        "email": "dashboard.applicant@example.org",
+        "phone": "+93 700 555 111",
+        "location": "Kabul, Afghanistan",
+        "verification": {
+            "first_name": True,
+            "last_name": True,
+            "professional_title": True,
+            "email": True,
+            "phone": True,
+            "location": True,
+        },
+    },
+    "medical_education": [{"degree": "Doctor of Medicine (MD)", "field": "Curative Medicine", "institution": "Verified Medical University", "start": "2013", "end": "2020", "verified": True}],
+    "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
+    "medical_exit_exam": {"status": "Completed", "verified": True},
+    "clinical_experience": {"years": "> 3", "verified": True},
+    "work_history": [
+        {
+            "title": "Health & Nutrition Supervisor",
+            "organization": "Verified NGO",
+            "location": "Daikundi, Afghanistan",
+            "responsibilities": [
+                "Supervised health and nutrition service delivery across the supported coverage areas",
+                "Supported IMAM/CMAM implementation, including SAM/MAM case identification and OTP service linkage",
+                "Conducted field monitoring visits and reviewed service records to support timely HMIS reporting",
+                "Coordinated with MoPH and health-authority counterparts on BPHS/EPHS-aligned service delivery",
+            ],
+            "verified": True,
+        }
+    ],
+    "skills": {
+        "medical": [{"name": "IMAM/CMAM", "verified": True}],
+        "public_health": [{"name": "HMIS/DHIS2", "verified": True}],
+        "management": [{"name": "Team supervision/capacity building", "verified": True}],
+    },
+    "certificates": [{"name": "Safeguarding & PSEA — Verified NGO — 2024", "verified": True}],
+    "languages": [
+        {"name": "Dari/Persian", "level": "Native", "verified": True},
+        {"name": "English", "level": "Fluent", "verified": True},
+    ],
+}
+
+
+def test_master_cv_endpoint_writes_all_artifacts_without_mutating_or_submitting(tmp_path, monkeypatch):
+    monkeypatch.setattr(profile_repository, "CANONICAL_PROFILE_PATH", tmp_path / "profile.yaml")
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
+    monkeypatch.setattr(server, "ROOT", tmp_path)
+    profile_repository.save_canonical_profile(CANONICAL_DASHBOARD_PROFILE)
+    before = profile_repository.canonical_profile_path().read_bytes()
+
+    response = TestClient(server.app).post("/api/master-cv")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["position_neutral"] is True
+    assert body["no_submission_performed"] is True
+    paths = body["documents"]
+    for kind in ["txt", "docx", "pdf"]:
+        assert Path(paths[kind]).is_file(), kind
+    text = Path(paths["txt"]).read_text(encoding="utf-8")
+    assert "Dashboard Applicant" in text
+    assert "PROFESSIONAL SUMMARY" in text
+    assert "CORE PROFESSIONAL COMPETENCIES" in text
+    assert "PROFESSIONAL EXPERIENCE" in text
+    assert "IMAM/CMAM" in text
+    assert "Available on request for shortlisted applications." in text
+    # Generation is a local write only: the canonical profile is untouched.
+    assert profile_repository.canonical_profile_path().read_bytes() == before

@@ -549,10 +549,8 @@ def _profile_evidence_lines(profile: dict[str, Any]) -> list[str]:
     verified_work, _ = _split_work_entries(profile)
     for entry in verified_work:
         header = _experience_header(entry)
-        for bullet in entry.get("bullets") or []:
-            add(f"{bullet} ({header})" if header else bullet)
-        if not entry.get("bullets") and entry.get("description"):
-            add(f"{entry['description']} ({header})" if header else entry["description"])
+        for value in _entry_text_values(entry):
+            add(f"{value} ({header})" if header else value)
     verified_skills, _ = _skills_by_verification(profile)
     for value in verified_skills:
         add(value)
@@ -632,27 +630,6 @@ def _tailored_work_sections(
         # employment records remain in the same CV immediately afterwards.
         relevant.append(remaining.pop(0))
     return relevant, remaining
-
-
-def _competencies_from_verified_experience(profile: dict[str, Any], job: dict[str, Any], match_report: dict[str, Any], *, limit: int | None = None) -> list[str]:
-    lines = "\n".join(_profile_evidence_lines(profile)).lower()
-    candidates = [
-        ("Clinical consultations", ["clinical consultation", "clinical consultations"]),
-        ("Patient assessment", ["patient assessment"]),
-        ("Diagnosis and treatment", ["diagnosis", "treatment"]),
-        ("Referral coordination", ["referral"]),
-        ("HMIS reporting", ["hmis"]),
-        ("Nutrition screening", ["nutrition screening"]),
-        ("SAM/IMAM/CMAM services", ["sam", "imam", "cmam"]),
-        ("Therapeutic Feeding Unit", ["tfu", "therapeutic feeding"]),
-        ("Team supervision", ["supervision", "supervised", "supervise"]),
-        ("Team mentoring", ["mentoring", "mentor"]),
-        ("MoPH coordination", ["moph", "ministry of public health"]),
-        ("Safeguarding / PSEA", ["safeguarding", "psea"]),
-    ]
-    found = [label for label, needles in candidates if any(needle in lines for needle in needles)]
-    return _rank_strings_for_job(found, job, match_report, limit=limit) if found else []
-
 
 
 def _job_focus_phrases(job: dict[str, Any], match_report: dict[str, Any] | None = None, *, limit: int = 6) -> list[str]:
@@ -782,27 +759,45 @@ def _professional_background_sentence(profile: dict[str, Any]) -> str:
 def _verified_summary_sentence(
     profile: dict[str, Any], evidence, job: dict[str, Any], match_report: dict[str, Any]
 ) -> str:
-    """Build a natural summary from verified facts, never inferred year totals."""
-    profile_summary = _verified_profile_summary(profile)
-    if profile_summary:
-        return profile_summary
-    headline = _verified_profile_title(profile, evidence) or ("Medical Doctor" if evidence.has_verified("md_degree") else "Professional")
-    competencies = _competencies_from_verified_experience(profile, job, match_report, limit=6)
-    work_entries, _ = _split_work_entries(profile)
-    if competencies:
-        readable = [item.lower() if item != "HMIS reporting" else item for item in competencies[:5]]
-        if len(readable) > 1:
-            focus = ", ".join(readable[:-1]) + f", and {readable[-1]}"
-        else:
-            focus = readable[0]
-        return f"{headline} with experience in {focus}."
-    if work_entries:
-        return f"{headline} with a record of professional experience across the roles listed below."
-    return f"{headline} presenting verified qualifications for professional consideration."
+    """Backwards-compatible entry point for the professional profile builder."""
+    verified_skills, _ = _skills_by_verification(profile)
+    return _professional_profile_paragraph(
+        profile,
+        evidence,
+        job,
+        match_report,
+        sorted(verified_skills, key=_focus_rank_key(_focus_terms(job, match_report))),
+    )
+
+MONTH_ABBREVIATIONS = {
+    1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+    7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+}
+
+
+def _display_period(value: str) -> str:
+    """Render a supplied date for a human reader without adding precision.
+
+    ``2020-10`` becomes ``Oct 2020``; a bare year stays a year; any other
+    supplied wording is returned unchanged, so a non-precise value can never
+    gain invented month- or day-level precision.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.lower() in {"present", "current", "now", "ongoing"}:
+        return "Present"
+    match = re.fullmatch(r"(\d{4})[-/](\d{2})", text)
+    if match:
+        month = int(match.group(2))
+        if 1 <= month <= 12:
+            return f"{MONTH_ABBREVIATIONS[month]} {match.group(1)}"
+    return text
+
 
 def _experience_dates(entry: dict[str, Any]) -> str:
-    start = _resolved_entry_value(entry, "start")
-    end = _resolved_entry_value(entry, "end")
+    start = _display_period(_resolved_entry_value(entry, "start"))
+    end = _display_period(_resolved_entry_value(entry, "end"))
     return f"{start} – {end}" if start and end else start or end
 
 
@@ -818,23 +813,334 @@ def _language_pairs(lines: list[str]) -> list[tuple[str, str]]:
     return pairs
 
 
+#: Ordered competency groups used for the professional skills architecture.
+#: The first rule that matches a competency name wins, so every verified
+#: competency appears exactly once in the rendered CV.
+EXPERTISE_GROUP_RULES: list[tuple[str, tuple[str, ...]]] = [
+    ("Clinical & Medical Practice", ("clinical care", "clinical practice", "clinical assessment", "diagnosis", "treatment", "patient", "curative", "medical doctor", "infection prevention", "ipc")),
+    ("Health & Nutrition Programming", ("nutrition", "imam", "cmam", "sam", "mam", "tfu", "otp", "iycf", "imnci", "malnutrition")),
+    ("Public Health Systems & Quality", ("bphs", "ephs", "hmis", "dhis2", "moph", "liaison", "quality", "audit")),
+    ("Programme Coordination & Field Operations", ("coordination", "stakeholder", "monitoring", "reporting", "emergency", "outbreak", "covid", "program implementation", "programme implementation")),
+    ("Supervision & Capacity Building", ("supervision", "supervisory", "capacity", "team")),
+    ("Safeguarding, Protection & Compliance", ("safeguarding", "psea", "child protection", "protection")),
+    ("Supply Chain, Logistics & Administration", ("supply", "forecast", "logistics", "stock", "procurement", "admin", "finance")),
+]
+
+UNGROUPED_EXPERTISE_TITLE = "Additional Professional Competencies"
+
+NUMBER_WORDS = {
+    0: "zero", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six",
+    7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve",
+    13: "thirteen", 14: "fourteen", 15: "fifteen", 16: "sixteen", 17: "seventeen",
+    18: "eighteen", 19: "nineteen", 20: "twenty", 21: "twenty-one", 22: "twenty-two",
+    23: "twenty-three", 24: "twenty-four", 25: "twenty-five", 26: "twenty-six",
+    27: "twenty-seven", 28: "twenty-eight", 29: "twenty-nine", 30: "thirty",
+}
+
+
+def _match_expertise_group(competency: str) -> str:
+    lowered = str(competency or "").lower()
+    for title, needles in EXPERTISE_GROUP_RULES:
+        if any(needle in lowered for needle in needles):
+            return title
+    return UNGROUPED_EXPERTISE_TITLE
+
+
+def build_expertise_groups(skills: list[str], *, rank_key=None) -> list[dict[str, Any]]:
+    """Group verified competencies into the professional skills architecture.
+
+    ``rank_key`` optionally reorders items for a vacancy. It is a sort key
+    only: it can never drop, rename, or remove a verified competency.
+    """
+    items = [str(skill).strip() for skill in skills if str(skill).strip()]
+    buckets: dict[str, list[str]] = {}
+    for skill in items:
+        buckets.setdefault(_match_expertise_group(skill), []).append(skill)
+    if rank_key is not None:
+        for group_items in buckets.values():
+            group_items.sort(key=rank_key)
+    sequence = [title for title, _ in EXPERTISE_GROUP_RULES] + [UNGROUPED_EXPERTISE_TITLE]
+    groups = [(title, buckets[title]) for title in sequence if buckets.get(title)]
+    if rank_key is not None:
+        # A group's position reflects the relevance of the whole group, so the
+        # vacancy-relevant area leads the section while every group and every
+        # competency is still printed.
+        def group_key(pair: tuple[str, list[str]]) -> tuple[int, int, int]:
+            scores = [rank_key(item) for item in pair[1]]
+            return (sum(score[0] for score in scores), min(score[0] for score in scores), -len(pair[1]))
+
+        groups.sort(key=group_key)
+    return [{"group": title, "items": group_items} for title, group_items in groups]
+
+
+def _focus_terms(job: dict[str, Any], match_report: dict[str, Any]) -> set[str]:
+    focus_text = "\n".join([
+        str(job.get("title", "")),
+        str(job.get("description", "")),
+        "\n".join(_focus_labels(match_report, limit=20)),
+    ])
+    return _tokenize_focus(focus_text)
+
+
+def _focus_rank_key(terms: set[str]):
+    """Stable relevance ordering. Equal relevance keeps canonical order.
+
+    With no usable vacancy focus terms (for example the position-neutral
+    master CV) the key is constant, so every caller keeps its canonical
+    order instead of an arbitrary length-based shuffle.
+    """
+    if not terms:
+        return lambda _text: (0, 0)
+
+    def key(text: str) -> tuple[int, int]:
+        hits = len(_focus_term_hits(text, terms))
+        return (-hits, abs(len(str(text)) - 160))
+
+    return key
+
+
+def _without_attribution(text: str) -> str:
+    """Drop the ``(Role | Employer | Location)`` attribution from evidence text.
+
+    Used only where the surrounding sentence already states the role, so a
+    letter bullet stays readable. The wording itself is never changed.
+    """
+    cleaned = re.sub(r"\s*\([^()]*\|[^()]*\)\s*$", "", str(text or "").strip())
+    return cleaned.rstrip(".").strip() or str(text or "").strip().rstrip(".")
+
+
+def _join_and(values: list[str]) -> str:
+    clean = [str(value).strip() for value in values if str(value).strip()]
+    if not clean:
+        return ""
+    if len(clean) == 1:
+        return clean[0]
+    if len(clean) == 2:
+        return f"{clean[0]} and {clean[1]}"
+    return ", ".join(clean[:-1]) + f", and {clean[-1]}"
+
+
+def _spell_years(value: float) -> str:
+    whole = int(value)
+    if float(whole) == float(value):
+        return NUMBER_WORDS.get(whole, str(whole))
+    if abs((value - whole) - 0.5) < 1e-9:
+        return f"{NUMBER_WORDS.get(whole, str(whole))} and a half"
+    return NUMBER_WORDS.get(whole, str(whole))
+
+
+def _verified_duration_phrase(evidence, key: str = "clinical_experience_years") -> str:
+    """Spelled-out duration so no unverified numeric precision is printed."""
+    years = _max_verified_years(evidence, key)
+    if years is None:
+        return ""
+    lower_bound = any(item.lower_bound for item in evidence.items.get(key, []) if item.verified)
+    spelled = _spell_years(years)
+    return f"more than {spelled} years" if lower_bound else f"{spelled} years"
+
+
+def _verified_education_parts(profile: dict[str, Any]) -> tuple[str, str]:
+    """Return (field, institution) of the verified medical degree, if supplied."""
+    first_medical: tuple[str, str] = ("", "")
+    for item in _verified_dict_items(_profile_list(profile, "medical_education")):
+        degree = _resolved_entry_value(item, "degree")
+        field = _resolved_entry_value(item, "field", "field_of_study", "specialization")
+        institution = _resolved_entry_value(item, "institution")
+        if not first_medical[0] and not first_medical[1]:
+            first_medical = (field, institution)
+        if re.search(r"\b(M\.?D\.?|MBBS|Medical Doctor|Doctor of Medicine|Physician)\b", degree, flags=re.IGNORECASE):
+            return field, institution
+    if _has_verified_md(profile):
+        return first_medical
+    return "", ""
+
+
+def _verified_organizations(profile: dict[str, Any]) -> list[str]:
+    organizations: list[str] = []
+    verified_work, _ = _split_work_entries(profile)
+    for entry in verified_work:
+        organization = _resolved_entry_value(entry, "organization")
+        if organization and organization not in organizations:
+            organizations.append(organization)
+    return organizations
+
+
+def _verified_experience_context(profile: dict[str, Any]) -> str:
+    verified_work, _ = _split_work_entries(profile)
+    haystack = " ".join(_resolved_entry_value(entry, "location") for entry in verified_work).lower()
+    personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
+    location = str(personal.get("location") or "").lower()
+    if personal_field_is_verified(profile, "location"):
+        haystack += f" {location}"
+    return "Afghanistan" if "afghanistan" in haystack else ""
+
+
+def _experience_coverage_clauses(evidence, rank_key=None) -> list[str]:
+    """Human-readable coverage phrases, each gated on verified evidence."""
+    clauses: list[str] = []
+
+    def add(clause: str, *keys: str) -> None:
+        if any(evidence.has_verified(key) for key in keys):
+            clauses.append(clause)
+
+    add("health and nutrition service delivery", "health_nutrition_experience")
+    add("clinical care", "clinical_experience_years", "md_degree")
+    add("humanitarian health programming", "ngo_humanitarian", "ngo_experience_years")
+    add("public-health service delivery", "public_health_experience")
+    add("team supervision and capacity building", "supervision_management")
+    add("programme coordination", "program_coordination")
+    add("field monitoring and reporting", "reporting")
+    add("HMIS/DHIS2 health information management", "hmis")
+    add("clinical audit and quality improvement", "quality_improvement")
+    add("MoPH and health-authority coordination", "moph_coordination")
+    add("emergency and outbreak response", "emergency_response")
+    add("safeguarding, PSEA, and child protection", "safeguarding_psea")
+    add("medical supply forecasting and logistics", "supply_logistics")
+    if rank_key is not None:
+        clauses.sort(key=rank_key)
+    return clauses
+
+
+def _professional_profile_paragraph(
+    profile: dict[str, Any],
+    evidence,
+    job: dict[str, Any],
+    match_report: dict[str, Any],
+    competencies: list[str],
+    organization_order: list[str] | None = None,
+    *,
+    first_person: bool = False,
+) -> str:
+    """Build a substantive professional profile from verified facts only.
+
+    Every sentence restates verified canonical-profile evidence: the verified
+    medical degree (plus, when verified, the exit exam and registration), the
+    verified duration lower bound, the verified experience dimensions, the
+    verified employers, the verified competency inventory, and the verified
+    languages. No achievement, number, date, or duty is invented, and no
+    unverified profile item can appear here. ``first_person`` only changes
+    sentence voice for a cover letter; it never changes the evidence used.
+    """
+    owner_summary = _verified_profile_summary(profile)
+    if owner_summary:
+        return owner_summary
+    rank_key = _focus_rank_key(_focus_terms(job, match_report))
+    sentences: list[str] = []
+    if not evidence.has_verified("md_degree"):
+        # Nothing substantive is verified yet, so the document states that
+        # plainly instead of presenting an unverified profile as a credential.
+        sentences.append(
+            "This document is generated only from verified canonical-profile facts, and no verified "
+            "professional credential is recorded yet. Confirm the profile before using it."
+            if first_person
+            else "This CV is generated only from verified canonical-profile facts, and no verified "
+            "professional credential is recorded yet. Confirm the profile before using this document."
+        )
+        languages = _language_lines(profile, verified_only=True)
+        if languages:
+            sentences.append("Languages: " + ", ".join(_lowercase_level(line) for line in languages) + ".")
+        return " ".join(sentences)
+
+    field, institution = _verified_education_parts(profile)
+    identity = "Medical Doctor (MD)"
+    if field:
+        identity += f" qualified in {field}"
+    if institution:
+        identity += f" at {institution}"
+    credentials: list[str] = []
+    if evidence.has_verified("medical_exit_exam"):
+        credentials.append("a completed Medical Exit Examination")
+    if evidence.has_verified("license_registration"):
+        credentials.append("a valid medical professional registration/license")
+    lead = f"I am a {identity}" if first_person else identity
+    sentences.append(lead + (f", with {_join_and(credentials)}" if credentials else "") + ".")
+
+    duration = _verified_duration_phrase(evidence)
+    if duration:
+        dimensions = [
+            label
+            for key, label in [
+                ("clinical_experience_years", "clinical practice"),
+                ("health_nutrition_experience_years", "health and nutrition"),
+                ("frontline_experience_years", "frontline"),
+            ]
+            if evidence.has_verified(key)
+        ]
+        if dimensions:
+            joined = _join_and(dimensions) if len(dimensions) > 1 else dimensions[0]
+            amount = f"{duration} of combined {joined} experience" if len(dimensions) > 1 else f"{duration} of {joined} experience"
+            context = _verified_experience_context(profile)
+            if first_person:
+                sentences.append(f"I bring {amount}" + (f" in {context}" if context else "") + ".")
+            else:
+                sentences.append(f"Brings {amount}" + (f" in {context}" if context else "") + ".")
+
+    clauses = _experience_coverage_clauses(evidence, rank_key)
+    if clauses:
+        lead_in = "My professional experience covers" if first_person else "Professional experience covers"
+        sentences.append(f"{lead_in} {_join_and(clauses[:6])}.")
+
+    organizations = _verified_organizations(profile)
+    if organizations and organization_order:
+        # A tailored CV already ordered its roles by vacancy relevance, and the
+        # cover letter follows the same verified order.
+        preferred = [org for org in organization_order if org in organizations]
+        preferred = list(dict.fromkeys(preferred))
+        remainder = [org for org in organizations if org not in preferred]
+        organizations = preferred + remainder
+    elif organizations and rank_key is not None and not first_person:
+        organizations = sorted(organizations, key=rank_key)
+    if organizations:
+        lead_in = "My experience includes work with" if first_person else "Employment history includes assignments with"
+        sentences.append(f"{lead_in} {_join_and(organizations[:4])}.")
+
+    if competencies:
+        lead_in = "My core technical competencies include" if first_person else "Core technical competencies include"
+        sentences.append(f"{lead_in} {_join_and(competencies[:8])}.")
+
+    languages = _language_lines(profile, verified_only=True)
+    if languages:
+        rendered = ", ".join(_lowercase_level(line) for line in languages)
+        sentences.append(f"Languages: {rendered}.")
+    return " ".join(sentence for sentence in sentences if sentence)
+
+
+def _lowercase_level(line: str) -> str:
+    """Render a language line as prose, e.g. ``English (fluent)``."""
+    if "—" in line:
+        name, level = line.split("—", 1)
+        level = level.strip()
+        return f"{name.strip()} ({level.lower()})" if level else name.strip()
+    return line.strip()
+
+
+def _cv_references_section() -> list[str]:
+    """Default CV reference line: no private contact data is ever printed."""
+    return ["Available on request for shortlisted applications."]
+
+
 def _render_canonical_cv_text(model: dict[str, Any]) -> str:
-    """Serialize the one tailored CV model used by TXT, PDF and DOCX."""
+    """Serialize the one CV model used by TXT, PDF and DOCX.
+
+    Section order is the professional one: profile, competencies, experience,
+    credentials, training, languages, references. Section headings are stable
+    because they are the same strings an ATS parser and the DOCX/PDF design
+    system both key on.
+    """
     lines = [str(model.get("name") or "CONFIRM BEFORE SUBMISSION"), str(model.get("headline") or "Professional")]
     lines.extend(str(item) for item in model.get("contact_lines") or [] if str(item).strip())
     lines.extend(["", "PROFESSIONAL SUMMARY", str(model.get("profile") or ""), ""])
-    if model.get("strengths"):
+
+    expertise = [group for group in (model.get("expertise") or []) if group.get("items")]
+    if expertise:
+        lines.append("CORE PROFESSIONAL COMPETENCIES")
+        for group in expertise:
+            items = "; ".join(str(item) for item in group.get("items") or [])
+            lines.append(f"{group.get('group')}: {items}")
+        lines.append("")
+    elif model.get("strengths"):
         lines.extend(["CORE PROFESSIONAL COMPETENCIES", *[f"- {item}" for item in model["strengths"]], ""])
-    # Medical credentials appear before the detailed employment chronology so
-    # a multi-page clinical CV stays balanced rather than leaving a sparse
-    # credentials-only final page. The same order is used in every export.
-    for title, values in [
-        ("EDUCATION", model.get("education") or []),
-        ("PROFESSIONAL REGISTRATION", model.get("registration") or []),
-        ("MEDICAL EXIT EXAMINATION", model.get("exit_exam") or []),
-    ]:
-        if values:
-            lines.extend([title, *[f"- {value}" for value in values], ""])
+
     if model.get("experience"):
         lines.append("PROFESSIONAL EXPERIENCE")
         for item in model["experience"]:
@@ -845,11 +1151,23 @@ def _render_canonical_cv_text(model: dict[str, Any]) -> str:
                 lines.append(metadata)
             lines.extend(f"- {bullet}" for bullet in item.get("bullets") or [])
             lines.append("")
-    if model.get("certifications"):
-        lines.extend(["TRAINING & CERTIFICATIONS", *[f"- {value}" for value in model["certifications"]], ""])
+
+    for title, values in [
+        ("EDUCATION", model.get("education") or []),
+        ("PROFESSIONAL REGISTRATION", model.get("registration") or []),
+        ("MEDICAL EXIT EXAMINATION", model.get("exit_exam") or []),
+        ("PROFESSIONAL TRAINING & CERTIFICATIONS", model.get("certifications") or []),
+    ]:
+        if values:
+            lines.extend([title, *[f"- {value}" for value in values], ""])
+
     if model.get("languages"):
         language_line = "  |  ".join(f"{name}{(' — ' + level) if level else ''}" for name, level in model["languages"])
         lines.extend(["LANGUAGES", f"- {language_line}", ""])
+
+    references = [str(item) for item in (model.get("references") or []) if str(item).strip()]
+    if references:
+        lines.extend(["REFERENCES", *[f"- {value}" for value in references], ""])
     return "\n".join(lines).strip() + "\n"
 
 
@@ -857,9 +1175,14 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
     """Build a position-neutral master-CV model from verified canonical facts.
 
     This is deliberately separate from vacancy tailoring. It preserves the
-    supplied work-history order and verified competency inventory; it receives
+    supplied work-history order, the complete verified competency inventory,
+    every verified certificate, and every verified responsibility; it receives
     no vacancy, match report, employer, or target-title input, so a role's
     wording and priority can never become a new canonical applicant fact.
+
+    The master CV is comprehensive rather than short: verified role scope,
+    grouped technical competencies, credentials, training, and languages are
+    all presented, and no verified evidence is dropped to reduce page count.
     """
     profile = require_runtime_profile(profile)
     evidence = build_profile_evidence(profile)
@@ -870,6 +1193,8 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
     certs_verified, unverified_certs = _certificates_by_verification(profile)
     languages = _language_lines(profile, verified_only=True)
     unverified_languages = [item for item in _language_lines(profile) if item not in languages]
+
+    expertise = build_expertise_groups(verified_skills)
 
     # The canonical profile keeps the owner's source order. In contrast to a
     # vacancy CV, there is no relevance score and therefore no role-specific
@@ -888,16 +1213,24 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
         "name": _full_name(profile),
         "headline": _verified_profile_title(profile, evidence) or "Medical Doctor",
         "contact_lines": _contact_lines(profile),
-        "profile": _verified_summary_sentence(profile, evidence, {}, {}),
-        "strengths": _safe_bullets(verified_skills),
+        "profile": _professional_profile_paragraph(profile, evidence, {}, {}, [item for group in expertise for item in group["items"]]),
+        "expertise": expertise,
+        "strengths": [item for group in expertise for item in group["items"]],
         "experience": experience,
         "education": education,
         "registration": evidence.evidence_text("license_registration", verified_only=True) if evidence.has_verified("license_registration") else [],
         "exit_exam": evidence.evidence_text("medical_exit_exam", verified_only=True) if evidence.has_verified("medical_exit_exam") else [],
         "certifications": _safe_bullets(certs_verified),
         "languages": _language_pairs(languages),
+        "references": _cv_references_section(),
     }
     warnings: list[str] = []
+    undated = [item["role"] for item in experience if not item.get("dates")]
+    if undated:
+        # A missing date is reported for owner review rather than invented.
+        warnings.append(
+            "Work-history dates were not supplied for: " + "; ".join(undated) + ". They are presented without dates and no dates were invented."
+        )
     for entry in unverified_work:
         label = _experience_header(entry) if isinstance(entry, dict) else str(entry).strip()
         if label:
@@ -916,7 +1249,7 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
         "master_cv_text": _render_canonical_cv_text(model),
         "review_warnings": warnings,
         "provenance": {
-            "profile_fields": ["personal", "professional_summary", "medical_education", "license_registration", "medical_exit_exam", "work_history", "skills", "languages", "certificates"],
+            "profile_fields": ["personal", "professional_summary", "medical_education", "license_registration", "medical_exit_exam", "work_history", "skills", "languages", "certificates", "experience_evidence", "clinical_experience"],
             "tailoring_method": "none — position-neutral presentation of verified canonical-profile evidence only",
         },
     }
@@ -986,26 +1319,12 @@ def generate_tailored_documents(
     # warrants it. Core competencies are ordered for the vacancy, never cut to
     # a fixed count.
     certs = _safe_bullets(certs_verified)
-    skills_bullets = _rank_strings_for_job(verified_skills, job, match_report)
-
-    def already_covered(candidate: str) -> bool:
-        # Do not turn the core-competencies section into a second copy of the
-        # experience bullets. A specific verified skill such as "HMIS and
-        # health data management" already covers the shorter derived label
-        # "HMIS reporting"; the underlying responsibility remains in its role.
-        candidate_terms = set(_normalized_phrase(candidate).split())
-        for existing in skills_bullets:
-            existing_terms = set(_normalized_phrase(existing).split())
-            if candidate_terms and (candidate_terms.issubset(existing_terms) or existing_terms.issubset(candidate_terms)):
-                return True
-            shared_domains = {"hmis", "referral", "supervision", "clinical", "quality", "nutrition", "safeguarding"}
-            if any(domain in candidate_terms and domain in existing_terms for domain in shared_domains):
-                return True
-        return False
-
-    for item in _competencies_from_verified_experience(profile, job, match_report):
-        if not already_covered(item):
-            skills_bullets.append(item)
+    # Tailoring is ordering, never selection: every verified competency is kept
+    # and only its position inside its professional group (and the position of
+    # the group itself) is driven by the vacancy's focus.
+    focus_rank_key = _focus_rank_key(_focus_terms(job, match_report))
+    skills_bullets = sorted(verified_skills, key=focus_rank_key)
+    expertise = build_expertise_groups(verified_skills, rank_key=focus_rank_key)
 
     # Languages: only explicitly verified languages (name + resolved level +
     # verified: true) may be listed as factual CV content. Unverified mentions
@@ -1015,7 +1334,6 @@ def generate_tailored_documents(
 
     professional_title = _professional_title(profile, evidence, job, match_report)
     signature_title = _signature_title(profile, evidence)
-    summary = _verified_summary_sentence(profile, evidence, job, match_report)
 
     ordered_work: list[dict[str, Any]] = []
     if work_entries:
@@ -1034,11 +1352,22 @@ def generate_tailored_documents(
                 }
             )
 
+    ranked_competencies = [item for group in expertise for item in group["items"]]
+    summary = _professional_profile_paragraph(
+        profile,
+        evidence,
+        job,
+        match_report,
+        ranked_competencies,
+        organization_order=[entry["org"] for entry in ordered_work if entry.get("org")],
+    )
+
     canonical_cv_model = {
         "name": name,
         "headline": professional_title,
         "contact_lines": contact,
         "profile": summary,
+        "expertise": expertise,
         "strengths": skills_bullets,
         "experience": ordered_work,
         "education": education,
@@ -1046,6 +1375,7 @@ def generate_tailored_documents(
         "exit_exam": evidence.evidence_text("medical_exit_exam", verified_only=True) if evidence.has_verified("medical_exit_exam") else [],
         "certifications": certs,
         "languages": _language_pairs(languages),
+        "references": _cv_references_section(),
     }
     cv_text = _render_canonical_cv_text(canonical_cv_model)
 
@@ -1084,47 +1414,34 @@ def generate_tailored_documents(
         "Dear Hiring Committee,",
         "",
         f"I am writing to apply for the {title} position{(' in ' + location) if location else ''} at {company}.",
+        "",
     ]
-    background_sentence = _professional_background_sentence(profile)
-    if background_sentence:
-        cover_lines.append(background_sentence)
-    else:
-        cover_lines.append("I have reviewed the role and am presenting only the qualifications shown in my CV for consideration.")
+    # The letter body restates the same verified evidence as the CV, in the
+    # first person. It never claims a credential, duration, or duty that the
+    # canonical profile does not already verify.
+    intro = _professional_profile_paragraph(
+        profile,
+        evidence,
+        job,
+        match_report,
+        ranked_competencies,
+        organization_order=[entry["org"] for entry in ordered_work if entry.get("org")],
+        first_person=True,
+    )
+    cover_lines.append(intro)
     if vacancy_highlights:
-        strongest = []
-        for item in vacancy_highlights[:3]:
-            text = str(item).strip()
-            header_start = text.rfind(". (")
-            if header_start != -1 and " | " in text[header_start:]:
-                text = text[: header_start + 1].strip()
-            strongest.append(text.rstrip("."))
-        cover_lines.append("Relevant experience includes:")
-        cover_lines.extend(f"- {str(item).rstrip('.')}" for item in strongest)
+        strongest = [_without_attribution(item) for item in vacancy_highlights[:3]]
+        cover_lines.extend(["", "Relevant verified experience for this role includes:"])
+        cover_lines.extend(f"- {item}" for item in strongest if item)
     elif focus_phrases:
-        cover_lines.append(f"I understand that the vacancy emphasizes {', '.join(focus_phrases[:3])}.")
-    else:
-        cover_lines.append("I have reviewed the responsibilities and would welcome consideration for the role based on the qualifications presented in my CV.")
-    credential_sentences: list[str] = []
-    if education:
-        credential_sentences.append(f"my medical education includes {education[0]}")
-    # The report is useful context, but it is not a second evidence store. A
-    # stale/mismatched report must never make this renderer claim a credential
-    # absent from the profile mapping supplied right now.
-    if _requirement_met(match_report, "license_registration") and evidence.has_verified("license_registration"):
-        credential_sentences.append("I meet the professional medical registration/license requirement stated for the role")
-    if _requirement_met(match_report, "medical_exit_exam") and evidence.has_verified("medical_exit_exam"):
-        credential_sentences.append("my Medical Exit Examination is included in my professional record")
-    if languages:
-        credential_sentences.append(f"my language profile includes {', '.join(languages)}")
-    if credential_sentences:
-        cover_lines.append("Additionally, " + "; ".join(credential_sentences) + ".")
+        cover_lines.extend(["", f"I understand that the vacancy emphasizes {', '.join(focus_phrases[:3])}, and my verified experience covers these areas."])
     if any(value is True for value in evidence.verified_values("field_deployment")):
-        cover_lines.append("I am available for field deployment in line with the needs of the position.")
+        cover_lines.extend(["", "I am available for field deployment in line with the needs of the position."])
     elif any(value is True for value in evidence.verified_values("willing_to_relocate")):
-        cover_lines.append("I am willing to relocate or deploy for the position if selected.")
+        cover_lines.extend(["", "I am willing to relocate or deploy for the position if selected."])
     cover_lines.extend([
         "",
-        "I would welcome the opportunity to discuss how my qualifications can support your health program and the communities served by this position. Thank you for considering my application.",
+        "I would welcome the opportunity to discuss how my qualifications can support your health programme and the communities served by this position. Thank you for considering my application.",
         "",
         "Sincerely,",
         name,
@@ -1361,12 +1678,9 @@ def _email_subject(title: str, requested_subject: str = "", reference: str = "")
 def _email_highlights(items: list[str], *, limit: int = 4) -> list[str]:
     highlights: list[str] = []
     for item in items:
-        text = re.sub(r"\s+", " ", str(item or "")).strip(" -•.")
+        text = re.sub(r"\s+", " ", _without_attribution(str(item or ""))).strip(" -•.")
         if not text:
             continue
-        header_start = text.rfind(". (")
-        if header_start != -1 and " | " in text[header_start:]:
-            text = text[: header_start + 1].strip()
         if text not in highlights:
             highlights.append(text)
         if len(highlights) >= limit:

@@ -108,6 +108,26 @@ clinical_experience:
 #     end: Present
 #     bullets: ["Confirmed responsibility copied from your reviewed CV"]
 #     verified: true
+#
+# `bullets`/`responsibilities` are the professional description of the role in
+# the generated CV. Both keys are accepted and merged; `bullets` is a list of
+# responsibilities, `description` is a single paragraph. Write each line as a
+# SCOPE statement -- what the role involved -- so the CV explains the job
+# rather than repeating its title. Useful dimensions per role: role scope,
+# clinical/health/nutrition responsibilities, supervision, coordination,
+# reporting, stakeholders, systems used (e.g. HMIS), field responsibilities,
+# safeguarding responsibilities, and administrative/programme responsibilities.
+#
+# Keep them factual and free of numbers: no patient counts, budgets, project
+# values, percentages, or invented achievements. Leave a dimension out when it
+# does not describe your role. Example lines for a health/nutrition role:
+#   responsibilities:
+#     - Supervised health and nutrition service delivery across the project's
+#       supported facilities
+#     - Supported IMAM/CMAM implementation, including SAM/MAM case
+#       identification and OTP service linkage
+#     - Conducted field monitoring visits and reviewed service records and
+#       reports to support data quality and timely HMIS reporting
 
 work_history: []
 

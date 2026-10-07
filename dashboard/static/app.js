@@ -775,6 +775,25 @@ async function importCv() {
   }
 }
 
+async function generateMasterCv() {
+  setStatus("Generating your position-neutral Master CV…", "warn");
+  try {
+    const data = await apiJson("/api/master-cv", { method: "POST" });
+    const paths = data.documents || {};
+    const cards = ["pdf", "docx", "txt"]
+      .filter((kind) => paths[kind])
+      .map((kind) => documentCard(`Master CV (${kind.toUpperCase()})`, paths[kind]))
+      .join("");
+    const warnings = (data.review_warnings || []).length
+      ? `<p class="sectionHelp">Review notes: ${escapeHtml((data.review_warnings || []).join(" "))}</p>`
+      : "";
+    $("masterCvResult").innerHTML = `<div class="documentGrid">${cards}</div>${warnings}`;
+    setStatus("Master CV generated. Review it before use; it is not submitted anywhere.", "ok");
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
 async function markApplied(id) {
   const confirmation = window.prompt(`If you manually submitted this application, type APPLIED ${id}`) || "";
   try {
@@ -826,6 +845,7 @@ $("mainContent").addEventListener("click", handleAction);
 $("detailDrawer").addEventListener("click", handleAction);
 $("findJobs").addEventListener("click", findJobs);
 $("importCvBtn").addEventListener("click", importCv);
+$("masterCvBtn").addEventListener("click", generateMasterCv);
 $("closeDrawer").addEventListener("click", closeDrawer);
 $("drawerBackdrop").addEventListener("click", closeDrawer);
 $("collapseSidebar").addEventListener("click", () => document.body.classList.toggle("sidebarCollapsed"));

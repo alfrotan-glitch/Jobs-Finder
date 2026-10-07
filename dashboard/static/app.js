@@ -398,6 +398,7 @@ function renderProfileDetails() {
         <div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.dates || "")}</span></div>
         <p>${escapeHtml(item.organization)}${item.location ? ` · ${escapeHtml(item.location)}` : ""}</p>
         ${(item.bullets || []).length ? `<ul>${item.bullets.slice(0, 6).map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
+        ${(item.pending_bullets || []).length ? `<p class="sectionHelp">Awaiting your confirmation — these ${item.pending_bullets.length} detailed draft(s) are NOT used in any generated CV or cover letter until you verify them:</p><ul class="pendingList">${item.pending_bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
       </article>`).join("")
     : `<p class="sectionHelp">No professional experience listed.</p>`;
   $("profileEducationBox").innerHTML = renderSimpleList((details.education || []).map((item) => [item.degree, item.institution, item.dates].filter(Boolean).join(" — ")));

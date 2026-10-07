@@ -179,6 +179,36 @@ def _clean_value(value: Any) -> str:
     return "" if is_unresolved_value(text) else text
 
 
+def _verified_responsibility_texts(value: Any) -> list[str]:
+    """Verified responsibility text from a canonical entry.
+
+    ``responsibilities`` is verification-gated: only an item carrying a literal
+    ``verified: true`` is confirmed professional experience. This mirrors
+    ``utils.documents`` so the owner's review view and the generated document
+    agree on what counts as a fact.
+    """
+    texts: list[str] = []
+    if not isinstance(value, list):
+        return texts
+    for item in value:
+        if isinstance(item, dict) and item.get("verified") is True:
+            text = _clean_value(item.get("text"))
+            if text:
+                texts.append(text)
+    return texts
+
+
+def _pending_responsibility_texts(item: dict[str, Any]) -> list[str]:
+    """Duty drafts held back from generated documents, for owner confirmation."""
+    texts: list[str] = []
+    for entry in item.get("needs_verification") or []:
+        if isinstance(entry, dict) and entry.get("verified") is not True:
+            text = _clean_value(entry.get("text"))
+            if text:
+                texts.append(text)
+    return texts
+
+
 def _date_range(item: dict[str, Any]) -> str:
     """Human-readable supplied dates, using the same rule as the generated CV.
 
@@ -229,16 +259,24 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
     for item in profile.get("work_history") or []:
         if not isinstance(item, dict):
             continue
-        bullets = item.get("bullets") or item.get("responsibilities") or []
-        if isinstance(bullets, str):
-            bullets = [bullets]
+        gated = "responsibilities" in item or "needs_verification" in item
+        verified = _verified_responsibility_texts(item.get("responsibilities"))
+        pending = _pending_responsibility_texts(item)
+        if not gated:
+            # Owner-authored free-form profile shape: bullet lists carry no
+            # per-item verification flag, so they are shown as supplied.
+            free_form = item.get("bullets") or item.get("duties") or item.get("achievements") or []
+            if isinstance(free_form, str):
+                free_form = [free_form]
+            verified = [_clean_value(bullet) for bullet in free_form if _clean_value(bullet)]
         experience.append(
             {
                 "title": _clean_value(item.get("title")),
                 "organization": _clean_value(item.get("organization")),
                 "location": _clean_value(item.get("location")),
                 "dates": _date_range(item),
-                "bullets": [_clean_value(bullet) for bullet in bullets if _clean_value(bullet)],
+                "bullets": verified,
+                "pending_bullets": pending,
             }
         )
 

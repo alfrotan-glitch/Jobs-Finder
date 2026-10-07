@@ -4,6 +4,7 @@ return.
 """
 
 import io
+import re
 from pathlib import Path
 
 import pytest
@@ -350,3 +351,64 @@ def test_master_cv_endpoint_writes_all_artifacts_without_mutating_or_submitting(
     assert "Available on request for shortlisted applications." in text
     # Generation is a local write only: the canonical profile is untouched.
     assert profile_repository.canonical_profile_path().read_bytes() == before
+
+
+def test_profile_view_separates_confirmed_scope_from_unconfirmed_drafts(tmp_path, monkeypatch):
+    """The owner-facing view must never pass a draft off as confirmed experience.
+
+    ``responsibilities`` is verification-gated. The review page shows the
+    confirmed scope as the role's bullets and lists the held-back drafts
+    separately, so the owner can confirm or discard them. Raw profile objects
+    (including their internal `verified`/`basis` keys) must never be stringified
+    into the page.
+    """
+    real_profile = profile_repository.load_canonical_profile(required=True)
+    monkeypatch.setattr(profile_repository, "CANONICAL_PROFILE_PATH", tmp_path / "profile.yaml")
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
+    profile_repository.save_canonical_profile(real_profile)
+
+    response = TestClient(server.app).get("/api/profile/details")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exists"] is True
+    experience = body["details"]["experience"]
+    assert len(experience) == 5
+    confirmed_total = 0
+    draft_total = 0
+    for role in experience:
+        confirmed_total += len(role["bullets"])
+        draft_total += len(role["pending_bullets"])
+        for bullet in role["bullets"]:
+            assert "{" not in bullet and "'verified'" not in bullet, bullet
+            assert "basis" not in bullet, bullet
+            assert "NEEDS_VERIFICATION" not in bullet, bullet
+        for draft in role["pending_bullets"]:
+            assert "{" not in draft and "NEEDS_VERIFICATION" not in draft, draft
+    assert confirmed_total == 5  # one applicant-supported scope line per role
+    assert draft_total == 28  # every held-back draft is still visible to the owner
+
+
+def test_profile_view_drafts_are_never_listed_as_confirmed_experience(tmp_path, monkeypatch):
+    """A duty the applicant never supplied must not appear as a role's bullets."""
+    real_profile = profile_repository.load_canonical_profile(required=True)
+    monkeypatch.setattr(profile_repository, "CANONICAL_PROFILE_PATH", tmp_path / "profile.yaml")
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
+    profile_repository.save_canonical_profile(real_profile)
+
+    payload = TestClient(server.app).get("/api/profile/details").json()["details"]
+    confirmed = [bullet for role in payload["experience"] for bullet in role["bullets"]]
+    drafts = [draft for role in payload["experience"] for draft in role["pending_bullets"]]
+
+    for role in real_profile["work_history"]:
+        for item in role["needs_verification"]:
+            assert item["text"] not in confirmed
+            assert item["text"] in drafts
+    # Confirmed scope restates supplied facts only: each line is about its own
+    # role, so it shares the role title's own wording.
+    def significant_tokens(text: str) -> set[str]:
+        return {token for token in re.split(r"[^a-z]+", str(text).lower()) if len(token) > 3}
+
+    for role, entry in zip(payload["experience"], real_profile["work_history"]):
+        shared = significant_tokens(entry["title"]) & significant_tokens(role["bullets"][0])
+        assert len(shared) >= 2, (entry["title"], role["bullets"][0], sorted(shared))

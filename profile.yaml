@@ -89,16 +89,20 @@ experience_evidence:
     status: "Verified Afghanistan field experience; exact duration not supplied"
     verified: true
 
-# `responsibilities` is the owner-confirmable professional description of each
-# role. Every line below is a SCOPE statement derived only from facts already
-# recorded and verified in this same file -- the role title, the supplied
-# location, the verified `skills` inventory, the verified `certificates`, and
-# the verified `experience_evidence` dimensions. Responsibilities therefore
-# add no new claim of achievement: they contain no numbers, dates, patient
-# counts, budgets, project values, results, or duties that the verified
-# evidence above does not already support. Review and adjust the wording in
-# `responsibilities` (not in the derived CV renderer) to match your actual
-# duties, and leave a line out if it does not describe your work.
+# `responsibilities` records the applicant-supported professional scope of each
+# role. Each entry is an object and the canonical rule is unchanged: only a
+# literal `verified: true` beside a claim makes that claim usable as verified
+# evidence. A verified entry may restate only what the applicant actually
+# supplied for that role -- its title, employer, and location. It must not add
+# duties, activities, achievements, numbers, dates, results, or attribute a
+# skill or certificate to the role.
+#
+# The detailed duties an owner would normally record here were never supplied
+# by the applicant for any of the five roles below. Instead of inventing them,
+# they are held in `needs_verification`: preserved verbatim, excluded from every
+# generated document, and listed for owner review. Confirming a line means
+# checking it against the applicant's own record and moving it into
+# `responsibilities` with `verified: true`.
 #
 # The two ACF-International roles have no supplied dates. No current employer,
 # current role, or unsupported responsibility is implied by either entry, and
@@ -109,67 +113,166 @@ work_history:
     location: "Sang-e-Takht TFU, Daikundi, Afghanistan"
     start: ""
     end: ""
-    bullets: []
     responsibilities:
-      - "Provided clinical assessment, diagnosis, and treatment for patients admitted to the Therapeutic Feeding Unit with severe acute malnutrition, in line with inpatient SAM and IMAM/CMAM protocols"
-      - "Monitored clinical progress, documented inpatient care, and prepared patients for continued outpatient follow-up through OTP services"
-      - "Applied infection prevention and control measures within the inpatient therapeutic feeding unit"
-      - "Acted as site Safeguarding and PSEA Focal Point, supporting safeguarding, child-protection, and protection-from-sexual-exploitation-and-abuse awareness, reporting channels, and compliance with organizational policy"
-      - "Maintained HMIS and nutrition data on TFU activity and supported periodic health reporting to project and health-authority counterparts"
-      - "Took part in clinical audit, case review, and quality-improvement activity to support quality of care in the therapeutic feeding unit"
-      - "Liaised with health facility and provincial health counterparts on service-delivery coordination, medical supply needs, and reporting"
+      - text: "Medical doctor role at the Sang-e-Takht TFU, Daikundi, Afghanistan, with site appointment as Safeguarding Focal Point"
+        verified: true
+        basis: "supplied role title and supplied work location"
+    needs_verification:
+      - text: "Provided clinical assessment, diagnosis, and treatment for patients admitted to the Therapeutic Feeding Unit with severe acute malnutrition, in line with inpatient SAM and IMAM/CMAM protocols"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Monitored clinical progress, documented inpatient care, and prepared patients for continued outpatient follow-up through OTP services"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Applied infection prevention and control measures within the inpatient therapeutic feeding unit"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Acted as site Safeguarding and PSEA Focal Point, supporting safeguarding, child-protection, and protection-from-sexual-exploitation-and-abuse awareness, reporting channels, and compliance with organizational policy"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Maintained HMIS and nutrition data on TFU activity and supported periodic health reporting to project and health-authority counterparts"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Took part in clinical audit, case review, and quality-improvement activity to support quality of care in the therapeutic feeding unit"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Liaised with health facility and provincial health counterparts on service-delivery coordination, medical supply needs, and reporting"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
     verified: true
   - title: "Health & Nutrition Supervisor"
     organization: "ACF-International"
     location: "Gizab & Sang-e-Takht, Daikundi, Afghanistan"
     start: ""
     end: ""
-    bullets: []
     responsibilities:
-      - "Supervised health and nutrition service delivery across ACF-supported coverage areas in Gizab and Sang-e-Takht districts, Daikundi"
-      - "Supported IMAM/CMAM implementation, including SAM/MAM case identification, OTP service linkage, and adherence to national nutrition treatment protocols"
-      - "Supervised and built the capacity of health and nutrition staff through work planning, on-the-job coaching, and training follow-up"
-      - "Conducted field monitoring visits and reviewed service records, registers, and reports to support data quality and timely HMIS reporting"
-      - "Coordinated with MoPH and provincial health-authority counterparts, community stakeholders, and partner teams to support BPHS/EPHS-aligned service delivery"
-      - "Supported quality-of-care activities, including review of clinical and nutrition documentation and follow-up of corrective actions with service providers"
-      - "Monitored nutrition and medical supply availability at supported sites and supported forecasting, stock follow-up, and logistics coordination with the project team"
+      - text: "Health and nutrition supervisory role in the ACF-International programme areas of Gizab and Sang-e-Takht, Daikundi, Afghanistan"
+        verified: true
+        basis: "supplied role title, supplied employer and supplied work location"
+    needs_verification:
+      - text: "Supervised health and nutrition service delivery across ACF-supported coverage areas in Gizab and Sang-e-Takht districts, Daikundi"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Supported IMAM/CMAM implementation, including SAM/MAM case identification, OTP service linkage, and adherence to national nutrition treatment protocols"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Supervised and built the capacity of health and nutrition staff through work planning, on-the-job coaching, and training follow-up"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Conducted field monitoring visits and reviewed service records, registers, and reports to support data quality and timely HMIS reporting"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Coordinated with MoPH and provincial health-authority counterparts, community stakeholders, and partner teams to support BPHS/EPHS-aligned service delivery"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Supported quality-of-care activities, including review of clinical and nutrition documentation and follow-up of corrective actions with service providers"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Monitored nutrition and medical supply availability at supported sites and supported forecasting, stock follow-up, and logistics coordination with the project team"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
     verified: true
   - title: "Medical Doctor / COVID-19 Rapid Response Team Leader"
     organization: "Daikundi Provincial Public Health Directorate"
     location: "Daikundi, Afghanistan"
     start: "2020-10"
     end: "2020-12"
-    bullets: []
     responsibilities:
-      - "Led the provincial COVID-19 rapid response team and coordinated rapid-response activity with the Provincial Public Health Directorate"
-      - "Provided clinical assessment, medical guidance, and case-management support for COVID-19 patients, in line with national protocols and infection prevention and control measures"
-      - "Supported outbreak response coordination and follow-up with health facilities and provincial health authorities"
-      - "Collected and reported response data through HMIS and provincial reporting channels, supporting situation reporting for the provincial response"
-      - "Supported infection prevention and control and public-health measures within the provincial response, in line with BPHS/EPHS service structures"
-      - "Participated in coordination meetings with health-sector stakeholders, partners, and provincial authorities"
+      - text: "Medical doctor leading the COVID-19 Rapid Response Team within the Daikundi Provincial Public Health Directorate"
+        verified: true
+        basis: "supplied role title, supplied employer and supplied work location"
+    needs_verification:
+      - text: "Led the provincial COVID-19 rapid response team and coordinated rapid-response activity with the Provincial Public Health Directorate"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Provided clinical assessment, medical guidance, and case-management support for COVID-19 patients, in line with national protocols and infection prevention and control measures"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Supported outbreak response coordination and follow-up with health facilities and provincial health authorities"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Collected and reported response data through HMIS and provincial reporting channels, supporting situation reporting for the provincial response"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Supported infection prevention and control and public-health measures within the provincial response, in line with BPHS/EPHS service structures"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Participated in coordination meetings with health-sector stakeholders, partners, and provincial authorities"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
     verified: true
   - title: "Public Relations & Communications Advisor"
     organization: "Daikundi Governor’s Office"
     location: "Daikundi, Afghanistan"
     start: "2020-12"
     end: "2021-08"
-    bullets: []
     responsibilities:
-      - "Advised the Governor’s Office on public relations and communications and prepared official communications and public information materials"
-      - "Coordinated public information activities with provincial departments and partner organizations"
-      - "Supported stakeholder engagement and information-sharing between the provincial office, community representatives, and health-sector partners"
-      - "Maintained reporting and documentation of public relations and communication activities for the office"
+      - text: "Public relations and communications advisory role within the Daikundi Governor’s Office, Daikundi, Afghanistan"
+        verified: true
+        basis: "supplied role title, supplied employer and supplied work location"
+    needs_verification:
+      - text: "Advised the Governor’s Office on public relations and communications and prepared official communications and public information materials"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Coordinated public information activities with provincial departments and partner organizations"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Supported stakeholder engagement and information-sharing between the provincial office, community representatives, and health-sector partners"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Maintained reporting and documentation of public relations and communication activities for the office"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
     verified: true
   - title: "Administrative and Finance Officer"
     organization: "Trend for a Better Tomorrow (TBT)"
     start: "2019-05"
     end: "2019-09"
-    bullets: []
     responsibilities:
-      - "Supported day-to-day administrative operations, office documentation, and filing for programme activities"
-      - "Supported finance and procurement documentation, including payment records and expenditure paperwork, in line with internal procedures"
-      - "Maintained supply and stock records and supported follow-up of administrative issues with the responsible officer"
-      - "Coordinated with programme colleagues and external counterparts on administrative follow-up and reporting"
+      - text: "Administrative and finance officer role with Trend for a Better Tomorrow (TBT)"
+        verified: true
+        basis: "supplied role title and supplied employer"
+    needs_verification:
+      - text: "Supported day-to-day administrative operations, office documentation, and filing for programme activities"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Supported finance and procurement documentation, including payment records and expenditure paperwork, in line with internal procedures"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Maintained supply and stock records and supported follow-up of administrative issues with the responsible officer"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+      - text: "Coordinated with programme colleagues and external counterparts on administrative follow-up and reporting"
+        verified: false
+        status: "NEEDS_VERIFICATION"
+        basis: "system-authored scope draft; the applicant supplied no duties for this position"
     verified: true
 
 skills:

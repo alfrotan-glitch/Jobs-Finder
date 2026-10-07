@@ -536,7 +536,7 @@ def _pdf_last_page_fill_ratio(path: str | Path) -> float:
 #: only when it removes a sparse trailing page; otherwise the comfortable
 #: setting is kept so text never becomes cramped without a reason.
 CV_PDF_LAYOUTS: dict[str, dict[str, float]] = {
-    "comfortable": {"name": 21, "title": 10.6, "contact": 8.4, "section": 10.1, "role": 10.4, "meta": 8.1, "body": 8.85, "leading": 11.35, "bullets": 8.2, "bullet_leading": 11.15, "section_before": 6.5, "section_after": 3.2, "role_before": 4.5, "meta_after": 2.2, "group_after": 1.6, "bullet_after": 1.1},
+    "comfortable": {"name": 21, "title": 10.6, "contact": 8.4, "section": 10.1, "role": 10.4, "meta": 8.1, "body": 9.05, "leading": 14.2, "bullets": 8.2, "bullet_leading": 14.0, "section_before": 20.0, "section_after": 3.2, "role_before": 11.5, "meta_after": 4.2, "group_after": 1.6, "bullet_after": 4.0},
     "compact": {"name": 19.5, "title": 10.1, "contact": 8.0, "section": 9.6, "role": 9.9, "meta": 7.8, "body": 8.35, "leading": 10.5, "bullets": 7.8, "bullet_leading": 10.3, "section_before": 4.6, "section_after": 2.4, "role_before": 3.2, "meta_after": 1.6, "group_after": 1.2, "bullet_after": 0.7},
 }
 

@@ -5,11 +5,16 @@ generate real TXT/DOCX/PDF artifacts from the shipped canonical profile and
 assert the guarantees that make the CV usable for a real medical / health /
 nutrition application:
 
-* the Master CV is comprehensive (profile, grouped competencies, complete role
-  descriptions, education, registration, exit exam, certifications, languages,
-  a reference line) and long enough to be a serious CV;
+* the Master CV is comprehensive (profile, grouped competencies, every verified
+  role with its applicant-supported scope, education, registration, exit exam,
+  certifications, languages, a reference line);
 * every verified responsibility, certificate, and language survives into the
-  rendered TXT, DOCX and PDF;
+  rendered TXT, DOCX and PDF, while every *unverified* responsibility draft
+  stays out of all of them;
+* a duty becomes verified experience only on applicant evidence. A role title,
+  a verified skill, a certificate, a sector norm, an employer, or a plausible
+  inference must never let the system assert that the applicant did something
+  the applicant never supplied;
 * no private reference contact data, license number, or invented date reaches
   any artifact;
 * the ACF roles keep their intentionally unpresise (blank) dates;
@@ -90,6 +95,108 @@ def _profile() -> dict:
     return load_canonical_profile(required=True)
 
 
+def _verified_responsibilities(entry: dict) -> list[str]:
+    """Responsibility text carrying an explicit ``verified: true`` flag.
+
+    Canonical shape: ``responsibilities`` holds ``{"text": ..., "verified": ...}``
+    items. A bare string, a missing flag, or ``verified: false`` is draft
+    material and must never be presented as applicant experience.
+    """
+    return [
+        str(item["text"])
+        for item in entry.get("responsibilities") or []
+        if isinstance(item, dict) and item.get("verified") is True
+    ]
+
+
+def _pending_responsibilities(profile: dict) -> list[tuple[str, str]]:
+    """``(role, text)`` for every draft held back from employer-facing documents."""
+    pending: list[tuple[str, str]] = []
+    for entry in profile.get("work_history") or []:
+        for item in entry.get("needs_verification") or []:
+            if isinstance(item, dict) and item.get("verified") is not True:
+                pending.append((str(entry.get("title") or ""), str(item.get("text") or "")))
+    return pending
+
+
+def _applicant_supplied_facts(profile: dict) -> set[str]:
+    """Tokens the applicant actually supplied as facts.
+
+    Deliberately excludes every duty/description field (including the drafts in
+    ``needs_verification``) AND the verified skills and certificates. Those are
+    inventoried elsewhere in the profile; the audit finding was precisely that a
+    skill or certificate must not be treated as evidence that a duty was
+    performed. What remains is what the applicant supplied *about a role*: its
+    title, employer and location, plus identity, education, licence status, exit
+    exam, languages, and the applicant's own experience-area statements.
+    """
+    facts: set[str] = set()
+    excluded = {
+        "responsibilities",
+        "bullets",
+        "description",
+        "duties",
+        "achievements",
+        "needs_verification",
+        "skills",
+        "certificates",
+    }
+
+    def absorb(value) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key in excluded:
+                    continue
+                absorb(child)
+        elif isinstance(value, list):
+            for child in value:
+                absorb(child)
+        elif value not in (None, ""):
+            facts.update(part for part in re.split(r"[^a-z0-9]+", str(value).lower()) if part)
+
+    absorb({key: value for key, value in profile.items() if key != "work_history"})
+    for entry in profile.get("work_history") or []:
+        for key in ("title", "organization", "location", "start", "end"):
+            absorb(entry.get(key))
+    return facts
+
+
+#: Duty-activity vocabulary that only applicant evidence can support. Every term
+#: here was present in the system-authored drafts that this audit removed while
+#: being absent from everything the applicant supplied, so it doubles as a
+#: permanent regression guard: if any of these words reappears in a *verified*
+#: responsibility without applicant evidence, the audit has been undone.
+DUTY_ACTIVITY_TERMS: set[str] = {
+    # Clinical activity
+    "assessment", "assessments", "diagnosis", "diagnoses", "treatment", "treatments",
+    "patient", "patients", "admitted", "admission", "inpatient", "outpatient", "ward",
+    "progress", "triage", "screening", "prescribing", "surgery", "referral", "referrals",
+    "case", "cases", "consultation", "procedures", "prescription",
+    # Nutrition / programme delivery
+    "imam", "cmam", "sam", "mam", "otp", "tfu", "ipc", "imnci", "iycf", "bphs", "ephs",
+    "hmis", "dhis2", "moph", "identification", "linkage", "feeding", "therapeutic",
+    "malnutrition", "protocol", "protocols", "registers", "visits", "coaching",
+    "forecasting", "stock", "distribution", "adherence", "enrolment", "enrollment",
+    # Quality / reporting / supply / protection activity
+    "audit", "audits", "data", "records", "documentation", "reporting", "reports",
+    "quality", "care", "review", "reviews", "forecast", "supplies", "logistics",
+    "protection", "protective", "safeguarding", "psea", "awareness", "exploitation",
+    "abuse", "complaints",
+    # Action verbs that assert the applicant personally performed a duty
+    "provided", "provide", "monitored", "monitoring", "conducted", "documented",
+    "maintained", "prepared", "coordinated", "coordinating", "liaised", "supervised",
+    "supervising", "advised", "acted", "collected", "reported", "participated",
+    "reviewed", "built", "applied", "led", "took", "supported", "delivered",
+    "implemented", "trained", "managed", "organised", "organized", "verified",
+}
+
+
+def _unanchored_duty_terms(line: str, applicant_facts: set[str]) -> set[str]:
+    """Duty-activity terms in ``line`` that no applicant-supplied fact supports."""
+    tokens = {part for part in re.split(r"[^a-z0-9]+", str(line).lower()) if part}
+    return {token for token in tokens & DUTY_ACTIVITY_TERMS if token not in applicant_facts}
+
+
 def _pdf_text(path: str | Path) -> str:
     with pdfplumber.open(str(path)) as pdf:
         return "\n".join(page.extract_text() or "" for page in pdf.pages)
@@ -98,6 +205,25 @@ def _pdf_text(path: str | Path) -> str:
 def _pdf_pages(path: str | Path) -> int:
     with pdfplumber.open(str(path)) as pdf:
         return len(pdf.pages)
+
+
+def _last_page_fill_ratio(path: str | Path) -> float:
+    """How full the final page is (0..1), measured independently of the renderer.
+
+    The footer is excluded so the page number cannot make an empty page look
+    full. Measured from real PDF character positions, not from renderer state.
+    """
+    with pdfplumber.open(str(path)) as pdf:
+        if len(pdf.pages) < 2:
+            return 1.0
+        page = pdf.pages[-1]
+        bottom_limit = page.height - 45
+        body = [char for char in page.chars if char.get("bottom", 0) < bottom_limit]
+        if not body:
+            return 0.0
+        top = min(char["top"] for char in body)
+        bottom = max(char["bottom"] for char in body)
+        return max(0.0, min(1.0, (bottom - top) / max(bottom_limit - 40, 1)))
 
 
 def _docx_xml(path: str | Path) -> str:
@@ -210,8 +336,12 @@ def test_master_cv_model_is_comprehensive_for_the_real_profile():
         "Daikundi Governor’s Office",
         "Trend for a Better Tomorrow (TBT)",
     ]
-    for item in model["experience"]:
-        assert len(item["bullets"]) >= 4, item["role"]
+    # Every role keeps an applicant-supported professional scope line. Nothing
+    # more is claimed, because the applicant supplied no duties for any role.
+    for item, entry in zip(model["experience"], profile["work_history"]):
+        verified = _verified_responsibilities(entry)
+        assert item["bullets"] == [b for b in verified], item["role"]
+        assert len(item["bullets"]) >= 1, item["role"]
         assert all(len(bullet) >= 40 for bullet in item["bullets"]), item["role"]
 
     # Credentials, training, languages, and a private-reference placeholder.
@@ -254,11 +384,21 @@ def test_master_cv_text_contains_every_verified_fact():
         assert language["level"] in text
     for entry in profile["work_history"]:
         assert entry["title"] in text
-        for responsibility in entry["responsibilities"]:
+        for responsibility in _verified_responsibilities(entry):
             assert responsibility in text, responsibility
-    # The professional profile must not be a thin one-liner.
+    # Every verified competency and experience area reaches the document.
+    for skill in [item["name"] for item in _verified_skill_items(profile)]:
+        assert skill in text, skill
+    for area in ("health and nutrition service delivery", "humanitarian health programming", "team supervision and capacity building"):
+        assert area in text, area
+    # No held-back draft may appear in the document.
+    for _role, draft in _pending_responsibilities(profile):
+        assert draft not in text, draft
+    # The professional profile must not be a thin one-liner, and the document
+    # must stay a substantial CV even though only applicant-supported scope is
+    # printed for each role.
     assert len(text.split("PROFESSIONAL SUMMARY", 1)[1].split("\n\n", 1)[0].split()) >= 90
-    assert len(text.split()) >= 800
+    assert len(text.split()) >= 400
 
 
 def test_master_cv_never_prints_unverified_or_private_facts():
@@ -336,10 +476,13 @@ def test_real_master_cv_artifacts_render_complete_content(tmp_path):
         assert "Dr. Allah Yar Frotan" in flat
         assert "Medical Doctor / Health & Nutrition Specialist" in flat
         for entry in profile["work_history"]:
-            for responsibility in entry["responsibilities"]:
+            for responsibility in _verified_responsibilities(entry):
                 assert " ".join(responsibility.split()) in flat, responsibility
         for certificate in profile["certificates"]:
             assert certificate["name"] in flat, certificate["name"]
+        # An unverified duty draft never reaches any employer-facing format.
+        for _role, draft in _pending_responsibilities(profile):
+            assert " ".join(draft.split()) not in flat, draft
 
     # Page count is content-driven: a comprehensive CV is at least two pages,
     # and the page numbers are visible in the footer of every page.
@@ -347,6 +490,10 @@ def test_real_master_cv_artifacts_render_complete_content(tmp_path):
     assert 2 <= pages <= 4, pages
     for number in range(1, pages + 1):
         assert f"Page {number}" in pdf_text
+    # A multi-page CV must not end on a nearly empty page: the verified content
+    # is laid out with a balanced vertical rhythm that keeps the last page
+    # substantial. This never removes or adds content -- it guards the rhythm.
+    assert _last_page_fill_ratio(paths["pdf"]) >= 0.45
 
     # DOCX pagination uses real Word fields, never a hard-coded page break.
     assert 'w:type="page"' not in docx_xml
@@ -393,13 +540,16 @@ def test_tailored_cvs_are_substantive_and_keep_every_verified_fact(tmp_path):
         text = docs["tailored_cv_text"]
 
         assert len(model["experience"]) == 5  # every verified role stays
-        assert len(docs["tailored_cv_text"].split()) >= 700
+        assert len(docs["tailored_cv_text"].split()) >= 400
         for entry in profile["work_history"]:
             assert entry["title"] in text
-            for responsibility in entry["responsibilities"]:
+            for responsibility in _verified_responsibilities(entry):
                 assert responsibility in text, responsibility
         for certificate in profile["certificates"]:
             assert certificate["name"] in text
+        # The verification gate holds identically for a tailored CV.
+        for _role, draft in _pending_responsibilities(profile):
+            assert draft not in text, draft
         # Tailored documents never mutate the canonical mapping.
         assert json.dumps(profile, sort_keys=True, ensure_ascii=False) == before_fingerprint
 
@@ -455,7 +605,11 @@ def test_safeguarding_vacancy_surfaces_verified_safeguarding_evidence():
     assert "Safeguarding/PSEA" in cv
     assert "Child Protection" in cv
     assert "Safeguarding & PSEA — ACF — 2024" in cv
-    assert "Acted as site Safeguarding and PSEA Focal Point" in cv
+    # The verified scope line is what carries the safeguarding appointment: the
+    # role title itself records the Focal Point appointment. The system-authored
+    # duty clauses for that appointment are drafts and must stay out.
+    assert "site appointment as Safeguarding Focal Point" in cv
+    assert "Acted as site Safeguarding and PSEA Focal Point" not in cv
 
 
 def test_tailored_cv_artifacts_render_and_stay_private(tmp_path):
@@ -509,93 +663,152 @@ def test_expertise_groups_are_deterministic_and_complete():
 
 
 def test_canonical_profile_responsibilities_are_fact_anchored():
-    """Role responsibilities must not introduce new factual entities.
+    """Verified responsibilities restate applicant-supplied facts only.
 
-    Responsibilities are the owner-confirmable professional description of a
-    role. This test enforces that they stay SCOPE statements: no numeric claim
-    (count, budget, percentage, duration), and no named entity (organisation,
-    place, institution, or programme) that the *rest* of the verified profile
-    does not already record. Descriptive duty vocabulary is allowed; new facts
-    are not.
+    Responsibilities are verification-gated: only an item carrying a literal
+    ``verified: true`` is applicant experience. This test enforces the two
+    release-blocking rules on the real profile:
 
-    Entities are read from every profile section except the per-role
-    responsibility/bullet text itself -- otherwise the check would validate a
-    claim against the claim.
+    1. shape -- every role records applicant-supported scope, and every
+       detailed duty is held in ``needs_verification`` instead;
+    2. substance -- a verified line contains no numeric claim and no named
+       entity (organisation, place, programme) that the applicant-supplied
+       profile does not already record. Drafts are excluded from the anchor
+       set, so a claim can never be validated against its own wording.
     """
     profile = _profile()
-    # Vocabulary available to responsibilities: everything verified elsewhere in
-    # the profile (identity, education, work titles/employers/locations, skills,
-    # certificates, languages, evidence dimensions) and nothing else.
-    anchors: set[str] = set()
-
-    def absorb(value) -> None:
-        if isinstance(value, dict):
-            for key, child in value.items():
-                if key in {"responsibilities", "bullets", "description", "duties", "achievements"}:
-                    continue
-                absorb(child)
-        elif isinstance(value, list):
-            for child in value:
-                absorb(child)
-        elif value not in (None, ""):
-            anchors.update(re.findall(r"[a-z0-9]+", str(value).lower()))
-
-    absorb(profile)
-
-    # Professional scope vocabulary that is generic to the medical / health /
-    # nutrition / humanitarian sector rather than a new factual claim, plus
-    # ordinary function words and neutral verb/adverb forms.
-    sector_vocabulary = {"clinical", "assessment", "diagnosis", "treatment", "patient", "patients", "care", "case",
-        "protocol", "protocols", "national", "unit", "inpatient", "outpatient", "activity", "activities", "progress",
-        "severe", "acute", "malnutrition", "therapeutic", "feeding", "coverage", "areas", "identification",
-        "linkage", "adherence", "implementation", "delivery", "quality", "documentation", "records", "registers",
-        "corrective", "actions", "providers", "staff", "work", "planning", "coaching", "training", "visits",
-        "availability", "forecasting", "stock", "supply", "supplies", "logistics", "coordination", "meetings",
-        "counterparts", "authority", "authorities", "facilities", "facility", "community", "communities",
-        "representatives", "awareness", "channels", "compliance", "policy", "organizational", "prevention",
-        "control", "measures", "outbreak", "response", "rapid", "reporting", "reports", "data", "situation",
-        "provincial", "district", "districts", "paperwork", "expenditure", "payments", "procurement", "filing",
-        "administrative", "operations", "colleagues", "external", "internal", "procedures", "responsible", "officer",
-        "official", "information", "materials", "engagement", "sharing", "public", "relations", "communications",
-        "structure", "structures", "aligned", "element", "site", "focal", "point", "role", "position", "scope",
-        "partners", "sector", "sectors", "stakeholders", "actors", "teams", "programmes", "programs", "projects",
-        "services", "responsibilities", "a", "an", "the", "and", "or", "of", "to", "in", "on", "at", "by", "for",
-        "from", "with", "as", "into", "onto", "within", "across", "including", "during", "their", "its", "this",
-        "that", "these", "those", "all", "both", "up", "through", "while", "such", "per", "line", "accordance",
-        "alignment", "follow", "followup", "link", "sexual", "exploitation", "abuse", "protection", "child",
-        "infection", "integrated", "based", "management", "system", "systems", "health", "nutrition", "infant",
-        "young", "practices", "basic", "package", "essential", "hospital", "supported", "supporting", "led",
-        "shared", "raised", "conducted",
-    }
+    applicant_facts = _applicant_supplied_facts(profile)
+    # Entities the applicant supplied anywhere (used for the capitalised-token
+    # check). Draft text is excluded here too.
+    anchors = set(applicant_facts)
 
     for entry in profile["work_history"]:
-        responsibilities = entry.get("responsibilities") or []
+        responsibilities = _verified_responsibilities(entry)
         assert responsibilities, entry["title"]
         assert entry["verified"] is True
+        # The tracked profile records every duty in the verification-gated field
+        # only. Free-form fields carry no per-item flag, so duty text parked
+        # there would bypass the gate.
+        for free_form in ("bullets", "duties", "achievements", "description"):
+            assert not entry.get(free_form), (entry["title"], free_form, entry.get(free_form))
         for line in responsibilities:
             assert "  " not in line, line
             numeric = re.sub(r"COVID-?19", "COVID", line, flags=re.IGNORECASE)
             assert not re.search(r"\d", numeric), line
-            # Named entities: any capitalised word, or any organisation/place
-            # noun, must already be recorded elsewhere in the verified profile.
             for index, token in enumerate(re.findall(r"[A-Za-z][A-Za-z&/'-]{2,}", line)):
                 if index == 0:
                     continue
                 if token[0].isupper():
                     lowered = [part for part in re.split(r"[^a-z0-9]+", token.lower()) if part]
-                    known = all(part in anchors or part in sector_vocabulary for part in lowered)
-                    assert known, (entry["title"], token, line, sorted(set(lowered) - anchors - sector_vocabulary))
-            for noun in ["hospital", "university", "ministry", "institute", "company", "agency", "clinic",
-                         "academy", "college", "school", "bank", "foundation", "village", "region", "city",
-                         "district", "province", "directorate", "ngo", "ingo", "unicef", "unhcr", "iom"]:
-                if re.search(rf"\b{noun}\b", line, flags=re.IGNORECASE):
-                    assert noun in anchors, (entry["title"], noun, line)
-            # Unsupported achievement/result wording must never be introduced by
-            # a responsibility line.
+                    known = all(part in anchors for part in lowered)
+                    assert known, (entry["title"], token, line, sorted(set(lowered) - anchors))
             for claim in ["increased", "reduced", "improved", "exceeded", "achieved", "awarded",
                           "recognized", "recognised", "doubled", "tripled", "saved", "secured",
                           "won", "ranked", "accredited", "certified by", "promoted"]:
                 assert not re.search(rf"\b{claim}\b", line, flags=re.IGNORECASE), (entry["title"], claim, line)
+
+
+def test_role_title_alone_cannot_verify_a_duty_clause():
+    """The release-blocking audit finding, as a permanent regression guard.
+
+    Every detailed duty in the five roles used to be system-authored from the
+    verified role title, the verified skill inventory, and the verified
+    certificates. Being a doctor does not supply "provided clinical assessment,
+    diagnosis, and treatment"; holding an IPC certificate does not supply
+    "applied infection prevention and control measures"; the ACF Safeguarding
+    Focal Point title does not supply the safeguarding activities performed.
+
+    Those clauses are now held in ``needs_verification``. This test fails if any
+    of that duty vocabulary reappears in a verified responsibility without the
+    applicant having supplied it.
+    """
+    profile = _profile()
+    applicant_facts = _applicant_supplied_facts(profile)
+    for entry in profile["work_history"]:
+        for line in _verified_responsibilities(entry):
+            unanchored = _unanchored_duty_terms(line, applicant_facts)
+            assert not unanchored, (entry["title"], sorted(unanchored), line)
+
+
+def test_duty_clause_guard_detects_a_reenabled_draft():
+    """The guard above must bite: prove it fails on a reinstated draft.
+
+    Without this, ``test_role_title_alone_cannot_verify_a_duty_clause`` could
+    pass simply because its vocabulary never matches anything. Moving a real
+    held-back draft into verified responsibilities must trip it.
+    """
+    import copy
+
+    profile = copy.deepcopy(_profile())
+    entry = profile["work_history"][0]
+    draft = entry["needs_verification"][0]["text"]
+    # Baseline: the guard is clean for the shipped profile.
+    applicant_facts = _applicant_supplied_facts(profile)
+    for line in _verified_responsibilities(entry):
+        assert not _unanchored_duty_terms(line, applicant_facts)
+
+    entry["responsibilities"].append({"text": draft, "verified": True})
+    applicant_facts = _applicant_supplied_facts(profile)
+    flagged = _unanchored_duty_terms(draft, applicant_facts)
+    assert flagged, draft
+    assert {"patients", "assessment", "diagnosis", "treatment"} <= flagged, sorted(flagged)
+
+
+def test_unverified_responsibility_drafts_never_reach_a_document(tmp_path):
+    """A draft is preserved and reported, never printed as verified experience."""
+    profile = _profile()
+    pending = _pending_responsibilities(profile)
+    assert len(pending) == 28, len(pending)
+    assert len({role for role, _ in pending}) == 5
+
+    master = write_master_cv(profile, out_dir=tmp_path / "master")
+    job = _medical_job()
+    report = match_job_against_profile(job, profile, today=TODAY).to_dict()
+    docs = generate_tailored_documents(job, profile, report)
+    bundle = prepare_application_bundle(job, profile, report, out_dir=tmp_path / "tailored")
+
+    surfaces = {
+        "master": master["master_cv_text"],
+        "tailored": docs["tailored_cv_text"],
+        "cover_letter": docs["cover_letter"],
+        "email": (docs.get("application_package", {}).get("email_draft") or {}).get("body", ""),
+        "package_text": bundle["application_package"]["text"],
+    }
+    for name, text in surfaces.items():
+        for _role, draft in pending:
+            assert draft not in text, (name, draft)
+            # Neither a distinctive fragment nor the wording of a draft.
+            assert draft[:60] not in text, (name, draft[:60])
+
+    # The owner is told, in plain terms, that the drafts are not published.
+    for warnings in (master["review_warnings"], docs["review_warnings"]):
+        joined = " ".join(warnings)
+        assert "28 detailed responsibility draft(s)" in joined
+        assert "NOT presented as verified experience" in joined
+
+
+def test_responsibility_verification_gate_is_real(tmp_path):
+    """The gate is enforced by the generator, not only asserted in profile.yaml."""
+    import copy
+
+    profile = copy.deepcopy(_profile())
+    entry = profile["work_history"][0]
+    draft = entry["needs_verification"][0]["text"]
+
+    before = generate_master_cv(profile)["master_cv_text"]
+    assert draft not in before
+
+    # Owner confirms the line: it becomes verified content.
+    entry["responsibilities"].append({"text": draft, "verified": True})
+    after = generate_master_cv(profile)["master_cv_text"]
+    assert draft in after
+
+    # An explicit false is no better than a missing flag.
+    entry["responsibilities"][-1]["verified"] = False
+    assert draft not in generate_master_cv(profile)["master_cv_text"]
+
+    # The shipped profile is untouched by this test's mutations.
+    assert draft not in generate_master_cv(_profile())["master_cv_text"]
 
 
 def test_tracked_profile_has_no_private_or_invented_precision_after_cv_work():
@@ -622,9 +835,14 @@ def test_tracked_profile_has_no_private_or_invented_precision_after_cv_work():
     assert "professional_references" not in raw
     assert data["personal"]["nationality"] == ""
     assert data["personal"]["gender"] == ""
+    numeric = re.compile(r"(?<![\w-])\d+\s*(?:patients|beneficiaries|budget|USD|AFN|clinics)\b")
     for entry in work:
-        for line in entry.get("responsibilities") or []:
-            assert not re.search(r"(?<![\w-])\d+\s*(?:patients|beneficiaries|budget|USD|AFN|clinics)\b", line), line
+        # Neither verified scope nor the held-back drafts may carry invented
+        # operational precision (counts, budgets, caseloads).
+        for line in _verified_responsibilities(entry):
+            assert not numeric.search(line), line
+        for item in entry.get("needs_verification") or []:
+            assert not numeric.search(str(item.get("text") or "")), item["text"]
 
 
 def test_cover_letter_renders_signature_after_the_closing_paragraph(tmp_path):

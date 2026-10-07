@@ -241,11 +241,84 @@ def _reverse_chronological_entries(entries: list[dict[str, Any]]) -> list[dict[s
     return sorted(entries, key=_entry_sort_key, reverse=True)
 
 
+#: Keys a work-history entry may carry a duty description in. ``bullets``,
+#: ``achievements``, ``duties`` and ``description`` are the owner's free-form
+#: fields; ``responsibilities`` is the verification-gated one.
+DUTY_KEYS = ("bullets", "responsibilities", "achievements", "duties")
+
+
+def _verified_responsibility_texts(value: Any) -> list[str]:
+    """Return only owner-verified responsibility text from a canonical entry.
+
+    ``responsibilities`` is verification-gated. An entry counts as verified CV
+    content only when it is a mapping carrying a literal ``verified: true`` and
+    a non-empty ``text``. A bare string, a missing flag, and an explicit
+    ``verified: false`` are all draft material: the wording is preserved in the
+    profile for owner review and is never presented as applicant experience.
+
+    The gated shape exists so a generated scope draft can be recorded without
+    being usable as a fact. The one place an unverified line may be surfaced is
+    ``needs_verification``, which this function never reads.
+    """
+    if not isinstance(value, list):
+        return []
+    texts: list[str] = []
+    for item in value:
+        if not isinstance(item, dict) or item.get("verified") is not True:
+            continue
+        text = re.sub(r"\s+", " ", str(item.get("text") or "")).strip()
+        if text and not is_unresolved_value(text):
+            texts.append(text)
+    return texts
+
+
+def _pending_responsibility_items(profile: dict[str, Any]) -> list[dict[str, str]]:
+    """Drafts held back from employer-facing documents, for owner review only.
+
+    These are the detailed duties a CV would normally carry. They were written
+    by the system from verified profile evidence (role title, competency
+    inventory, certificates) rather than supplied by the applicant, so they are
+    reported to the owner instead of being printed as fact.
+    """
+    pending: list[dict[str, str]] = []
+    for entry in _profile_list(profile, "work_history"):
+        if not isinstance(entry, dict):
+            continue
+        role = _experience_header(entry)
+        drafts = entry.get("needs_verification")
+        if not isinstance(drafts, list):
+            continue
+        for item in drafts:
+            text = ""
+            if isinstance(item, dict) and item.get("verified") is not True:
+                text = re.sub(r"\s+", " ", str(item.get("text") or "")).strip()
+            if text:
+                pending.append({"role": role, "text": text})
+    return pending
+
+
+def _pending_responsibility_warning(profile: dict[str, Any]) -> str:
+    """One review line summarising drafts that are excluded from documents."""
+    pending = _pending_responsibility_items(profile)
+    if not pending:
+        return ""
+    roles = sorted({item["role"] for item in pending if item["role"]})
+    return (
+        f"{len(pending)} detailed responsibility draft(s) for {len(roles)} role(s) are NOT presented as verified "
+        "experience: no duties were supplied for these positions, so the wording is system-authored. "
+        "Confirm each line against your own record and move it to `responsibilities` with `verified: true` to publish "
+        "it. Roles affected: " + "; ".join(roles)
+    )
+
+
 def _entry_text_values(entry: dict[str, Any]) -> list[str]:
     values: list[str] = []
-    for key in ["bullets", "responsibilities", "achievements", "duties"]:
+    for key in DUTY_KEYS:
         value = entry.get(key)
-        if isinstance(value, list):
+        if key == "responsibilities":
+            # Verification-gated: unverified drafts never become CV content.
+            values.extend(_verified_responsibility_texts(value))
+        elif isinstance(value, list):
             values.extend(str(item) for item in value if item and not is_unresolved_value(item))
         elif value and not is_unresolved_value(value):
             values.append(str(value))
@@ -1040,6 +1113,7 @@ def _professional_profile_paragraph(
     organization_order: list[str] | None = None,
     *,
     first_person: bool = False,
+    has_languages_section: bool = False,
 ) -> str:
     """Build a substantive professional profile from verified facts only.
 
@@ -1050,6 +1124,13 @@ def _professional_profile_paragraph(
     languages. No achievement, number, date, or duty is invented, and no
     unverified profile item can appear here. ``first_person`` only changes
     sentence voice for a cover letter; it never changes the evidence used.
+
+    ``has_languages_section`` is set when the caller's document prints its own
+    LANGUAGES section, which carries the same verified languages in the same
+    words. The summary then omits its languages sentence so one fact is not
+    printed twice in one document. Every other sentence is unchanged: the
+    narrative, the coverage areas, the employers and the headline competencies
+    all remain in the summary as well as being detailed in their own sections.
     """
     owner_summary = _verified_profile_summary(profile)
     if owner_summary:
@@ -1128,10 +1209,11 @@ def _professional_profile_paragraph(
         lead_in = "My core technical competencies include" if first_person else "Core technical competencies include"
         sentences.append(f"{lead_in} {_join_and(competencies[:8])}.")
 
-    languages = _language_lines(profile, verified_only=True)
-    if languages:
-        rendered = ", ".join(_lowercase_level(line) for line in languages)
-        sentences.append(f"Languages: {rendered}.")
+    if not has_languages_section:
+        languages = _language_lines(profile, verified_only=True)
+        if languages:
+            rendered = ", ".join(_lowercase_level(line) for line in languages)
+            sentences.append(f"Languages: {rendered}.")
     return " ".join(sentence for sentence in sentences if sentence)
 
 
@@ -1243,7 +1325,14 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
         "name": _full_name(profile),
         "headline": _verified_profile_title(profile, evidence) or "Medical Doctor",
         "contact_lines": _contact_lines(profile),
-        "profile": _professional_profile_paragraph(profile, evidence, {}, {}, [item for group in expertise for item in group["items"]]),
+        "profile": _professional_profile_paragraph(
+            profile,
+            evidence,
+            {},
+            {},
+            [item for group in expertise for item in group["items"]],
+            has_languages_section=True,
+        ),
         "expertise": expertise,
         "strengths": [item for group in expertise for item in group["items"]],
         "experience": experience,
@@ -1271,6 +1360,9 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
         warnings.append("Unverified certificates/training omitted from master CV: " + ", ".join(unverified_certs[:15]))
     if unverified_languages:
         warnings.append("Unverified languages omitted from master CV: " + ", ".join(unverified_languages[:10]))
+    pending_warning = _pending_responsibility_warning(profile)
+    if pending_warning:
+        warnings.append(pending_warning)
 
     return {
         "generated_at": date.today().isoformat(),
@@ -1390,6 +1482,7 @@ def generate_tailored_documents(
         match_report,
         ranked_competencies,
         organization_order=[entry["org"] for entry in ordered_work if entry.get("org")],
+        has_languages_section=True,
     )
 
     canonical_cv_model = {
@@ -1428,6 +1521,9 @@ def generate_tailored_documents(
         labels = [label for label in (_stringify_item(item) for item in unverified_education) if label]
         if labels:
             warnings.append("Unverified education excluded from employer-facing documents (set verified: true after review to include): " + "; ".join(labels[:6]))
+    pending_warning = _pending_responsibility_warning(profile)
+    if pending_warning:
+        warnings.append(pending_warning)
 
     facts = match_report.get("facts", {})
     metadata = job.get("metadata", {}) if isinstance(job.get("metadata", {}), dict) else {}

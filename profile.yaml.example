@@ -106,28 +106,42 @@ clinical_experience:
 #     location: Your confirmed location
 #     start: "YYYY-MM"
 #     end: Present
-#     bullets: ["Confirmed responsibility copied from your reviewed CV"]
+#     responsibilities:
+#       - text: What this role actually involved, in your own words
+#         verified: true
+#     needs_verification: []
 #     verified: true
 #
-# `bullets`/`responsibilities` are the professional description of the role in
-# the generated CV. Both keys are accepted and merged; `bullets` is a list of
-# responsibilities, `description` is a single paragraph. Write each line as a
-# SCOPE statement -- what the role involved -- so the CV explains the job
-# rather than repeating its title. Useful dimensions per role: role scope,
-# clinical/health/nutrition responsibilities, supervision, coordination,
-# reporting, stakeholders, systems used (e.g. HMIS), field responsibilities,
-# safeguarding responsibilities, and administrative/programme responsibilities.
+# `responsibilities` is verification-gated, exactly like every other claim in
+# this file: only an item written as `{text: ..., verified: true}` is confirmed
+# professional experience and may be printed in an employer-facing document. An
+# item with `verified: false`, or a bare string, is a draft: it is kept for your
+# review and listed in the review warnings, and it is never printed.
 #
-# Keep them factual and free of numbers: no patient counts, budgets, project
-# values, percentages, or invented achievements. Leave a dimension out when it
-# does not describe your role. Example lines for a health/nutrition role:
+# Write only what you can stand behind. A job title, a professional norm, a
+# skill, or a certificate is NOT evidence of a duty: "Medical Doctor" does not
+# by itself mean the CV may claim diagnosis and treatment; "Infection
+# Prevention and Control" as a skill does not by itself mean the CV may claim
+# that IPC measures were applied in a specific role. Add a line only when you
+# actually did it.
+#
+# If you want to record a plausible-but-unconfirmed duty, put it in
+# `needs_verification` instead. The system preserves that wording, excludes it
+# from every generated document, and reports it to you for confirmation. That
+# is the intended place for a system- or owner-suggested scope line, so nothing
+# is lost and nothing is asserted before you confirm it.
+#
+# Keep confirmed lines factual: no patient counts, budgets, project values,
+# percentages, results, or achievements that were not supplied. Example of the
+# shape for a health/nutrition role (illustrative wording only -- use yours):
 #   responsibilities:
-#     - Supervised health and nutrition service delivery across the project's
-#       supported facilities
-#     - Supported IMAM/CMAM implementation, including SAM/MAM case
-#       identification and OTP service linkage
-#     - Conducted field monitoring visits and reviewed service records and
-#       reports to support data quality and timely HMIS reporting
+#     - text: Supervised the health and nutrition team's daily service delivery
+#       verified: true
+#   needs_verification:
+#     - text: Conducted field monitoring visits and reviewed service records
+#       verified: false
+#       status: NEEDS_VERIFICATION
+#       basis: suggested scope line awaiting owner confirmation
 
 work_history: []
 

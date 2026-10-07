@@ -1,15 +1,18 @@
 """
 Profile loading and deterministic evidence extraction.
 
-The profile YAML is the single source of truth for user-provided facts.  CV text
-can add evidence for matching, but these helpers never write inferred facts back
-to profile.yaml.  Missing information remains missing and is reported as
-"Needs verification" by the matcher.
+The canonical profile YAML is the single source of truth for user-provided
+facts.  CV imports are preview-only and cannot add matching/document evidence.
+Missing information remains missing and is reported as "Needs verification" by
+the matcher.
 """
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
+import tempfile
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
@@ -18,7 +21,10 @@ from typing import Any
 
 import yaml
 
-from utils.medical_requirements import MONTHS, NUMBER_WORDS, normalize_text
+from utils.medical_requirements import MONTHS, normalize_text
+from utils.paths import CANONICAL_PROFILE_PATH, PROJECT_ROOT
+
+PROFILE_TEMPLATE_PATH = (PROJECT_ROOT / "profile.yaml.example").resolve()
 
 
 @dataclass
@@ -28,6 +34,10 @@ class EvidenceItem:
     source: str
     quote: str = ""
     verified: bool = False
+    # True only when a duration was supplied as a lower-bound claim (for
+    # example, ``> 3`` or ``3+``). It keeps the matcher from fabricating an
+    # exact total or treating that claim as proof of a higher threshold.
+    lower_bound: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -38,7 +48,16 @@ class ProfileEvidence:
     items: dict[str, list[EvidenceItem]] = field(default_factory=dict)
     raw_profile: dict[str, Any] = field(default_factory=dict)
 
-    def add(self, key: str, value: Any, source: str, quote: str = "", verified: bool = False) -> None:
+    def add(
+        self,
+        key: str,
+        value: Any,
+        source: str,
+        quote: str = "",
+        verified: bool = False,
+        *,
+        lower_bound: bool = False,
+    ) -> None:
         if value in (None, "", [], {}):
             return
         # Canonical rule: only a literal boolean True counts as verified.
@@ -51,6 +70,7 @@ class ProfileEvidence:
         # add(); this check is a second, independent backstop against
         # truthiness coercion inside the evidence store itself.
         verified = verified is True
+        lower_bound = lower_bound is True
         bucket = self.items.setdefault(key, [])
         for item in bucket:
             if item.value == value and item.source == source:
@@ -63,8 +83,21 @@ class ProfileEvidence:
                     item.verified = True
                     if quote:
                         item.quote = str(quote)
+                # Keep the conservative duration interpretation on duplicate
+                # evidence. A later exact-looking duplicate must never erase
+                # an earlier owner-supplied lower-bound qualifier.
+                item.lower_bound = item.lower_bound or lower_bound
                 return
-        bucket.append(EvidenceItem(key=key, value=value, source=source, quote=str(quote or value), verified=verified))
+        bucket.append(
+            EvidenceItem(
+                key=key,
+                value=value,
+                source=source,
+                quote=str(quote or value),
+                verified=verified,
+                lower_bound=lower_bound,
+            )
+        )
 
     def has(self, key: str) -> bool:
         return bool(self.items.get(key))
@@ -206,7 +239,11 @@ MEDICAL_TERM_KEYS = {
     "nutrition": [r"\bnutrition(?:al)?\b", r"\bmalnutrition\b", r"\bIYCF\b", r"\bSAM\b", r"\bMAM\b", r"\bOTP\b", r"\bTFU\b"],
     "srhr": [r"\bSRHR\b", r"sexual and reproductive health", r"reproductive health"],
     "ipc": [r"\bIPC\b", r"infection prevention", r"infection control"],
-    "medical_exit_exam": [r"\bexit\s+exam(?:ination)?\b", r"\bmedical\s+council\s+exam(?:ination)?\b", r"ایگزیت\s*امتحان", r"امتحان\s+شورای\s+طبی"],
+    # A Medical Exit Exam and a Medical Council Exam are different claims.
+    # Do not add an equivalence here: only vacancy wording that itself says
+    # "exit exam" may be matched to verified exit-exam evidence.
+    "medical_exit_exam": [r"\bexit\s+exam(?:ination)?\b", r"ایگزیت\s*امتحان"],
+    "medical_council_exam": [r"\bmedical\s+council\s+exam(?:ination)?\b", r"امتحان\s+شورای\s+طبی"],
     "medical_specialist": [r"\binternal\s+medicine\s+specialist\b", r"\bgeneral\s+surgeon\b", r"\bsurgeon\s+specialist\b", r"\bdermatolog(?:y|ist)\b", r"\baesthetic\s+medicine\b"],
     "specialist_obgyn": [r"obstetrician[-/\s]*gynecologist", r"\bobgyn\b", r"\bgynecology\b"],
     "pharmacy_degree": [r"\bB\.?Sc\.?\s+in\s+Pharmacy\b", r"\bBachelor(?:'s)?\s+degree\s+in\s+pharmacy\b", r"\bPharm\s*D\b", r"\bpharmacy\s+degree\b"],
@@ -230,22 +267,123 @@ LANGUAGE_ALIASES = {
 }
 
 # ---------------------------------------------------------------------------
-# Profile I/O
+# Canonical applicant-profile repository
 # ---------------------------------------------------------------------------
+#
+# ``profile.yaml`` at the project root is deliberately the ONLY runtime
+# applicant record.  This module is the sole place allowed to parse or write
+# it.  The CLI, dashboard, matcher orchestration, and document orchestration
+# all receive the mapping returned here; no caller may choose another profile
+# path and profile.yaml.example is never considered as a fallback.
 
 
-def load_profile(path: str | Path = "profile.yaml") -> dict[str, Any]:
-    path = Path(path)
+class CanonicalProfileError(ValueError):
+    """Base error for canonical applicant-profile persistence."""
+
+
+class CanonicalProfileMissingError(CanonicalProfileError):
+    """Raised only when a required canonical profile has not been created."""
+
+
+def canonical_profile_path() -> Path:
+    """Return the one permitted production applicant-profile location.
+
+    Tests may monkeypatch the module-level path to provide an isolated
+    canonical repository.  Production code never accepts a caller-selected
+    profile path.
+    """
+    return Path(CANONICAL_PROFILE_PATH).expanduser().resolve()
+
+
+def _reject_template_path(path: Path) -> None:
+    if path == Path(PROFILE_TEMPLATE_PATH).resolve():
+        raise CanonicalProfileError(
+            "profile.yaml.example is a schema/template and can never be used as the canonical applicant profile."
+        )
+
+
+def _validate_profile_mapping(profile: Any) -> dict[str, Any]:
+    if not isinstance(profile, dict):
+        raise CanonicalProfileError("The canonical profile.yaml must contain a YAML mapping.")
+    return profile
+
+
+def require_runtime_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    """Reject transient import previews from matching/document pipelines."""
+    profile = _validate_profile_mapping(profile)
+    if str(profile.get("profile_status") or "").upper() == "DRAFT":
+        raise CanonicalProfileError(
+            "A CV import preview is not an applicant profile and cannot be used for matching or generated documents. "
+            "Manually add confirmed facts to canonical profile.yaml first."
+        )
+    return profile
+
+
+def load_canonical_profile(*, required: bool = False) -> dict[str, Any]:
+    """Load the single production applicant profile, with no fallback paths.
+
+    In particular, this function never reads ``profile.yaml.example``, a
+    backup, imported-CV draft, database record, or extracted-resume cache.
+    """
+    path = canonical_profile_path()
+    _reject_template_path(path)
     if not path.exists():
+        if required:
+            raise CanonicalProfileMissingError(
+                f"Canonical applicant profile is missing: {path}. "
+                "Restore the tracked repository-root profile.yaml; profile.yaml.example is documentation only."
+            )
         return {}
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise CanonicalProfileError(f"Could not read canonical applicant profile {path}: {exc}") from exc
+    return require_runtime_profile(loaded or {})
 
 
-def save_profile(profile: dict[str, Any], path: str | Path = "profile.yaml") -> None:
-    path = Path(path)
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(profile, f, sort_keys=False, allow_unicode=True)
+def save_canonical_profile(profile: dict[str, Any]) -> None:
+    """Atomically replace the one production applicant profile.
+
+    There is intentionally no ``path`` parameter.  Allowing one would make it
+    possible for an import, dashboard route, or CLI command to create a
+    competing applicant profile outside the canonical repository.
+    """
+    profile = require_runtime_profile(profile)
+    path = canonical_profile_path()
+    _reject_template_path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    serialized = yaml.safe_dump(profile, sort_keys=False, allow_unicode=True)
+    temp_name = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(serialized)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_name = handle.name
+        os.replace(temp_name, path)
+    except OSError as exc:
+        if temp_name:
+            Path(temp_name).unlink(missing_ok=True)
+        raise CanonicalProfileError(f"Could not save canonical applicant profile {path}: {exc}") from exc
+
+
+def canonical_profile_fingerprint(profile: dict[str, Any] | None = None) -> str:
+    """Return a deterministic audit fingerprint for the canonical mapping.
+
+    This is metadata only; it never becomes another profile store.  Callers
+    that need an audit trail can record the fingerprint alongside a scan or
+    generated package while the facts remain solely in ``profile.yaml``.
+    """
+    profile = load_canonical_profile(required=True) if profile is None else _validate_profile_mapping(profile)
+    serialized = yaml.safe_dump(profile, sort_keys=True, allow_unicode=True)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -569,59 +707,65 @@ def _add_verified_profile_terms(evidence: ProfileEvidence, profile: dict[str, An
                 _add_term_matches(evidence, str(name), f"profile.{key}", verified=True)
 
 
-def _extract_years_from_text(text: str, context_terms: list[str]) -> float | None:
-    def repl(match):
-        return str(NUMBER_WORDS.get(match.group(1).lower(), match.group(1))) + " years"
-    text = re.sub(r"\b(" + "|".join(NUMBER_WORDS) + r")\s+(?:years?|yrs?)\b", repl, text, flags=re.IGNORECASE)
-    best: float | None = None
-    for match in re.finditer(r"(?P<years>\d{1,2})\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?P<context>.{0,80}?)(?:experience|work)", text, flags=re.IGNORECASE):
-        context = match.group("context").lower()
-        if any(term in context for term in context_terms):
-            value = float(match.group("years"))
-            best = max(best or 0, value)
-    # Alternate ordering: clinical experience of 4 years.
-    for match in re.finditer(r"(?P<context>.{0,80}?)(?P<years>\d{1,2})\+?\s*(?:years?|yrs?)", text, flags=re.IGNORECASE):
-        context = match.group("context").lower()
-        if any(term in context for term in context_terms):
-            value = float(match.group("years"))
-            best = max(best or 0, value)
-    return best
+def _verified_years_value(value: Any) -> tuple[float, str] | None:
+    """Parse an owner-confirmed duration without inventing precision.
+
+    Returns ``(years, display, lower_bound)``. ``3+`` and ``> 3`` preserve
+    their lower-bound semantics: they can meet a 3-year minimum, but cannot
+    prove a 5-year minimum. An exact numeric value is not marked lower-bound.
+    """
+    if isinstance(value, bool) or value in (None, "") or is_unresolved_value(value):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value), f"{float(value):g} years", False
+    text = str(value).strip()
+    match = re.fullmatch(r"(?P<greater>>\s*)?(?P<years>\d+(?:\.\d+)?)\s*(?P<plus>\+)?", text)
+    if not match:
+        return None
+    years = float(match.group("years"))
+    if match.group("greater"):
+        return years, f"more than {years:g} years", True
+    if match.group("plus"):
+        return years, f"{years:g}+ years", True
+    return years, f"{years:g} years", False
 
 
-def _add_experience_years(evidence: ProfileEvidence, profile: dict[str, Any], resume_text: str, today: date | None = None) -> None:
-    # Schema rule: `clinical_experience.years` and `ngo_humanitarian_experience.years`
-    # are single scalar fields that the profile owner types directly into
-    # profile.yaml (profile_builder.py never fills them from a CV -- it always
-    # leaves them blank). profile.yaml.example documents this convention
-    # explicitly ("Add a number only when verified."), so a present numeric
-    # value here is treated as owner-confirmed. This is intentionally
-    # different from `work_history`, whose list entries CAN be bulk-pasted
-    # from a CV and therefore require an explicit `verified: true` per entry
-    # (see below) before they count as evidence.
+def _add_experience_years(evidence: ProfileEvidence, profile: dict[str, Any], today: date | None = None) -> None:
+    # A duration is a claim just like an education or license.  It therefore
+    # needs its own adjacent literal ``verified: true`` flag.  CV import
+    # previews always set the flag false, and a bare number never becomes
+    # verified merely because it is present.
     clinical = profile.get("clinical_experience", {})
-    if isinstance(clinical, dict):
-        years = clinical.get("years") or clinical.get("years_total")
-        if years not in (None, "") and not is_unresolved_value(years):
-            try:
-                evidence.add("clinical_experience_years", float(years), "profile.clinical_experience", f"{years} years clinical experience", verified=True)
-            except (TypeError, ValueError):
-                pass
-    elif isinstance(clinical, (int, float, str)) and str(clinical).strip() and not is_unresolved_value(clinical):
-        try:
-            evidence.add("clinical_experience_years", float(clinical), "profile.clinical_experience", f"{clinical} years clinical experience", verified=True)
-        except ValueError:
-            pass
+    if isinstance(clinical, dict) and is_verified_flag(clinical.get("verified")):
+        parsed = _verified_years_value(clinical.get("years") or clinical.get("years_total"))
+        if parsed:
+            years, display, lower_bound = parsed
+            evidence.add(
+                "clinical_experience_years",
+                years,
+                "profile.clinical_experience",
+                f"{display} clinical experience",
+                verified=True,
+                lower_bound=lower_bound,
+            )
 
     ngo = profile.get("ngo_humanitarian_experience", {})
-    if isinstance(ngo, dict):
-        years = ngo.get("years") or ngo.get("years_total")
-        if years not in (None, "") and not is_unresolved_value(years):
-            try:
-                evidence.add("ngo_experience_years", float(years), "profile.ngo_humanitarian_experience", f"{years} years NGO/humanitarian experience", verified=True)
-            except (TypeError, ValueError):
-                pass
+    if isinstance(ngo, dict) and is_verified_flag(ngo.get("verified")):
+        parsed = _verified_years_value(ngo.get("years") or ngo.get("years_total"))
+        if parsed:
+            years, display, lower_bound = parsed
+            evidence.add(
+                "ngo_experience_years",
+                years,
+                "profile.ngo_humanitarian_experience",
+                f"{display} NGO/humanitarian experience",
+                verified=True,
+                lower_bound=lower_bound,
+            )
     elif isinstance(ngo, bool) and ngo:
-        evidence.add("ngo_humanitarian", True, "profile.ngo_humanitarian_experience", "NGO/humanitarian experience marked in profile", verified=True)
+        # Legacy boolean entries do not carry an adjacent verification flag,
+        # so they intentionally cannot become verified applicant evidence.
+        evidence.add("ngo_humanitarian", True, "profile.ngo_humanitarian_experience", "NGO/humanitarian experience needs verification", verified=False)
 
     # Schema rule: a work_history entry only contributes to verified years-of-
     # experience evidence when that specific entry carries `verified: true`.
@@ -640,13 +784,6 @@ def _add_experience_years(evidence: ProfileEvidence, profile: dict[str, Any], re
         if inferred:
             evidence.add(key, inferred, "profile.work_history", f"{inferred} years inferred from explicitly verified work-history entries", verified=True)
 
-    if resume_text:
-        clinical_text_years = _extract_years_from_text(resume_text, ["clinical", "medical", "hospital", "clinic", "patient"])
-        if clinical_text_years:
-            evidence.add("clinical_experience_years", clinical_text_years, "cv", f"{clinical_text_years:g} years clinical experience mentioned in CV", verified=False)
-        ngo_text_years = _extract_years_from_text(resume_text, ["ngo", "humanitarian", "emergency", "donor"])
-        if ngo_text_years:
-            evidence.add("ngo_experience_years", ngo_text_years, "cv", f"{ngo_text_years:g} years NGO/humanitarian experience mentioned in CV", verified=False)
 
 
 def _add_personal(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
@@ -674,19 +811,33 @@ def _add_personal(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
             verified=personal_field_is_verified(profile, "professional_title"),
         )
     prefs = profile.get("preferences", {}) if isinstance(profile.get("preferences"), dict) else {}
-    for loc in prefs.get("locations", []) or []:
-        if not is_unresolved_value(loc):
-            evidence.add("preferred_location", loc, "profile.preferences.locations", str(loc), verified=True)
-    # Canonical tri-state parsing: "Needs verification"/"Unknown"/etc. resolve
-    # to None and are therefore never added as evidence (never silently
-    # become True through truthiness). Only a recognised Yes/No token (or a
-    # native boolean) is added.
-    relocate = parse_tristate(prefs.get("willing_to_relocate"))
+    for item in prefs.get("locations", []) or []:
+        if isinstance(item, dict):
+            location = item.get("name") or item.get("value") or item.get("location")
+            verified = is_verified_flag(item.get("verified"))
+        else:
+            # Legacy plain strings remain visible as unverified review data;
+            # their presence alone cannot prove a location preference.
+            location, verified = item, False
+        if location and not is_unresolved_value(location):
+            evidence.add("preferred_location", location, "profile.preferences.locations", str(location), verified=verified)
+
+    def verified_preference(key: str) -> tuple[bool | None, str]:
+        raw = prefs.get(key)
+        if not isinstance(raw, dict) or not is_verified_flag(raw.get("verified")):
+            return None, ""
+        value = raw.get("value")
+        parsed = parse_tristate(value)
+        return parsed, str(value or "")
+
+    # Relocation/deployment are claims too.  A scalar ``yes`` has no adjacent
+    # verification flag and is therefore intentionally non-authoritative.
+    relocate, relocate_text = verified_preference("willing_to_relocate")
     if relocate is not None:
-        evidence.add("willing_to_relocate", relocate, "profile.preferences.willing_to_relocate", str(prefs.get("willing_to_relocate")), verified=True)
-    deployment = parse_tristate(prefs.get("field_deployment"))
+        evidence.add("willing_to_relocate", relocate, "profile.preferences.willing_to_relocate", relocate_text, verified=True)
+    deployment, deployment_text = verified_preference("field_deployment")
     if deployment is not None:
-        evidence.add("field_deployment", deployment, "profile.preferences.field_deployment", str(prefs.get("field_deployment")), verified=True)
+        evidence.add("field_deployment", deployment, "profile.preferences.field_deployment", deployment_text, verified=True)
 
 
 def _add_skills_and_certificates(evidence: ProfileEvidence, profile: dict[str, Any]) -> None:
@@ -715,14 +866,16 @@ def _add_skills_and_certificates(evidence: ProfileEvidence, profile: dict[str, A
             evidence.add(key, name, f"profile.{key}", name, verified=True)
 
 
-def build_profile_evidence(profile: dict[str, Any], resume_text: str = "", today: date | None = None) -> ProfileEvidence:
-    """Build structured evidence without modifying the caller's profile object."""
+def build_profile_evidence(profile: dict[str, Any], today: date | None = None) -> ProfileEvidence:
+    """Build evidence from the supplied canonical-profile mapping only.
+
+    CV text, imported drafts, database rows, and extracted-resume caches are
+    intentionally not accepted here.  Runtime matching and generated
+    documents therefore cannot acquire a second applicant source.
+    """
     profile = deepcopy(profile)
     evidence = ProfileEvidence(raw_profile=profile)
-    ptext = _profile_text(profile)
-    texts = [("profile", ptext)]
-    if resume_text:
-        texts.append(("cv", normalize_text(resume_text)))
+    texts = [("profile", _profile_text(profile))]
 
     _add_personal(evidence, profile)
     _add_structured_education(evidence, profile)
@@ -732,15 +885,5 @@ def build_profile_evidence(profile: dict[str, Any], resume_text: str = "", today
     _add_languages(evidence, profile, texts)
     _add_terms(evidence, texts)
     _add_verified_profile_terms(evidence, profile)
-    _add_experience_years(evidence, profile, resume_text, today=today)
-
-    # CV-only medical degree evidence.
-    if resume_text and re.search(r"\b(M\.?D\.?|MBBS|Medical Doctor|Doctor of Medicine|Physician)\b", resume_text, flags=re.IGNORECASE):
-        quote = _quote_for_alias(resume_text, ["MD", "MBBS", "Medical Doctor", "Doctor of Medicine", "Physician"])
-        evidence.add("md_degree", True, "cv", quote or "Medical degree mentioned in CV", verified=False)
-
-    if resume_text and re.search(r"\b(licen[cs]e|registration|registered)\b", resume_text, flags=re.IGNORECASE):
-        quote = _quote_for_alias(resume_text, ["license", "licence", "registration", "registered"])
-        evidence.add("license_registration", True, "cv", quote or "License/registration mentioned in CV", verified=False)
-
+    _add_experience_years(evidence, profile, today=today)
     return evidence

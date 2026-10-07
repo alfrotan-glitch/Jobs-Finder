@@ -10,14 +10,15 @@ unverified profile data into factual content:
 * unverified profile data must not enter vacancy-fit highlights;
 * the professional summary must not carry hardcoded applicant claims;
 * verified entries must still appear correctly;
-* contact data follows one explicit rule: displayed for review even as a
-  draft, never silently verified, placeholders replaced, and an unconfirmed
-  unconfirmed personal field keeps a visible package blocker.
+* contact and identity data are printed only after per-field confirmation;
+  otherwise generic review markers are used and the package stays blocked.
 """
 
 import zipfile
 from datetime import date
 from pathlib import Path
+
+import pytest
 
 from utils.documents import (
     generate_application_package,
@@ -54,12 +55,12 @@ def _mixed_profile():
             "verification": {"first_name": True, "last_name": True, "email": True, "phone": True, "location": True, "nationality": True, "gender": True, "professional_title": True},
         },
         "medical_education": [
-            {"degree": "MD", "institution": "Kabul Medical University", "verified": True},
+            {"degree": "MD", "institution": "Example Medical University", "verified": True},
             {"degree": "MD", "institution": "Unverified Diploma Mill", "verified": False},
         ],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},
-        "clinical_experience": {"years": 4},
+        "clinical_experience": {"years": 4, "verified": True},
         "work_history": [
             {
                 "title": "Medical Doctor",
@@ -240,13 +241,14 @@ def test_excluded_unverified_items_stay_visible_in_review_warnings():
 # ---------------------------------------------------------------------------
 
 
-def test_draft_contact_data_is_displayed_for_review_not_suppressed():
+def test_draft_contact_data_is_not_printed_as_an_employer_facing_fact():
     profile = _mixed_profile()
     profile["personal"]["verification"] = {}  # CV-import-like draft
     docs, _ = _docs(profile)
     cv = docs["tailored_cv_text"]
-    assert "jane.real@clinic-example.af" in cv
-    assert "+93 70 123 4567" in cv
+    assert "jane.real@clinic-example.af" not in cv
+    assert "+93 70 123 4567" not in cv
+    assert "CONFIRM BEFORE SUBMISSION" in cv
 
 
 def test_confirmed_contact_data_is_not_suppressed_or_replaced():
@@ -328,33 +330,16 @@ def test_docx_and_pdf_artifacts_respect_the_evidence_gate(tmp_path):
     assert "Verified Clinic Alpha" in cv_pdf
 
 
-def test_cv_import_draft_profile_produces_fully_gated_documents():
-    """End to end: a complete CV-import draft (profile_builder output,
-    which fills personal.location/nationality and languages with
-    'Needs verification' placeholders) must yield employer-facing documents
-    with no internal placeholder text, no unverified claims, and a neutral
-    summary -- while still displaying draft contact data for review."""
+def test_cv_import_draft_profile_cannot_enter_matching_or_document_generation():
+    """An imported sample draft is a preview, never an applicant source."""
+    from utils.profile import CanonicalProfileError
     from utils.profile_builder import build_profile_from_cv_text
 
-    cv_text = (
-        "Jane Doe\nMedical Doctor (MD)\nEmail: jane.doe@example.org\n"
-        "Phone: +93 70 111 2233\nLicense: Afghan Medical Council registration\n"
-        "Languages: English (fluent), Dari (native)\n"
-        "2018-2023 Medical Officer, Example Clinic, Kabul\n"
-        "Certificates: BLS, ACLS\n"
-    )
-    profile = build_profile_from_cv_text(cv_text, resume_path="cv.txt")
+    cv_text = (Path(__file__).parent / "fixtures" / "sample_jane_doe_cv.txt").read_text(encoding="utf-8")
+    preview = build_profile_from_cv_text(cv_text)
     job = _job("MD required. Afghan Medical Council registration required. Fluent English. Apply to hr@example.org by 2026-12-31.")
-    report = match_job_against_profile(job, profile, resume_text=cv_text, today=date(2026, 10, 1)).to_dict()
-    docs = generate_tailored_documents(job, profile, report, resume_text=cv_text)
-    for text in [docs["tailored_cv_text"], docs["cover_letter"]]:
-        assert "Needs verification" not in text
-        assert "Medical Doctor with Afghanistan" not in text
-        assert "EDUCATION" not in text
-        assert "LICENSE" not in text
-        assert "LANGUAGES" not in text
-        assert "English" not in text
-    # Draft contact data is displayed for review (never suppressed).
-    assert "jane.doe@example.org" in docs["tailored_cv_text"]
-    # Neutral summary, no credential headline without a verified MD.
-    assert "Professional presenting verified qualifications" in docs["tailored_cv_text"]
+
+    with pytest.raises(CanonicalProfileError, match="CV import preview"):
+        match_job_against_profile(job, preview, today=date(2026, 10, 1))
+    with pytest.raises(CanonicalProfileError, match="CV import preview"):
+        generate_tailored_documents(job, preview, {})

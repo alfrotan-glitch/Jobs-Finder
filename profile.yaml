@@ -1,0 +1,139 @@
+# Canonical applicant profile — tracked as the single shared source of truth.
+# This file is consumed directly by the CLI, dashboard, Master-CV generator,
+# matching, and vacancy-tailoring workflows. profile.yaml.example is schema
+# documentation only and is never a runtime fallback.
+#
+# Verification contract: only the literal Boolean `verified: true` adjacent to
+# a claim makes that claim usable as verified evidence. Professional references
+# below are private metadata, never matching/credential/employment evidence.
+
+personal:
+  first_name: "Dr. Allah Yar"
+  last_name: "Frotan"
+  email: ""
+  phone: ""
+  location: ""
+  nationality: ""
+  gender: ""
+  linkedin: ""
+  professional_title: "Medical Doctor / Health & Nutrition Specialist"
+  verification:
+    first_name: true
+    last_name: true
+    email: false
+    phone: false
+    location: false
+    nationality: false
+    gender: false
+    linkedin: false
+    professional_title: true
+
+medical_education:
+  - degree: "Doctor of Medicine (MD)"
+    verified: true
+
+license_registration:
+  authority: ""
+  number: ""
+  issue_date: ""
+  expiry_date: ""
+  document_path: ""
+  status: "Valid medical professional registration/license"
+  verified: true
+
+medical_exit_exam:
+  status: "Completed"
+  verified: true
+
+clinical_experience:
+  years: "> 3"
+  settings: []
+  verified: true
+
+# The two Action Against Hunger roles intentionally have no supplied dates.
+# No current employer or current role is implied by either historical entry.
+work_history:
+  - title: "TFU Doctor & Safeguarding/PSEA Focal Point"
+    organization: "Action Against Hunger (ACF)"
+    start: ""
+    end: ""
+    bullets: []
+    verified: true
+  - title: "Health & Nutrition Supervisor"
+    organization: "Action Against Hunger (ACF)"
+    start: ""
+    end: ""
+    bullets: []
+    verified: true
+  - title: "COVID-19 RRT"
+    organization: ""
+    start: "2020-10"
+    end: "2020-12"
+    bullets: []
+    verified: true
+  - title: "Governor's Office"
+    organization: "Governor's Office"
+    start: "2020-12"
+    end: "2021-08"
+    bullets: []
+    verified: true
+  - title: "TBT"
+    organization: "TBT"
+    start: "2019-05"
+    end: "2019-09"
+    bullets: []
+    verified: true
+
+skills:
+  medical: []
+  public_health: []
+  management: []
+
+languages: []
+certificates: []
+
+ngo_humanitarian_experience:
+  years: ""
+  organizations: []
+  verified: false
+
+preferences:
+  roles: []
+  locations: []
+  willing_to_relocate:
+    value: "Needs verification"
+    verified: false
+  field_deployment:
+    value: "Needs verification"
+    verified: false
+
+sources:
+  enabled: []
+  disabled: []
+
+job_sources:
+  acbar: {}
+  reliefweb: {}
+
+# Private reference metadata. It is deliberately excluded from profile evidence,
+# matching, default CVs, cover letters, and automatic application-package
+# serialization. Contact details may be released only when a specific vacancy
+# requires references and the owner explicitly approves that release.
+professional_references:
+  release_requires_owner_approval: true
+  entries:
+    - name: "Musa Sultani"
+      role: "Former AIHRC Head of Office, Bamyan"
+      phone: "+33 758 819 459"
+      email: "sultanimusa@gmail.com"
+      verified: true
+    - name: "Mohammad Hussain Nussrat"
+      role: "Former Human Rights Officer, UNAMA"
+      phone: "+93 770 717 210"
+      email: "nussrat@gmail.com"
+      verified: true
+    - name: "Dr. Qurban Sorush"
+      role: "Nutrition & Health Deputy Program Manager, ACF"
+      phone: "+93 776 812 860"
+      email: "nutdpm-dk@af-actionagainsthunger.org"
+      verified: true

@@ -1,9 +1,10 @@
-"""Conservative profile builder from a user-supplied CV.
+"""Conservative, transient CV-import preview builder.
 
-This creates a draft for human review. It intentionally avoids inferring exact
-license numbers, dates, years of experience, certificates, or employers unless
-plain text is copied into review notes. The user must verify profile.yaml before
-using it for matching or documents.
+The returned mapping is an in-memory review preview only.  It is never a
+runtime applicant profile, is never saved by this module, and cannot replace
+``profile.yaml``.  It intentionally avoids inferring exact license numbers,
+dates, years of experience, certificates, or employers.  The canonical
+applicant profile must be edited separately with facts the owner confirms.
 """
 
 from __future__ import annotations
@@ -42,18 +43,15 @@ def _languages(text: str) -> list[dict[str, Any]]:
     return out
 
 
-def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str, Any]:
-    """Build a conservative DRAFT profile from CV text for human review.
+def build_profile_from_cv_text(text: str) -> dict[str, Any]:
+    """Build a conservative, non-persistent review preview from CV text.
 
     CRITICAL INVARIANT: nothing extracted from CV text may ever be written
     with ``verified: true``. Regex matches below (MD mention, license mention,
     exit-exam mention) only ever influence the human-readable status note
     ("Mentioned in CV; verify details") -- they NEVER set the explicit
-    ``verified`` flag. Only a human editing profile.yaml after reviewing the
-    draft can change ``verified`` to ``true``. This matches the canonical
-    verification contract in utils/profile.py: a fact is verified only when
-    its source explicitly establishes verification, and a CV is never such a
-    source by itself.
+    ``verified`` flag. This preview is not a profile store: only a human
+    editing the canonical profile.yaml can add and explicitly verify facts.
     """
     first, last = _name_from_text(text)
     md_mentioned = bool(re.search(r"\b(MD|M\.D\.|Medical Doctor|Doctor of Medicine)\b", text, flags=re.IGNORECASE))
@@ -92,7 +90,6 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
                 "professional_title": False,
             },
         },
-        "resume_path": resume_path,
         "medical_education": ([
             {
                 "degree": "MD",
@@ -114,17 +111,17 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
             "status": "Mentioned in CV; verify details" if exit_exam_mentioned else "Needs verification",
             "verified": False,
         },
-        "clinical_experience": {"years": "", "settings": []},
+        "clinical_experience": {"years": "", "settings": [], "verified": False},
         "work_history": [],
         "skills": {"medical": [], "public_health": [], "management": []},
         "languages": _languages(text),
         "certificates": [],
-        "ngo_humanitarian_experience": {"years": "", "organizations": []},
+        "ngo_humanitarian_experience": {"years": "", "organizations": [], "verified": False},
         "preferences": {
             "roles": [],
             "locations": [],
-            "willing_to_relocate": "Needs verification",
-            "field_deployment": "Needs verification",
+            "willing_to_relocate": {"value": "Needs verification", "verified": False},
+            "field_deployment": {"value": "Needs verification", "verified": False},
         },
         "sources": {"enabled": [], "disabled": []},
         # Never bake the registry's operational source defaults into the
@@ -140,10 +137,11 @@ def build_profile_from_cv_text(text: str, *, resume_path: str = "") -> dict[str,
     }
 
 
-def build_profile_from_cv_file(cv_path: str, *, resume_path: str | None = None) -> dict[str, Any]:
+def build_profile_from_cv_file(cv_path: str) -> dict[str, Any]:
+    """Return an in-memory import preview; never persist the uploaded CV/path."""
     text = extract_resume_text(cv_path)
     if not text:
         path = Path(cv_path)
         if path.exists():
             text = path.read_text(encoding="utf-8", errors="replace")
-    return build_profile_from_cv_text(text, resume_path=resume_path or cv_path)
+    return build_profile_from_cv_text(text)

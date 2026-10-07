@@ -43,8 +43,8 @@ def md_profile(**updates):
         "medical_education": [{"degree": "MD (Doctor of Medicine)", "verified": True}],
         "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
         "medical_exit_exam": {"status": "Completed", "verified": True},
-        "clinical_experience": {"years": 6},
-        "ngo_humanitarian_experience": {"years": 5},
+        "clinical_experience": {"years": 6, "verified": True},
+        "ngo_humanitarian_experience": {"years": 5, "verified": True},
         "work_history": [
             {
                 "title": "TFU Medical Doctor and PSEA focal point",
@@ -55,7 +55,7 @@ def md_profile(**updates):
                 "skills": ["SAM", "IMAM", "CMAM", "TFU", "HMIS", "reporting", "supervision", "safeguarding"],
             }
         ],
-        "preferences": {"locations": ["Afghanistan"], "field_deployment": True},
+        "preferences": {"locations": [{"name": "Afghanistan", "verified": True}], "field_deployment": {"value": True, "verified": True}},
         "languages": [
             {"name": "Dari", "level": "Native", "verified": True},
             {"name": "Pashto", "level": "Fluent", "verified": True},

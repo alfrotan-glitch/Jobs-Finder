@@ -11,7 +11,7 @@ It helps one user answer:
 1. Finds Afghanistan-relevant vacancies from maintained sources.
 2. Normalizes and deduplicates vacancies.
 3. Extracts practical requirements: education, license/registration, experience, languages, location, deadline, documents, application URL/email, subject/reference.
-4. Compares the vacancy against the verified profile/CV evidence.
+4. Compares the vacancy against verified canonical-profile evidence.
 5. Classifies the vacancy as:
    - `READY_TO_APPLY`
    - `NEEDS_VERIFICATION`
@@ -65,7 +65,7 @@ The dashboard binds to `127.0.0.1` by default and is not exposed to the LAN. Cho
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp profile.yaml.example profile.yaml
+# profile.yaml is already the tracked canonical applicant record.
 python main.py server --host 127.0.0.1 --port 8080
 ```
 
@@ -83,27 +83,56 @@ python -m pytest -q
 The same suite also runs automatically in GitHub Actions CI
 (`.github/workflows/tests.yml`) on `ubuntu-latest` and `windows-latest`
 with Python 3.11 and 3.12 for every push and pull request to `main`, so
-test execution is verified on both Linux and Windows. The Windows one-click
-start script (`run_jobs_finder.bat`) is reviewed and assertion-covered but
-is not itself executed by CI.
+test execution is verified on both Linux and Windows. Before pytest, CI also
+runs Ruff, compiles the Python entry points/modules/tests, and checks the
+dashboard JavaScript syntax with Node. The Windows one-click start script
+(`run_jobs_finder.bat`) is reviewed and assertion-covered but is not itself
+executed by CI.
 
 ## Profile/CV setup
 
-`profile.yaml` is the source of truth. Copy `profile.yaml.example` and edit only verified facts.
+`profile.yaml` at the repository root is the **only** production applicant record and is Git-tracked. It is the shared source used by the Agent workspace, GitHub, and a normal `git pull` in the Windows Desktop checkout. The CLI, dashboard, matching, recommendations, readiness checks, Master-CV generation, and document/package generation all resolve that one file through the same profile repository. `profile.yaml.example` is schema documentation only; it is never loaded as applicant data, copied as a runtime profile, or used as a fallback.
 
 Important rules:
 
+- Change the one tracked `profile.yaml` directly; commit and push it to synchronize the authorized canonical record between checkouts.
 - Leave missing facts blank or marked `Needs verification`.
-- Do not enter license numbers, issue dates, expiry dates, certificates, references, or experience years unless verified.
-- Optional CV/PDF text can support evidence, but it must not silently replace profile facts.
+- Every claim, including experience duration, location preference, and deployment preference, needs its own adjacent literal `verified: true` before it is verified evidence.
+- Do not invent license numbers, issue dates, expiry dates, document paths, credentials, or language levels.
+- Professional references are private metadata inside this canonical record: they are not matching, employment, or credential evidence and are excluded from default CVs, cover letters, and application-package serialization. Release requires a vacancy-specific need and the owner's explicit approval.
+- The database stores vacancies, scans, match outputs, and packages — never a second applicant profile.
+- Resume extraction caches are not used. A CV is not runtime applicant evidence.
 
-You can build a draft profile from a CV for review:
+CV import is a transient **preview only**; it cannot write or replace `profile.yaml`, create a backup/draft profile, retain an upload, or automatically verify anything:
 
 ```bash
-python main.py import-cv path/to/cv.pdf --profile profile.yaml
+python main.py import-cv path/to/cv.pdf
 ```
 
-Then manually review `profile.yaml` before scanning or preparing documents.
+Review the output, then manually add only facts you personally confirm to canonical `profile.yaml` before scanning or preparing documents.
+
+### Position-neutral Master CV
+
+Generate or refresh the local Master CV only from verified canonical evidence:
+
+```bash
+python main.py master-cv
+```
+
+It writes TXT, DOCX, and PDF files under ignored `documents/master_cv/`. The Master CV contains no vacancy, employer, target-role, or application wording; it is a general presentation of the canonical profile. `prepare` is the separate downstream step that analyzes one vacancy and creates a vacancy-specific CV without modifying either `profile.yaml` or the Master CV.
+
+Professional references are private metadata in the canonical profile, but they are not matching, employment, or credential evidence and are never printed in the Master CV or a vacancy-specific CV by default. When a vacancy asks for references, the package presents a generic manual checklist; the owner decides whether to release approved contact details.
+
+### Local dashboard privacy
+
+The dashboard is a local workstation interface, not a hosted multi-user service:
+
+- It binds to `127.0.0.1` by default. Do not bind it to a shared or public network without adding real access control and a TLS reverse proxy.
+- Browser responses use no-store cache headers, restrictive content/frame/referrer policies, and no CORS opt-in. State-changing browser requests with a foreign `Origin` or `Referer` are rejected.
+- Interactive API documentation endpoints are disabled; the supported interface is the dashboard and the documented CLI.
+- Dashboard CV previews accept PDF or plain-text formats only, stream the upload through an 8 MiB bound, process it in a temporary directory, and delete the temporary input before responding. This is a preview boundary, not a profile-import feature.
+
+These browser protections reduce accidental local exposure; they are **not** authentication or a reason to expose the dashboard publicly.
 
 ## Find jobs
 
@@ -118,7 +147,7 @@ python main.py jobs
 Dashboard:
 
 1. Open the app.
-2. Optionally use **My Profile → Import a CV** to generate a draft profile, then review each field under **Verification review** and press **Mark verified** only for facts you personally confirm. Nothing from a CV import is ever shown as verified until you explicitly confirm it.
+2. Optionally use **My Profile → Preview a CV** to inspect unverified proposed facts. It does not change your profile. Manually add any facts you personally confirm to `profile.yaml`, then use **Verification review** to set only the matching verified flag. Nothing from a CV import is ever shown as verified automatically.
 3. Press **Find Jobs**.
 4. Review **Recommended**.
 5. Select a vacancy and press **Prepare package**.
@@ -144,8 +173,8 @@ A result of zero jobs is never used to claim the Afghanistan market is empty whe
 Maintained active sources are intentionally few:
 
 - **Tier A: ACBAR Jobs** — core Afghanistan NGO/INGO job board. Normal discovery follows `?page=N` until ACBAR returns a real empty listing page (`END_REACHED`), deduplicates all current cards, and cross-checks the discovered total against the count published by ACBAR. Detail pages are opened only for plausible health/medical candidates, with bounded concurrency (`max_detail_concurrency`, default 5) and a per-request timeout. The shipped profile does not configure ACBAR page or detail budgets; ACBAR completion is the source's real end page.
-- **One recommendation authority** — `Recommended from this scan` is exactly the length of the recommendation collection the scan produced (`utils/recommendations.py`), and the CLI list, the dashboard Recommended view, and persisted scan activity all render that same collection; nothing recomputes recommendations independently. Broad discovery keeps programme/operations roles reviewable in the jobs list, but only roles with a positively MD/public-health-compatible classification are recommended.
-- **Tier B: ReliefWeb Afghanistan jobs** — secondary humanitarian source filtered for health/medical/public-health terms.
+- **One recommendation authority** — `Recommended from this scan` is exactly the length of the recommendation collection the scan produced (`utils/recommendations.py`), and the CLI list, the dashboard Recommended view, and persisted scan activity all render that same collection; nothing recomputes recommendations independently. Dashboard/API recommendation responses carry explicit saved-scan timestamps (or a stored-history label), so historical results are never presented as a live market refresh. Broad discovery keeps programme/operations roles reviewable in the jobs list, but only roles with a positively MD/public-health-compatible classification are recommended.
+- **Tier B: ReliefWeb Afghanistan jobs** — secondary humanitarian source filtered for health/medical/public-health terms. The maintained adapter currently requests one bounded result page (default `limit: 20`) and then opens the retained detail pages. If that page reaches the configured limit, the scan is explicitly reported `PARTIAL_SCAN` / `RESULT_LIMIT_REACHED`; it is not represented as ReliefWeb pagination completion. Fewer results than the bound are reported as the observable end of that one-page route.
 
 Other official employer and UN routes are treated as trusted application routes when discovered, but not claimed as active parser-backed sources unless maintained.
 
@@ -185,11 +214,11 @@ Vacancies classified `NEEDS_VERIFICATION` keep visible warnings in the package s
 
 ### Document evidence gate
 
-Employer-facing generated documents (tailored CV and cover letter — TXT, and the DOCX/PDF renders of the same text) only print explicitly verified facts in factual sections: professional summary, experience, competencies, certifications/training, education, license/registration, Medical Exit Exam, languages, and vacancy-fit highlights. There is no hardcoded applicant description. Unverified profile/CV items are never silently promoted into factual content — they are listed in the package's review warnings instead, so nothing is lost and nothing unconfirmed is claimed.
+Employer-facing generated documents (tailored CV and cover letter — TXT, and the DOCX/PDF renders of the same text) only print explicitly verified canonical-profile facts in factual sections: professional summary, experience, competencies, certifications/training, education, license/registration, Medical Exit Exam, languages, and vacancy-fit highlights. There is no hardcoded applicant description. Unverified profile items are never silently promoted into factual content — they are listed in the package's review warnings instead, so nothing is lost and nothing unconfirmed is claimed.
 
 ### Contact/identity rule
 
-Contact data (name, email, phone, location) from `profile.personal` is display data for the applicant's own application: it is printed in generated documents even while still a draft (for example right after a CV import), so the user can review it in place and legitimate contact data is never suppressed or invented. Display never implies verification — contact/identity facts only become verified evidence for matching through explicit per-field confirmation (`personal.verification.<field>: true`). Known placeholder values are replaced with `CONFIRM BEFORE SUBMISSION`, and while identity/contact fields are unconfirmed, the application package keeps a visible "confirm identity/contact" blocker.
+Contact and identity data (name, email, phone, location) are applicant facts, not a document fallback. An employer-facing document prints each only after its own explicit `personal.verification.<field>: true` confirmation. Missing, unverified, or placeholder name/email/phone values become `CONFIRM BEFORE SUBMISSION`; unverified location is omitted. The application package remains blocked until identity/contact review is complete. A CV preview never contributes contact data to runtime documents.
 
 ## Troubleshooting
 

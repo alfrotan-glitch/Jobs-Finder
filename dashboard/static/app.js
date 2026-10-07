@@ -1,6 +1,8 @@
 const state = {
   jobs: [],
   recommended: [],
+  recommendationContext: null,
+  recommendationOrigin: "",
   profile: {},
   profileDetails: {},
   profileReview: {},
@@ -294,16 +296,29 @@ function renderNextStep() {
     <button class="secondary" data-tab-target="recommended">Review recommendations</button>`;
 }
 
+function recommendationProvenanceNotice() {
+  const scan = state.recommendationContext;
+  if (scan && (scan.finished_at || scan.started_at)) {
+    const timestamp = scan.finished_at || scan.started_at;
+    return `<p class="sectionHelp">Recommendations from the last saved scan (${escapeHtml(timestamp)}). Run a new scan to refresh source results.</p>`;
+  }
+  if (state.recommendationOrigin === "stored_history" && state.recommended.length) {
+    return `<p class="sectionHelp">Showing saved recommendation history, not a live source result. Run a new scan to refresh it.</p>`;
+  }
+  return "";
+}
+
 function renderJobLists() {
   const sourceFailed = state.lastScan && ["SOURCES_UNAVAILABLE", "SCAN_FAILED"].includes(state.lastScan.status);
+  const provenance = recommendationProvenanceNotice();
   const sourceAction = `<button class="secondary" data-tab-target="advanced">View details</button>`;
   $("dashboardRecommendedList").innerHTML = state.recommended.length
-    ? state.recommended.slice(0, 4).map((job) => jobCard(job, {compact: true})).join("")
+    ? provenance + state.recommended.slice(0, 4).map((job) => jobCard(job, {compact: true})).join("")
     : sourceFailed
       ? emptyState("Job sources could not be reached", "The last scan did not return live vacancies because source connections failed.", sourceAction)
       : emptyState("No recommendations yet", "Run a scan to find vacancies worth reviewing first.", `<button class="primary subtle" data-action="find-jobs">Find Jobs</button>`);
   $("recommendedList").innerHTML = state.recommended.length
-    ? state.recommended.map((job) => jobCard(job)).join("")
+    ? provenance + state.recommended.map((job) => jobCard(job)).join("")
     : sourceFailed
       ? emptyState("Job sources could not be reached", "No recommendation can be shown until a source returns vacancy data.", sourceAction)
       : emptyState("No suitable vacancies found yet", "Your last scan did not return actionable recommended vacancies.", `<button class="primary subtle" data-action="find-jobs">Run scan</button>`);
@@ -358,7 +373,7 @@ function renderProfileDetails() {
   const details = state.profileDetails?.details || {};
   const summary = details.summary || state.profile?.summary || {};
   if (!exists) {
-    $("profileHeader").innerHTML = emptyState("No profile loaded", "Create your local profile or import a CV draft for review.");
+    $("profileHeader").innerHTML = emptyState("No profile loaded", "Create your canonical local profile. A CV preview never creates or replaces it.");
     for (const id of ["profileSummaryBox", "profileExperienceBox", "profileEducationBox", "profileRegistrationBox", "profileExitExamBox", "profileTrainingBox", "profileSkillsBox", "profileLanguagesBox"]) {
       $(id).innerHTML = `<p class="sectionHelp">No profile data available.</p>`;
     }
@@ -650,6 +665,8 @@ async function refresh() {
     apiJson("/api/scan/latest"),
   ]);
   state.recommended = recommended.jobs || [];
+  state.recommendationContext = recommended.scan || null;
+  state.recommendationOrigin = recommended.data_origin || "";
   state.jobs = jobs.jobs || [];
   state.profile = profile;
   state.profileDetails = details;
@@ -661,7 +678,7 @@ async function refresh() {
 
 async function findJobs() {
   if (state.profile && state.profile.exists === false) {
-    setStatus("Your local profile is missing. Create or import a profile before scanning for jobs.", "error");
+    setStatus("Your canonical local profile is missing. Create profile.yaml before scanning for jobs; CV preview does not create it.", "error");
     switchTab("profile");
     return;
   }
@@ -737,7 +754,9 @@ async function importCv() {
   setStatus("Importing CV…", "warn");
   try {
     const data = await apiJson("/api/import-cv", { method: "POST", body: form });
-    state.profileReview = data;
+    // Import is a request-local, unverified preview.  It must never replace
+    // the canonical applicant state shown in My Profile.
+    $("advancedLog").textContent = JSON.stringify(data.preview || data, null, 2);
     setStatus(data.message, "warn");
     await refresh();
   } catch (error) {

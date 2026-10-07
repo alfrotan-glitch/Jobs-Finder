@@ -7,19 +7,17 @@ import argparse
 import asyncio
 import sys
 import webbrowser
-from pathlib import Path
 from typing import Any
 
 import yaml
 
 from utils.discovery import run_discovery_scan
-from utils.documents import prepare_application_bundle
+from utils.documents import prepare_application_bundle, write_master_cv
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
-from utils.paths import CANONICAL_DB_PATH, CANONICAL_PROFILE_PATH, project_path
-from utils.profile import save_profile
+from utils.paths import CANONICAL_DB_PATH
+from utils.profile import CanonicalProfileError, load_canonical_profile
 from utils.profile_builder import build_profile_from_cv_file
 from utils.recommendations import evaluate_scan_jobs
-from utils.resume_parser import extract_resume_text
 from utils.tracker import (
     delete_all,
     get_job_by_id,
@@ -32,31 +30,18 @@ from utils.tracker import (
     update_tailored_resume,
 )
 
-# Public aliases make the CLI's runtime contract inspectable: the tracker and
-# dashboard use this same canonical database path.
+# Public alias for the one canonical database.  Applicant facts are not stored
+# in SQLite; they are always loaded through utils.profile.load_canonical_profile.
 DB_PATH = CANONICAL_DB_PATH
-PROFILE_PATH = CANONICAL_PROFILE_PATH
 
 
-def load_profile(path: str | Path | None = None, *, required: bool = True) -> dict[str, Any]:
-    p = PROFILE_PATH if path is None else project_path(path)
-    if not p.exists():
-        if required:
-            print(f"Profile not found: {p}")
-            print("Copy profile.yaml.example to profile.yaml and enter verified facts first.")
-            sys.exit(1)
-        return {}
-    profile = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
-    missing = [field for field in ["first_name", "last_name", "email"] if not personal.get(field)]
-    if missing and required:
-        print(f"Missing required profile fields: {', '.join(missing)}")
+def _require_canonical_profile() -> dict[str, Any]:
+    """CLI presentation layer for the shared canonical-profile repository."""
+    try:
+        return load_canonical_profile(required=True)
+    except CanonicalProfileError as exc:
+        print(str(exc))
         sys.exit(1)
-    return profile
-
-
-def _resume_text(profile: dict[str, Any]) -> str:
-    return extract_resume_text(profile.get("resume_path", ""))
 
 
 def print_scan_accounting(scan: Any) -> None:
@@ -109,10 +94,11 @@ def print_scan_accounting(scan: Any) -> None:
 async def cmd_scan(profile: dict[str, Any]) -> dict[str, Any]:
     print("Finding Afghanistan health/medical vacancies...")
     scan = await run_discovery_scan(profile)
-    resume_text = _resume_text(profile)
     # One shared orchestration (also used by the dashboard): store, match, and
     # record — the recommendation collection is derived once, authoritatively.
-    evaluate_scan_jobs(scan, profile, resume_text)
+    # Runtime matching deliberately receives no CV/cache text: profile.yaml is
+    # the sole applicant-facts source.
+    evaluate_scan_jobs(scan, profile)
     log_scan_result(scan.to_dict())
     print(scan.message)
     print_scan_accounting(scan)
@@ -161,19 +147,35 @@ def print_recommended(limit: int = 20) -> None:
     _print_recommendation_entries(jobs)
 
 
+def cmd_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
+    """Write the local, position-neutral master CV from canonical evidence."""
+    master = write_master_cv(profile)
+    print("Position-neutral master CV prepared from verified canonical-profile evidence.")
+    print("Generated files:")
+    for label, value in (master.get("generated_paths") or {}).items():
+        print(f"- {label}: {value}")
+    if master.get("review_warnings"):
+        print("Review warnings:")
+        for warning in master["review_warnings"]:
+            print(f"- {warning}")
+    return master
+
+
 def cmd_prepare(profile: dict[str, Any], job_id: str) -> dict[str, Any] | None:
     job = get_job_by_id(job_id)
     if not job:
         print(f"Vacancy not found: {job_id}")
         return None
-    resume_text = _resume_text(profile)
-    report = match_job_against_profile(job, profile, resume_text=resume_text).to_dict()
+    # The same canonical mapping used for discovery/matching is passed into
+    # document generation.  CV imports and resume caches never feed runtime
+    # matching or employer-facing documents.
+    report = match_job_against_profile(job, profile).to_dict()
     log_medical_match(job_id, report)
     if report.get("readiness_status") == NOT_ELIGIBLE_STATUS:
         print("Not preparing a package: this vacancy is classified NOT_ELIGIBLE.")
         print(report.get("explanation", ""))
         return None
-    docs = prepare_application_bundle(job, profile, report, resume_text=resume_text)
+    docs = prepare_application_bundle(job, profile, report)
     update_tailored_resume(job_id, docs)
     package = docs.get("application_package", {})
     print(f"Prepared package: {job['title']} — {job['company']}")
@@ -220,12 +222,17 @@ def cmd_mark_applied(job_id: str) -> None:
     print(message if ok else f"Could not record: {message}")
 
 
-def cmd_import_cv(cv_path: str, profile_path: str) -> None:
-    profile = build_profile_from_cv_file(cv_path, resume_path=cv_path)
-    destination = project_path(profile_path)
-    save_profile(profile, destination)
-    print(f"Structured profile written to {destination}")
-    print("Review it before scanning. Missing evidence remains Needs verification.")
+def cmd_import_cv(cv_path: str) -> None:
+    """Print a transient CV review preview without changing applicant data.
+
+    Importing cannot overwrite the canonical applicant, write another profile
+    file, or retain a CV path.  The owner must manually copy only confirmed
+    facts into profile.yaml and set their exact verified flags there.
+    """
+    preview = build_profile_from_cv_file(cv_path)
+    print("CV import preview only — profile.yaml was not changed and no draft profile was saved.")
+    print("Review the proposed values, then add only facts you personally confirm to canonical profile.yaml.")
+    print(yaml.safe_dump(preview, sort_keys=False, allow_unicode=True))
 
 
 def main() -> None:
@@ -247,11 +254,10 @@ def main() -> None:
     applied = sub.add_parser("mark-applied", help="Record a user-confirmed manual application")
     applied.add_argument("job_id")
 
-    import_cv = sub.add_parser("import-cv", help="Build profile.yaml from a text/PDF CV for user review")
+    import_cv = sub.add_parser("import-cv", help="Preview unverified CV facts; never writes a profile")
     import_cv.add_argument("cv_path")
-    import_cv.add_argument("--profile", default="profile.yaml")
 
-
+    sub.add_parser("master-cv", help="Write a position-neutral master CV from verified canonical-profile evidence")
 
     server = sub.add_parser("server", help="Launch the web dashboard")
     server.add_argument("--host", default="127.0.0.1")
@@ -264,7 +270,7 @@ def main() -> None:
         run_server(host=args.host, port=args.port)
         return
     if args.command == "import-cv":
-        cmd_import_cv(args.cv_path, args.profile)
+        cmd_import_cv(args.cv_path)
         return
     if args.command == "recommended":
         print_recommended()
@@ -280,9 +286,11 @@ def main() -> None:
         print(f"Deleted {delete_all()} stored vacancies.")
         return
 
-    profile = load_profile()
+    profile = _require_canonical_profile()
     if args.command == "find":
         asyncio.run(cmd_scan(profile))
+    elif args.command == "master-cv":
+        cmd_master_cv(profile)
     elif args.command == "prepare":
         cmd_prepare(profile, args.job_id)
     elif args.command == "open":

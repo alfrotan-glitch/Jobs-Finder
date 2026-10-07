@@ -8,14 +8,14 @@ logic.
 
 from __future__ import annotations
 
-import uuid
+import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import uvicorn
-import yaml
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -28,16 +28,17 @@ from utils.discovery import (
 )
 from utils.documents import prepare_application_bundle
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
-from utils.paths import CANONICAL_DB_PATH, CANONICAL_PROFILE_PATH, PROJECT_ROOT
+from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.profile import (
     PERSONAL_VERIFICATION_FIELDS,
+    CanonicalProfileError,
     build_profile_evidence,
     is_unresolved_value,
-    save_profile,
+    load_canonical_profile,
+    save_canonical_profile,
 )
 from utils.profile_builder import build_profile_from_cv_file
 from utils.recommendations import evaluate_scan_jobs
-from utils.resume_parser import extract_resume_text
 from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
 from utils.tracker import (
     get_job_by_id,
@@ -55,24 +56,112 @@ from utils.tracker import (
 # The dashboard and CLI intentionally expose the same canonical locations.
 ROOT = PROJECT_ROOT
 DB_PATH = CANONICAL_DB_PATH
-PROFILE_PATH = CANONICAL_PROFILE_PATH
-UPLOADS_DIR = ROOT / "resumes"
 
-app = FastAPI(title="Jobs-Finder")
+# CV previews are transient and intentionally bounded.  The dashboard is a
+# local workstation tool, not a general-purpose file-processing service; an
+# upload above this size offers no practical CV-review benefit and could force
+# the server to buffer excessive private data in memory.
+MAX_CV_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MiB
+CV_UPLOAD_CHUNK_BYTES = 64 * 1024
+
+# The product does not expose a public API surface, so Swagger/ReDoc/OpenAPI
+# endpoints are disabled rather than leaving interactive documentation on a
+# dashboard that may display private applicant data.
+app = FastAPI(title="Jobs-Finder", docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=str(ROOT / "dashboard" / "static")), name="static")
 templates = Jinja2Templates(directory=str(ROOT / "dashboard" / "templates"))
 
 
-def load_profile(required: bool = False) -> dict[str, Any]:
-    if not PROFILE_PATH.exists():
-        if required:
-            raise HTTPException(status_code=400, detail="profile.yaml is missing. Copy profile.yaml.example and enter verified facts.")
-        return {}
-    return yaml.safe_load(PROFILE_PATH.read_text(encoding="utf-8")) or {}
+def _is_same_origin_browser_request(request: Request) -> bool:
+    """Accept same-origin browser writes while rejecting cross-site requests.
+
+    Jobs-Finder deliberately has no browser authentication because its normal
+    deployment is the loopback-only local dashboard.  This check is a focused
+    CSRF boundary for the rare case a user explicitly binds it elsewhere: a
+    browser that sends Origin or Referer metadata may change state only from
+    the dashboard's own origin.  Header-less non-browser calls remain useful
+    for local CLI/test tooling and are not an authentication mechanism.
+    """
+    expected = urlsplit(str(request.base_url))
+    supplied = request.headers.get("origin") or request.headers.get("referer")
+    if not supplied:
+        return True
+    candidate = urlsplit(supplied)
+    return candidate.scheme == expected.scheme and candidate.netloc == expected.netloc
+
+
+@app.middleware("http")
+async def _protect_browser_responses(request: Request, call_next):
+    """Apply privacy defaults and same-origin protection to every route."""
+    if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and not _is_same_origin_browser_request(request):
+        response = JSONResponse(
+            status_code=403,
+            content={"detail": "Cross-origin state-changing requests are not allowed."},
+        )
+    else:
+        response = await call_next(request)
+
+    # Profile details, generated documents, and scan history are private local
+    # data.  Keep them out of browser/proxy caches and prohibit framing and
+    # MIME sniffing. The CSP matches the shipped self-hosted HTML/CSS/JS only.
+    response.headers.setdefault("Cache-Control", "no-store, max-age=0, private")
+    response.headers.setdefault("Pragma", "no-cache")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
+        "object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "font-src 'self'; connect-src 'self'",
+    )
+    return response
+
+
+async def _read_bounded_cv_upload(file: UploadFile) -> bytes:
+    """Read an uploaded CV in bounded chunks, rejecting it before parsing."""
+    data = bytearray()
+    while True:
+        chunk = await file.read(CV_UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            return bytes(data)
+        data.extend(chunk)
+        if len(data) > MAX_CV_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"CV upload is too large. The maximum supported size is {MAX_CV_UPLOAD_BYTES // (1024 * 1024)} MiB.",
+            )
+
+
+def _runtime_profile(required: bool = False) -> dict[str, Any]:
+    """HTTP adapter around the sole canonical applicant-profile repository.
+
+    This deliberately performs no YAML/path handling of its own.  In
+    particular it cannot fall back to profile.yaml.example, an import draft,
+    a backup, or a resume cache.
+    """
+    try:
+        return load_canonical_profile(required=required)
+    except CanonicalProfileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
+    preferences = profile.get("preferences") or {}
+    preferences = preferences if isinstance(preferences, dict) else {}
+
+    def display_locations(items: Any) -> list[str]:
+        values: list[str] = []
+        for item in items if isinstance(items, list) else []:
+            value = (item.get("name") or item.get("value") or item.get("location")) if isinstance(item, dict) else item
+            if value and not is_unresolved_value(value):
+                values.append(str(value))
+        return values
+
     professional_title = personal.get("professional_title") or ""
     return {
         "name": " ".join(str(personal.get(key, "")).strip() for key in ["first_name", "last_name"]).strip(),
@@ -80,11 +169,8 @@ def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
         "email": personal.get("email", ""),
         "phone": personal.get("phone", ""),
         "location": personal.get("location", ""),
-        "resume_path": profile.get("resume_path", ""),
-        "roles": (profile.get("preferences") or {}).get("roles", []) if isinstance(profile.get("preferences"), dict) else [],
-        "locations": (profile.get("preferences") or {}).get("locations", []) if isinstance(profile.get("preferences"), dict) else [],
-        "is_draft": str(profile.get("profile_status", "")).upper() == "DRAFT",
-        "draft_note": profile.get("profile_status_note", ""),
+        "roles": preferences.get("roles", []) if isinstance(preferences.get("roles"), list) else [],
+        "locations": display_locations(preferences.get("locations")),
     }
 
 
@@ -252,25 +338,31 @@ def _field_status(evidence, key: str) -> str:
 
 
 def _profile_review_payload(profile: dict[str, Any]) -> dict[str, Any]:
-    resume_text = extract_resume_text(profile.get("resume_path", ""))
-    evidence = build_profile_evidence(profile, resume_text=resume_text)
+    # Runtime readiness is derived from canonical profile.yaml only.  CV
+    # imports are transient previews and resume/cache text is never evidence
+    # for the production applicant.
+    evidence = build_profile_evidence(profile)
     fields = []
     for key, label, confirm_field in REVIEW_FIELDS:
         status = _field_status(evidence, key)
+        actionable_confirm_field = confirm_field if status != "Missing" else None
+        # A collection has no safe one-click "verify all" action. Hide the
+        # generic education button when it contains more than one entry; the
+        # owner must review the entries individually in canonical profile.yaml.
+        if confirm_field == "medical_education":
+            education = profile.get("medical_education")
+            if not isinstance(education, list) or len([item for item in education if isinstance(item, dict)]) != 1:
+                actionable_confirm_field = None
         fields.append(
             {
                 "key": key,
                 "label": label,
                 "status": status,
                 "evidence": evidence.evidence_text(key)[:2],
-                "confirm_field": confirm_field if status != "Missing" else None,
+                "confirm_field": actionable_confirm_field,
             }
         )
-    return {
-        "is_draft": str(profile.get("profile_status", "")).upper() == "DRAFT",
-        "draft_note": profile.get("profile_status_note", ""),
-        "fields": fields,
-    }
+    return {"fields": fields}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -285,13 +377,13 @@ def health():
 
 @app.get("/api/profile")
 def api_profile():
-    profile = load_profile(False)
+    profile = _runtime_profile(False)
     return {"exists": bool(profile), "summary": profile_summary(profile)}
 
 
 @app.get("/api/profile/details")
 def api_profile_details():
-    profile = load_profile(False)
+    profile = _runtime_profile(False)
     if not profile:
         return {"exists": False, "details": {}}
     return {"exists": True, "details": _profile_details(profile)}
@@ -319,7 +411,7 @@ def api_generated_file(path: str):
 
 @app.get("/api/profile/review")
 def api_profile_review():
-    profile = load_profile(False)
+    profile = _runtime_profile(False)
     if not profile:
         return {"exists": False, "is_draft": False, "draft_note": "", "fields": []}
     return {"exists": True, **_profile_review_payload(profile)}
@@ -341,7 +433,7 @@ async def api_profile_confirm(request: Request):
     field = str((payload or {}).get("field") or "")
     if not _is_confirmable(field):
         raise HTTPException(status_code=400, detail=f"Unsupported field: {field}")
-    profile = load_profile(True)
+    profile = _runtime_profile(True)
 
     if field.startswith("language:"):
         # A language is only meaningfully verified once both an explicit
@@ -378,49 +470,59 @@ async def api_profile_confirm(request: Request):
         verification[key] = True
     elif field == "medical_education":
         target = profile.get(field)
-        if not isinstance(target, list) or not target:
-            raise HTTPException(status_code=400, detail="No medical_education entry to confirm.")
-        for item in target:
-            if isinstance(item, dict):
-                item["verified"] = True
+        entries = [item for item in target if isinstance(item, dict)] if isinstance(target, list) else []
+        # The one-click review view has no entry selector. It may safely
+        # confirm a single education fact, but must never bulk-verify several
+        # degrees merely because they share a list field.
+        if len(entries) != 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Confirm medical_education entries individually in profile.yaml; the dashboard will not bulk-verify multiple facts.",
+            )
+        entries[0]["verified"] = True
     else:
         target = profile.get(field)
         if not isinstance(target, dict):
             raise HTTPException(status_code=400, detail=f"{field} is not present in profile.yaml.")
         target["verified"] = True
 
-    save_profile(profile, PROFILE_PATH)
+    save_canonical_profile(profile)
     return {"ok": True, "message": f"{field} marked verified in profile.yaml.", "review": _profile_review_payload(profile)}
 
 
 @app.post("/api/import-cv")
 async def api_import_cv(file: UploadFile = File(...)):
-    """Build a DRAFT profile from an uploaded CV for the user to review.
+    """Return an unverified, request-local CV preview without changing state.
 
-    The result always needs review: nothing extracted from the CV is written
-    as verified. If profile.yaml already exists it is preserved as
-    profile.yaml.bak before being replaced, so a browser-based import never
-    silently destroys facts the user has already confirmed.
+    The upload is placed in a system temporary directory only long enough for
+    local text extraction, then deleted.  It never writes profile.yaml, a
+    backup, a draft profile, ``resumes/``, or a resume cache.  Consequently an
+    imported sample CV can never become the production applicant.
     """
     allowed_suffixes = {".pdf", ".txt", ".md", ".markdown", ".rst", ".csv"}
     suffix = Path(file.filename or "cv.txt").suffix.lower() or ".txt"
-    if suffix not in allowed_suffixes:
-        raise HTTPException(status_code=400, detail="Unsupported file type. Upload a PDF or plain-text CV.")
-    content = await file.read()
-    UPLOADS_DIR.mkdir(exist_ok=True)
-    stored_path = UPLOADS_DIR / f"cv_{uuid.uuid4().hex}{suffix}"
-    stored_path.write_bytes(content)
+    try:
+        if suffix not in allowed_suffixes:
+            raise HTTPException(status_code=400, detail="Unsupported file type. Upload a PDF or plain-text CV.")
+        content = await _read_bounded_cv_upload(file)
+    finally:
+        # Starlette normally cleans this up after the request, but closing it
+        # here makes the preview's non-retention guarantee explicit on both
+        # success and every early error path.
+        await file.close()
 
-    profile = build_profile_from_cv_file(str(stored_path))
+    with tempfile.TemporaryDirectory(prefix="jobs-finder-cv-preview-") as directory:
+        uploaded_path = Path(directory) / f"uploaded_cv{suffix}"
+        uploaded_path.write_bytes(content)
+        # An empty path is intentional: no temporary upload location can be
+        # retained in a profile-shaped preview or canonical applicant record.
+        preview = build_profile_from_cv_file(str(uploaded_path))
 
-    if PROFILE_PATH.exists():
-        backup_path = PROFILE_PATH.parent / f"{PROFILE_PATH.name}.bak"
-        backup_path.write_text(PROFILE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
-    save_profile(profile, PROFILE_PATH)
     return {
         "ok": True,
-        "message": "Draft profile created from your CV. Review every field below before scanning or applying.",
-        **_profile_review_payload(profile),
+        "persisted": False,
+        "message": "CV import preview only. Your canonical profile.yaml was not changed; manually add only facts you confirm.",
+        "preview": _profile_review_payload(preview),
     }
 
 
@@ -433,7 +535,7 @@ def api_settings():
     configurable from the UI, it is presented as current configuration, not
     as a control.
     """
-    profile = load_profile(False)
+    profile = _runtime_profile(False)
     acbar_cfg = ((profile.get("job_sources") or {}).get("acbar") or {}) if isinstance(profile, dict) else {}
     reliefweb_cfg = ((profile.get("job_sources") or {}).get("reliefweb") or {}) if isinstance(profile, dict) else {}
     return {
@@ -452,16 +554,31 @@ def api_settings():
     }
 
 
+def _scan_context(scan: dict[str, Any]) -> dict[str, str] | None:
+    """Small, explicit provenance record for a persisted scan collection.
+
+    Recommendation rows are stored scan results, not a live market feed. The
+    dashboard needs this timestamp/status context alongside the authoritative
+    collection so it can never imply that a historical scan is current.
+    """
+    if not isinstance(scan, dict) or not scan:
+        return None
+    return {
+        "status": str(scan.get("status") or ""),
+        "started_at": str(scan.get("started_at") or ""),
+        "finished_at": str(scan.get("finished_at") or ""),
+    }
+
+
 @app.get("/api/recommended")
 def api_recommended(limit: int = 200):
-    """Serve the same recommendation collection the scan itself produced.
+    """Serve the authoritative recommendation collection with its provenance.
 
-    The authoritative per-scan collection is persisted inside the scan run by
-    the backend; this endpoint returns it verbatim (only overlaying current
-    package/progress state from the tracker for cards that have since had a
-    package generated). When no scan run with a stored collection exists yet,
-    the stored-history view is served instead, which applies the same
-    recommendation gate via utils/recommendations.py.
+    The collection is persisted within its scan run and returned verbatim
+    (except current package/progress overlays). ``data_origin`` and ``scan``
+    explicitly identify saved scan data; this endpoint never represents a
+    historical result as a fresh live-source result. If no scan collection
+    exists, the stored-history view uses the same recommendation gate.
     """
     latest = get_latest_scan() or {}
     entries = latest.get("recommendations")
@@ -473,8 +590,8 @@ def api_recommended(limit: int = 200):
             if row:
                 entry = {**entry, "status": row.get("status") or entry.get("status"), "package_status": row.get("package_status") or entry.get("package_status")}
             merged.append(entry)
-        return {"jobs": merged[:limit]}
-    return {"jobs": get_recommended_jobs(limit=limit)}
+        return {"jobs": merged[:limit], "data_origin": "latest_saved_scan", "scan": _scan_context(latest)}
+    return {"jobs": get_recommended_jobs(limit=limit), "data_origin": "stored_history", "scan": None}
 
 
 @app.get("/api/jobs")
@@ -499,13 +616,13 @@ def api_scans(limit: int = 10):
 
 @app.post("/api/find")
 async def api_find():
-    profile = load_profile(True)
+    profile = _runtime_profile(True)
     scan = await run_discovery_scan(profile)
-    resume_text = extract_resume_text(profile.get("resume_path", ""))
     # One shared orchestration identical to the CLI (utils/recommendations.py):
     # store, match, record — the recommendation collection in the response is
-    # the exact collection the summary counted.
-    evaluate_scan_jobs(scan, profile, resume_text)
+    # the exact collection the summary counted.  Runtime applicant evidence is
+    # the canonical profile only, never CV/cache text.
+    evaluate_scan_jobs(scan, profile)
     result = scan.to_dict()
     log_scan_result(result)
     return result
@@ -521,16 +638,15 @@ def api_job(job_id: str):
 
 @app.post("/api/jobs/{job_id}/prepare")
 def api_prepare(job_id: str):
-    profile = load_profile(True)
+    profile = _runtime_profile(True)
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Vacancy not found")
-    resume_text = extract_resume_text(profile.get("resume_path", ""))
-    report = match_job_against_profile(job, profile, resume_text=resume_text).to_dict()
+    report = match_job_against_profile(job, profile).to_dict()
     log_medical_match(job_id, report)
     if report.get("readiness_status") == NOT_ELIGIBLE_STATUS:
         raise HTTPException(status_code=409, detail="This vacancy is NOT_ELIGIBLE; no application package was generated.")
-    docs = prepare_application_bundle(job, profile, report, resume_text=resume_text)
+    docs = prepare_application_bundle(job, profile, report)
     update_tailored_resume(job_id, docs)
     return {"job_id": job_id, "documents": docs.get("generated_paths", {}), "package": docs.get("application_package", {})}
 

@@ -407,11 +407,20 @@ TERM_REQUIREMENTS: dict[str, dict[str, Any]] = {
     },
     "medical_exit_exam": {
         "label": "Medical exit examination",
+        # Do not include Medical Council Exam here. The two qualifications are
+        # not interchangeable absent wording in the vacancy that actually
+        # establishes an exit-exam requirement.
         "patterns": [
             r"\bexit\s+exam(?:ination)?\b",
             r"\bmedical\s+exit\s+exam(?:ination)?\b",
-            r"\bmedical\s+council\s+exam(?:ination)?\b",
             r"ایگزیت\s*امتحان",
+        ],
+        "criticality": "essential",
+    },
+    "medical_council_exam": {
+        "label": "Medical Council Exam",
+        "patterns": [
+            r"\bmedical\s+council\s+exam(?:ination)?\b",
             r"امتحان\s+شورای\s+طبی",
         ],
         "criticality": "essential",

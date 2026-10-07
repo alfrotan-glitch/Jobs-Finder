@@ -14,8 +14,10 @@ applications.db-shm
 .cache/
 .pytest_cache/
 
-# User/private data and generated application artifacts
-profile.yaml
+# Generated application artifacts and quarantined legacy paths.
+# The repository-root profile.yaml is the one tracked canonical applicant
+# record. The application never reads the remaining paths below as profile
+# data, and it never creates profile backups or alternate applicant records.
 profile.yaml.bak
 resumes/
 profiles/

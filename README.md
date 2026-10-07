@@ -132,7 +132,54 @@ Generate or refresh the local Master CV only from verified canonical evidence:
 python main.py master-cv
 ```
 
-It writes TXT, DOCX, and PDF files under ignored `documents/master_cv/`. The Master CV contains no vacancy, employer, target-role, or application wording; it is a general presentation of the canonical profile. `prepare` is the separate downstream step that analyzes one vacancy and creates a vacancy-specific CV without modifying either `profile.yaml` or the Master CV.
+It writes TXT, DOCX, and PDF files under ignored `documents/master_cv/`. The Master CV contains no vacancy, employer, target-role, or application wording; it is a comprehensive, position-neutral presentation of the verified canonical profile. `prepare` is the separate downstream step that analyzes one vacancy and creates a vacancy-specific CV by selecting and reordering that same evidence — it modifies neither `profile.yaml` nor the Master CV.
+
+The same Master CV is generated from the dashboard (**My Profile → Position-neutral Master CV → Generate Master CV**, `POST /api/master-cv`); it is a local write, never a submission.
+
+#### Master CV architecture
+
+The CV is deliberately comprehensive rather than short. Nothing verified is dropped to reduce page count, and the sections are ordered the way an international NGO / medical recruiters reads them:
+
+1. **Header** — verified name, verified professional title, verified email/phone/location.
+2. **Professional summary** — a substantive paragraph assembled only from verified evidence: the verified MD degree (field and institution), completed Medical Exit Examination, valid registration status, the verified duration *lower bound* spelled out in words ("more than three years"), the verified experience dimensions, the verified employers, the verified competency inventory, and the verified languages. Owners may override it with their own reviewed `professional_summary.text`.
+3. **Core professional competencies** — a grouped skills architecture (Clinical & Medical Practice; Health & Nutrition Programming; Public Health Systems & Quality; Programme Coordination & Field Operations; Supervision & Capacity Building; Safeguarding, Protection & Compliance; Supply Chain, Logistics & Administration; plus an "Additional Professional Competencies" group for anything else), containing every verified competency exactly once as ATS-readable text.
+4. **Professional experience** — every verified role with employer, location, and the dates exactly as supplied (blank ACF dates stay blank; supplied `2020-10` prints as "Oct 2020"), each with its **applicant-supported** professional scope. A detailed duty is printed only when the applicant actually supplied it; see the verification gate below.
+5. **Education, Professional Registration, Medical Exit Examination, Professional Training & Certifications, Languages** — every verified credential, with the registration presented only as the verified status (never an invented number, authority, or date).
+6. **References** — "Available on request for shortlisted applications." Private referee contacts are never printed; they can only be released through the vacancy-requirement + explicit-owner-approval boundary.
+
+`responsibilities` in `profile.yaml` is the verification-gated professional description of each role: only `{text: ..., verified: true}` is confirmed experience, and the test suite enforces that each line introduces no number, no new named entity, place, employer, date, or achievement result beyond what the applicant supplied.
+
+**A claim needs applicant evidence, not a plausible inference.** A role title ("Medical Doctor"), a verified skill ("Infection Prevention and Control"), a certificate, the sector's normal practice, or what the employer usually does are **not** evidence that the applicant performed a duty. The system therefore never derives a duty from them.
+
+Detailed duties that were suggested rather than supplied are held in `needs_verification` on the role:
+
+* preserved verbatim in `profile.yaml`, so nothing is lost;
+* excluded from every generated document (Master CV, tailored CV, cover letter, package text and email) by the generator itself, not merely by convention;
+* reported to the owner as a review warning, and displayed in the dashboard under *"Awaiting your confirmation — not used in any generated CV"*;
+* published only when the owner moves the line to `responsibilities` with `verified: true`.
+
+This is why the shipped canonical profile prints one confirmed scope line per role: the applicant supplied no duties for any of the five roles, and the system does not invent them. The CV stays comprehensive through the evidence that *is* verified — grouped competency inventory, all seven certifications, education, registration status, exit exam, languages, and every role.
+
+#### Tailoring (downstream of the Master CV)
+
+```
+verified canonical profile
+        → comprehensive position-neutral Master CV
+        → vacancy analysis (matcher/extraction)
+        → vacancy-specific selection + reordering
+        → tailored CV + cover letter (TXT/DOCX/PDF)
+```
+
+Tailoring changes **order, grouping, and emphasis only**:
+
+* a Medical Doctor vacancy leads with clinical and public-health/quality evidence;
+* a Health/Nutrition vacancy leads with the nutrition programming group and nutrition-first responsibilities;
+* coordination/programme roles lead with coordination, supervision, and reporting evidence;
+* safeguarding roles lead with the verified safeguarding/PSEA/child-protection group, scope, and training.
+
+The advertised vacancy title is the strongest relevance signal, and employer long-form wording maps to the verified acronym it names (`infection prevention and control` → `IPC`, `sexual exploitation` → `PSEA`, `health data management` → `HMIS`, `capacity building`, `clinical audit`, `field`, `protection`). Those mappings control **emphasis only** — they can never create evidence that does not already exist.
+
+Every verified role, responsibility, certificate, language, and credential is still printed in every tailored CV, and the canonical profile plus the Master CV are re-asserted byte-for-byte unchanged in the test suite (`tests/test_cv_professional_quality.py`, `tests/test_tailoring_immutability.py`).
 
 Professional reference contacts are outside the tracked canonical profile and are never printed in a Master CV or vacancy-specific CV. When a vacancy asks for references, the package presents a generic manual checklist; the owner may decide to release approved contacts through the documented external private-reference boundary.
 
@@ -194,6 +241,10 @@ Other official employer and UN routes are treated as trusted application routes 
 ### Provenance and direct-route rule
 
 Every vacancy preserves four independent fields: `source_url` (official listing/home source), `vacancy_url` (the advertised vacancy page), `application_url` (a direct form), and `application_email`. A missing source URL remains **missing**; the system never substitutes the vacancy page. A vacancy page by itself is not a direct application route. `READY_TO_APPLY` requires a valid source provenance plus a source-provided direct email or application/form URL.
+
+### CV design system
+
+One design system (`utils/document_design.py`, `jobs-finder-editorial-medical`) renders every CV and cover letter: a single ATS-readable column, one serif face for the name and role titles and one sans face for body text, a restrained teal/gold accent used only for the title line and section rules, explicit section headings, and a footer with the applicant name and page number. There are no icons, sidebars, graphics, or decorative shapes, and no hard-coded page breaks or content cut-offs — pagination is entirely driven by the verified content. If a CV would end with an almost-empty final page, it is re-rendered once at the compact setting of the same design system, and only when that actually removes the sparse page.
 
 ## Application package output
 

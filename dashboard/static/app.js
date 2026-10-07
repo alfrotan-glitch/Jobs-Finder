@@ -398,6 +398,7 @@ function renderProfileDetails() {
         <div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.dates || "")}</span></div>
         <p>${escapeHtml(item.organization)}${item.location ? ` · ${escapeHtml(item.location)}` : ""}</p>
         ${(item.bullets || []).length ? `<ul>${item.bullets.slice(0, 6).map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
+        ${(item.pending_bullets || []).length ? `<p class="sectionHelp">Awaiting your confirmation — these ${item.pending_bullets.length} detailed draft(s) are NOT used in any generated CV or cover letter until you verify them:</p><ul class="pendingList">${item.pending_bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
       </article>`).join("")
     : `<p class="sectionHelp">No professional experience listed.</p>`;
   $("profileEducationBox").innerHTML = renderSimpleList((details.education || []).map((item) => [item.degree, item.institution, item.dates].filter(Boolean).join(" — ")));
@@ -775,6 +776,25 @@ async function importCv() {
   }
 }
 
+async function generateMasterCv() {
+  setStatus("Generating your position-neutral Master CV…", "warn");
+  try {
+    const data = await apiJson("/api/master-cv", { method: "POST" });
+    const paths = data.documents || {};
+    const cards = ["pdf", "docx", "txt"]
+      .filter((kind) => paths[kind])
+      .map((kind) => documentCard(`Master CV (${kind.toUpperCase()})`, paths[kind]))
+      .join("");
+    const warnings = (data.review_warnings || []).length
+      ? `<p class="sectionHelp">Review notes: ${escapeHtml((data.review_warnings || []).join(" "))}</p>`
+      : "";
+    $("masterCvResult").innerHTML = `<div class="documentGrid">${cards}</div>${warnings}`;
+    setStatus("Master CV generated. Review it before use; it is not submitted anywhere.", "ok");
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
 async function markApplied(id) {
   const confirmation = window.prompt(`If you manually submitted this application, type APPLIED ${id}`) || "";
   try {
@@ -826,6 +846,7 @@ $("mainContent").addEventListener("click", handleAction);
 $("detailDrawer").addEventListener("click", handleAction);
 $("findJobs").addEventListener("click", findJobs);
 $("importCvBtn").addEventListener("click", importCv);
+$("masterCvBtn").addEventListener("click", generateMasterCv);
 $("closeDrawer").addEventListener("click", closeDrawer);
 $("drawerBackdrop").addEventListener("click", closeDrawer);
 $("collapseSidebar").addEventListener("click", () => document.body.classList.toggle("sidebarCollapsed"));

@@ -158,11 +158,29 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
     reference = str(job_metadata.get("reference_number") or package.get("vacancy_reference") or "").strip()
     sections = _section_map(lines)
     profile = " ".join(sections.get("PROFESSIONAL SUMMARY", []) or sections.get("PROFESSIONAL PROFILE", []))
-    strengths = [_clean_bullet(x) for x in (sections.get("CORE PROFESSIONAL COMPETENCIES", []) or sections.get("CORE MEDICAL / PUBLIC HEALTH COMPETENCIES", []) or sections.get("CORE COMPETENCIES", []))]
-    expanded: list[str] = []
-    for item in strengths:
-        expanded.extend([p.strip() for p in item.split(",") if p.strip()])
-    strengths = expanded or [_clean_bullet(x) for x in sections.get("VACANCY-FIT HIGHLIGHTS", [])]
+    competency_lines = (
+        sections.get("CORE PROFESSIONAL COMPETENCIES", [])
+        or sections.get("CORE MEDICAL / PUBLIC HEALTH COMPETENCIES", [])
+        or sections.get("CORE COMPETENCIES", [])
+    )
+    # Preferred shape is the grouped professional skills architecture
+    # ("Group: item; item"); the flat/comma-separated shape is still accepted
+    # so older plain-text CVs keep rendering.
+    expertise: list[dict[str, Any]] = []
+    flat: list[str] = []
+    for raw in competency_lines:
+        line = _clean_bullet(raw)
+        if not line:
+            continue
+        if ":" in line and "://" not in line:
+            label, values = line.split(":", 1)
+            items = [value.strip() for value in re.split(r"\s*[;·]\s*", values) if value.strip()]
+            if label.strip() and items:
+                expertise.append({"group": label.strip(), "items": _unique(items)})
+                flat.extend(items)
+                continue
+        flat.extend([p.strip() for p in line.split(",") if p.strip()])
+    strengths = _unique(flat) or [_clean_bullet(x) for x in sections.get("VACANCY-FIT HIGHLIGHTS", [])]
     strengths = _unique(strengths)
     def parse_experience(lines_for_section: list[str], group: str) -> list[dict[str, Any]]:
         parsed: list[dict[str, Any]] = []
@@ -194,9 +212,10 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
     education = [_clean_bullet(x) for x in sections.get("EDUCATION", [])]
     registration = [_clean_bullet(x) for x in (sections.get("PROFESSIONAL REGISTRATION", []) or sections.get("PROFESSIONAL REGISTRATION / LICENSE", []) or sections.get("LICENSE / REGISTRATION", []))]
     exit_exam = [_clean_bullet(x) for x in (sections.get("MEDICAL EXIT EXAMINATION", []) or sections.get("MEDICAL EXIT EXAM", []))]
-    certs = [_clean_bullet(x) for x in (sections.get("RELEVANT TRAINING & CERTIFICATIONS", []) or sections.get("RELEVANT PROFESSIONAL TRAINING & CERTIFICATIONS", []) or sections.get("CERTIFICATIONS & TRAINING", []))]
+    certs = [_clean_bullet(x) for x in (sections.get("PROFESSIONAL TRAINING & CERTIFICATIONS", []) or sections.get("RELEVANT TRAINING & CERTIFICATIONS", []) or sections.get("RELEVANT PROFESSIONAL TRAINING & CERTIFICATIONS", []) or sections.get("CERTIFICATIONS & TRAINING", []) or sections.get("TRAINING & CERTIFICATIONS", []))]
     languages_raw = [_clean_bullet(x) for x in sections.get("LANGUAGES", [])]
     languages = _split_languages(languages_raw[0]) if languages_raw else []
+    references = [_clean_bullet(x) for x in sections.get("REFERENCES", [])]
     headline = headline_from_text or "Medical Doctor"
     return {
         "design_system": DESIGN_SYSTEM_NAME,
@@ -210,6 +229,7 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
         "target_location": target_location,
         "reference": reference,
         "profile": profile,
+        "expertise": expertise,
         "strengths": strengths,
         "experience": experience,
         "education": education,
@@ -217,28 +237,53 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
         "exit_exam": exit_exam,
         "certifications": certs,
         "languages": languages,
+        "references": references,
         "raw_text": text or "",
     }
 
 
 def parse_cover_letter_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Split a generated cover letter into its body and signature block.
+
+    The signature block (``Sincerely,`` plus the name, professional title, and
+    contact lines) is separated from the body so the renderer can lay it out
+    once, in the right position, instead of letting it flow as body text.
+    """
     metadata = metadata or {}
     job = metadata.get("job") or {}
     package = metadata.get("package") or {}
     lines = [ln.rstrip() for ln in (text or "").splitlines()]
     subject = ""
     body_lines: list[str] = []
-    signature = ""
+    signature: dict[str, str] = {"name": "", "title": "", "email": "", "phone": ""}
+    in_signature = False
     for line in lines:
         stripped = line.strip()
         if stripped.lower().startswith("subject:"):
             subject = stripped.split(":", 1)[1].strip()
             continue
-        if stripped:
-            body_lines.append(stripped)
-    if body_lines and body_lines[-1].lower() not in {"sincerely,", "regards,"}:
-        signature = body_lines[-1]
-    name = _full_name_from_package(package) or signature or "CONFIRM BEFORE SUBMISSION"
+        if not stripped:
+            continue
+        if stripped.lower() in {"sincerely,", "sincerely", "yours sincerely,"}:
+            in_signature = True
+            continue
+        if in_signature:
+            lowered = stripped.lower()
+            if lowered.startswith("email:"):
+                signature["email"] = stripped.split(":", 1)[1].strip()
+                continue
+            if lowered.startswith("phone:"):
+                signature["phone"] = stripped.split(":", 1)[1].strip()
+                continue
+            if not signature["name"]:
+                signature["name"] = stripped
+                continue
+            if not signature["title"]:
+                signature["title"] = stripped
+                continue
+            continue
+        body_lines.append(stripped)
+    name = signature["name"] or _full_name_from_package(package) or "CONFIRM BEFORE SUBMISSION"
     contact = _contact_from_package(package)
     target_role = str(job.get("title") or package.get("job_title") or "Target Role")
     target_org = str(job.get("company") or package.get("company") or "Target Organization")
@@ -256,6 +301,7 @@ def parse_cover_letter_text(text: str, metadata: dict[str, Any] | None = None) -
         "target_location": target_location,
         "reference": reference,
         "body_lines": body_lines,
+        "signature": signature,
         "raw_text": text or "",
     }
 
@@ -448,8 +494,55 @@ def _draw_rule(cnv, x: float, y: float, width: float) -> None:
 # ---------------------------------------------------------------------------
 
 
-def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
-    """Render a readable, content-driven CV with automatic pagination."""
+def _cv_contact_line(model: dict[str, Any]) -> str:
+    values = model.get("contact_lines") or [model.get("location"), model.get("phone"), model.get("email")]
+    return " | ".join(str(value) for value in values if value)
+
+
+def _cv_expertise_groups(model: dict[str, Any]) -> list[dict[str, Any]]:
+    groups = [group for group in (model.get("expertise") or []) if group.get("items")]
+    if groups:
+        return groups
+    strengths = [str(item) for item in (model.get("strengths") or []) if str(item).strip()]
+    return [{"group": "", "items": strengths}] if strengths else []
+
+
+def _pdf_last_page_fill_ratio(path: str | Path) -> float:
+    """How full the final page of a built PDF is (0..1), ignoring the footer.
+
+    Used only to detect a sparse trailing page that would leave a large empty
+    area at the end of a CV. It never changes any text content.
+    """
+    try:
+        import pdfplumber
+
+        with pdfplumber.open(str(path)) as pdf:
+            if len(pdf.pages) < 2:
+                return 1.0
+            page = pdf.pages[-1]
+            usable_bottom = page.height - 45
+            body = [char for char in page.chars if char.get("bottom", 0) < usable_bottom]
+            if not body:
+                return 0.0
+            top = min(char["top"] for char in body)
+            bottom = max(char["bottom"] for char in body)
+            span = max(usable_bottom - 40, 1)
+            return max(0.0, min(1.0, (bottom - top) / span))
+    except Exception:  # pragma: no cover - measurement is best-effort only
+        return 1.0
+
+
+#: Two typographic settings of the same design system. ``compact`` is used
+#: only when it removes a sparse trailing page; otherwise the comfortable
+#: setting is kept so text never becomes cramped without a reason.
+CV_PDF_LAYOUTS: dict[str, dict[str, float]] = {
+    "comfortable": {"name": 21, "title": 10.6, "contact": 8.4, "section": 10.1, "role": 10.4, "meta": 8.1, "body": 9.05, "leading": 14.2, "bullets": 8.2, "bullet_leading": 14.0, "section_before": 20.0, "section_after": 3.2, "role_before": 11.5, "meta_after": 4.2, "group_after": 1.6, "bullet_after": 4.0},
+    "compact": {"name": 19.5, "title": 10.1, "contact": 8.0, "section": 9.6, "role": 9.9, "meta": 7.8, "body": 8.35, "leading": 10.5, "bullets": 7.8, "bullet_leading": 10.3, "section_before": 4.6, "section_after": 2.4, "role_before": 3.2, "meta_after": 1.6, "group_after": 1.2, "bullet_after": 0.7},
+}
+
+
+def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, float]) -> int:
+    """Build one CV PDF with the given typographic scale; return its page count."""
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -458,20 +551,31 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
 
     serif, serif_bold, sans, sans_bold = _register_fonts()
     doc = SimpleDocTemplate(
-        str(path), pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm,
-        topMargin=12 * mm, bottomMargin=13 * mm,
+        str(path), pagesize=A4, rightMargin=17 * mm, leftMargin=17 * mm,
+        topMargin=13 * mm, bottomMargin=14 * mm,
         title=f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Curriculum Vitae",
         author=model.get("name") or "CONFIRM BEFORE SUBMISSION",
+        subject="Curriculum Vitae",
     )
     styles = getSampleStyleSheet()
-    name_style = ParagraphStyle("CVName", parent=styles["Title"], fontName=serif_bold, fontSize=22, leading=25, textColor=colors.HexColor(Theme.deep), spaceAfter=2)
-    title_style = ParagraphStyle("CVTitle", parent=styles["Normal"], fontName=sans, fontSize=10.5, leading=13, textColor=colors.HexColor(Theme.teal), spaceAfter=3)
-    contact_style = ParagraphStyle("CVContact", parent=styles["Normal"], fontName=sans, fontSize=8.5, leading=11, textColor=colors.HexColor(Theme.muted), spaceAfter=10)
-    section_style = ParagraphStyle("CVSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=10.3, leading=12.2, textColor=colors.HexColor(Theme.deep), spaceBefore=5, spaceAfter=2.5, borderColor=colors.HexColor(Theme.rule), borderWidth=0, borderBottomWidth=.6, borderPadding=(0, 0, 2.5, 0), keepWithNext=True)
-    role_style = ParagraphStyle("CVRole", parent=styles["Heading3"], fontName=serif_bold, fontSize=10.2, leading=12, textColor=colors.HexColor(Theme.deep), spaceBefore=3, spaceAfter=.7, keepWithNext=True)
-    meta_style = ParagraphStyle("CVMeta", parent=styles["Normal"], fontName=sans, fontSize=8, leading=9.4, textColor=colors.HexColor(Theme.muted), spaceAfter=2, keepWithNext=True)
-    body_style = ParagraphStyle("CVBody", parent=styles["BodyText"], fontName=sans, fontSize=8.8, leading=11.1, textColor=colors.HexColor(Theme.ink), spaceAfter=3.5)
-    bullet_style = ParagraphStyle("CVBullet", parent=body_style, leftIndent=11, firstLineIndent=-7, bulletIndent=0, spaceAfter=.5)
+    name_style = ParagraphStyle("CVName", parent=styles["Title"], fontName=serif_bold, fontSize=scale["name"], leading=scale["name"] * 1.15, textColor=colors.HexColor(Theme.deep), spaceAfter=1, alignment=0)
+    title_style = ParagraphStyle("CVTitle", parent=styles["Normal"], fontName=sans, fontSize=scale["title"], leading=scale["title"] * 1.22, textColor=colors.HexColor(Theme.teal), spaceAfter=3)
+    contact_style = ParagraphStyle("CVContact", parent=styles["Normal"], fontName=sans, fontSize=scale["contact"], leading=scale["contact"] * 1.3, textColor=colors.HexColor(Theme.muted), spaceAfter=8)
+    section_style = ParagraphStyle(
+        "CVSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=scale["section"], leading=scale["section"] * 1.2, textColor=colors.HexColor(Theme.deep),
+        spaceBefore=scale["section_before"], spaceAfter=scale["section_after"],
+        borderColor=colors.HexColor(Theme.rule), borderWidth=0, borderBottomWidth=.7, borderPadding=(0, 0, 2.6, 0),
+        keepWithNext=True,
+    )
+    group_style = ParagraphStyle("CVGroup", parent=styles["Normal"], fontName=sans, fontSize=scale["body"], leading=scale["leading"] * 0.99, textColor=colors.HexColor(Theme.ink), spaceAfter=scale["group_after"])
+    role_style = ParagraphStyle("CVRole", parent=styles["Heading3"], fontName=serif_bold, fontSize=scale["role"], leading=scale["role"] * 1.19, textColor=colors.HexColor(Theme.deep), spaceBefore=scale["role_before"], spaceAfter=.8, keepWithNext=True)
+    meta_style = ParagraphStyle("CVMeta", parent=styles["Normal"], fontName=sans, fontSize=scale["meta"], leading=scale["meta"] * 1.22, textColor=colors.HexColor(Theme.muted), spaceAfter=scale["meta_after"], keepWithNext=True)
+    body_style = ParagraphStyle("CVBody", parent=styles["BodyText"], fontName=sans, fontSize=scale["body"], leading=scale["leading"], textColor=colors.HexColor(Theme.ink), spaceAfter=3.2)
+    bullet_style = ParagraphStyle(
+        "CVBullet", parent=body_style, leftIndent=10.5, firstLineIndent=-7.5, bulletIndent=0,
+        spaceAfter=scale["bullet_after"], leading=scale["bullet_leading"],
+        bulletFontName=sans, bulletFontSize=scale["bullets"], bulletColor=colors.HexColor(Theme.teal),
+    )
 
     def esc(value: Any) -> str:
         import html
@@ -480,109 +584,167 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
     def footer(canvas, document):
         canvas.saveState()
         canvas.setStrokeColor(colors.HexColor(Theme.rule))
-        canvas.line(18 * mm, 11 * mm, A4[0] - 18 * mm, 11 * mm)
+        canvas.setLineWidth(0.5)
+        canvas.line(17 * mm, 11.5 * mm, A4[0] - 17 * mm, 11.5 * mm)
         canvas.setFont(sans, 7)
         canvas.setFillColor(colors.HexColor(Theme.muted))
-        canvas.drawString(18 * mm, 7 * mm, str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
-        canvas.drawRightString(A4[0] - 18 * mm, 7 * mm, f"Page {document.page}")
+        canvas.drawString(17 * mm, 7.5 * mm, str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
+        canvas.drawRightString(A4[0] - 17 * mm, 7.5 * mm, f"Page {document.page}")
         canvas.restoreState()
 
     story: list[Any] = [
         Paragraph(esc(model.get("name") or "CONFIRM BEFORE SUBMISSION"), name_style),
         Paragraph(esc(model.get("headline") or "Medical Professional"), title_style),
-        Paragraph(esc(" | ".join(str(x) for x in (model.get("contact_lines") or [model.get("location"), model.get("phone"), model.get("email")]) if x)), contact_style),
-        Paragraph("PROFESSIONAL SUMMARY", section_style),
-        Paragraph(esc(model.get("profile") or ""), body_style),
     ]
-    if model.get("strengths"):
+    contact_line = _cv_contact_line(model)
+    if contact_line:
+        story.append(Paragraph(esc(contact_line), contact_style))
+    if model.get("profile"):
+        story.append(Paragraph("PROFESSIONAL SUMMARY", section_style))
+        story.append(Paragraph(esc(model.get("profile")), body_style))
+
+    groups = _cv_expertise_groups(model)
+    if groups:
         story.append(Paragraph("CORE PROFESSIONAL COMPETENCIES", section_style))
-        for item in model.get("strengths") or []:
-            story.append(Paragraph(esc(item), bullet_style, bulletText="•"))
+        for group in groups:
+            items = " · ".join(esc(item) for item in group.get("items") or [])
+            label = esc(group.get("group") or "")
+            story.append(Paragraph(f"<b>{label}:</b> {items}" if label else items, group_style))
 
     experience = list(model.get("experience") or [])
-
-    def add_experience(title: str, entries: list[dict[str, Any]]) -> None:
-        if not entries:
-            return
-        story.append(Paragraph(title, section_style))
-        for item in entries:
-            role = esc(item.get("role") or "")
-            org = esc(item.get("org") or "")
-            dates = esc(item.get("dates") or "")
-            story.append(Paragraph(role, role_style))
-            meta = " | ".join(x for x in [org, esc(item.get("loc") or ""), dates] if x)
-            story.append(Paragraph(meta, meta_style))
+    if experience:
+        story.append(Paragraph("PROFESSIONAL EXPERIENCE", section_style))
+        for item in experience:
+            story.append(Paragraph(esc(item.get("role") or ""), role_style))
+            meta = " | ".join(esc(value) for value in [item.get("org"), item.get("loc"), item.get("dates")] if value)
+            if meta:
+                story.append(Paragraph(meta, meta_style))
             for bullet in item.get("bullets") or []:
-                story.append(Paragraph(esc(bullet), bullet_style, bulletText="•"))
+                story.append(Paragraph(esc(bullet), bullet_style, bulletText="\u2022"))
 
-    # Place credentials before chronology to balance real multi-page CVs; this
-    # is mirrored by TXT and DOCX from the same canonical model.
     for title, values in [
         ("EDUCATION", model.get("education") or []),
         ("PROFESSIONAL REGISTRATION", model.get("registration") or []),
         ("MEDICAL EXIT EXAMINATION", model.get("exit_exam") or []),
+        ("PROFESSIONAL TRAINING & CERTIFICATIONS", model.get("certifications") or []),
     ]:
         if values:
             story.append(Paragraph(title, section_style))
             for value in values:
-                story.append(Paragraph(esc(value), bullet_style, bulletText="•"))
-    add_experience("PROFESSIONAL EXPERIENCE", experience)
-    if model.get("certifications"):
-        story.append(Paragraph("TRAINING & CERTIFICATIONS", section_style))
-        for value in model.get("certifications") or []:
-            story.append(Paragraph(esc(value), bullet_style, bulletText="•"))
+                story.append(Paragraph(esc(value), bullet_style, bulletText="\u2022"))
     if model.get("languages"):
         story.append(Paragraph("LANGUAGES", section_style))
-        language_line = "  |  ".join(f"{language} — {level}" if level else language for language, level in model.get("languages") or [])
-        story.append(Paragraph(esc(language_line), bullet_style, bulletText="•"))
+        language_line = "  |  ".join(f"{name}{(' — ' + level) if level else ''}" for name, level in model.get("languages") or [])
+        story.append(Paragraph(esc(language_line), body_style))
+    references = [str(item) for item in (model.get("references") or []) if str(item).strip()]
+    if references:
+        story.append(Paragraph("REFERENCES", section_style))
+        for value in references:
+            story.append(Paragraph(esc(value), body_style))
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    return int(getattr(doc, "page", 1)) if isinstance(getattr(doc, "page", None), int) else _pdf_page_count(path)
+
+
+def _pdf_page_count(path: str | Path) -> int:
+    try:
+        import pdfplumber
+
+        with pdfplumber.open(str(path)) as pdf:
+            return len(pdf.pages)
+    except Exception:  # pragma: no cover - best-effort only
+        return 1
+
+
+def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
+    """Render a readable, content-driven CV with automatic pagination.
+
+    The layout is a single ATS-readable column with a restrained medical/NGO
+    editorial identity: one serif face for the name and role titles, one sans
+    face for body text, one accent colour, and a single rule under each
+    section heading. Nothing decorative is drawn between text blocks, and long
+    verified content flows across as many pages as it needs without an
+    artificial page break or content cut-off.
+
+    A CV whose verified content would leave a final page that is almost empty
+    is re-rendered once with the compact setting of the same design system, but
+    only when that actually removes the sparse page. Typography changes; no
+    text is ever added, removed, or reordered by this step.
+    """
+    pages = _build_cv_pdf(model, path, CV_PDF_LAYOUTS["comfortable"])
+    if pages > 1 and _pdf_last_page_fill_ratio(path) < 0.4:
+        compact_pages = _build_cv_pdf(model, path, CV_PDF_LAYOUTS["compact"])
+        if compact_pages >= pages:
+            # Compaction did not help; restore the comfortable rendering so the
+            # document never becomes cramped for no benefit.
+            _build_cv_pdf(model, path, CV_PDF_LAYOUTS["comfortable"])
+
+
+def _docx_page_field(paragraph) -> None:
+    """Append a real Word PAGE field so pagination is visible in Word."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    run = paragraph.add_run()
+    begin = OxmlElement("w:fldChar")
+    begin.set(qn("w:fldCharType"), "begin")
+    instruction = OxmlElement("w:instrText")
+    instruction.set(qn("xml:space"), "preserve")
+    instruction.text = "PAGE"
+    end = OxmlElement("w:fldChar")
+    end.set(qn("w:fldCharType"), "end")
+    run._r.append(begin)
+    run._r.append(instruction)
+    run._r.append(end)
 
 
 def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
     """Render the complete CV in a single-column, auto-paginating layout."""
     from docx import Document
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
     from docx.shared import Inches, Pt, RGBColor
 
     doc = Document()
     section = doc.sections[0]
-    section.top_margin = Inches(0.48)
-    section.bottom_margin = Inches(0.50)
-    section.left_margin = Inches(0.60)
-    section.right_margin = Inches(0.60)
+    section.top_margin = Inches(0.52)
+    section.bottom_margin = Inches(0.55)
+    section.left_margin = Inches(0.62)
+    section.right_margin = Inches(0.62)
     styles = doc.styles
     styles["Normal"].font.name = "Aptos"
     styles["Normal"]._element.rPr.rFonts.set(qn("w:eastAsia"), "Aptos")
-    styles["Normal"].font.size = Pt(8.8)
+    styles["Normal"].font.size = Pt(9)
 
-    def style(name: str, size: float, bold: bool = False, color=(23, 42, 53), font="Aptos"):
+    def style(name: str, size: float, bold: bool = False, color=(23, 42, 53), font="Aptos", italic: bool = False):
         st = styles.add_style(name, 1) if name not in styles else styles[name]
         st.font.name = font
         st._element.rPr.rFonts.set(qn("w:eastAsia"), font)
         st.font.size = Pt(size)
         st.font.bold = bold
+        st.font.italic = italic
         st.font.color.rgb = RGBColor(*color)
         return st
 
-    name_style = style("CV Name", 22, True, (12, 52, 66), "Georgia")
+    name_style = style("CV Name", 21, True, (12, 52, 66), "Georgia")
     name_style.paragraph_format.space_after = Pt(0)
-    title_style = style("CV Professional Title", 10.5, False, (21, 124, 120))
+    title_style = style("CV Professional Title", 10.6, False, (21, 124, 120))
     title_style.paragraph_format.space_after = Pt(2)
-    contact_style = style("CV Contact", 8.2, False, (102, 115, 122))
-    contact_style.paragraph_format.space_after = Pt(7)
-    section_style = style("CV Section", 10.2, True, (12, 52, 66))
-    section_style.paragraph_format.space_before = Pt(6)
-    section_style.paragraph_format.space_after = Pt(2)
-    role_style = style("CV Role", 10.2, True, (12, 52, 66), "Georgia")
-    role_style.paragraph_format.space_before = Pt(4)
+    contact_style = style("CV Contact", 8.4, False, (102, 115, 122))
+    contact_style.paragraph_format.space_after = Pt(8)
+    section_style = style("CV Section", 10.1, True, (12, 52, 66))
+    section_style.paragraph_format.space_before = Pt(7)
+    section_style.paragraph_format.space_after = Pt(2.5)
+    group_style = style("CV Competency Group", 8.9, False, (23, 42, 53))
+    group_style.paragraph_format.space_after = Pt(1.5)
+    role_style = style("CV Role", 10.4, True, (12, 52, 66), "Georgia")
+    role_style.paragraph_format.space_before = Pt(5)
     role_style.paragraph_format.space_after = Pt(0)
     role_style.paragraph_format.keep_with_next = True
-    meta_style = style("CV Meta", 7.8, False, (102, 115, 122))
-    meta_style.paragraph_format.space_after = Pt(1)
+    meta_style = style("CV Meta", 8.1, False, (102, 115, 122), italic=True)
+    meta_style.paragraph_format.space_after = Pt(1.5)
     meta_style.paragraph_format.keep_with_next = True
-    body_style = style("CV Body", 8.8, False, (23, 42, 53))
+    body_style = style("CV Body", 8.9, False, (23, 42, 53))
     body_style.paragraph_format.space_after = Pt(2)
 
     def add_section(title: str) -> None:
@@ -599,33 +761,42 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
 
     def add_bullet(text: str) -> None:
         p = doc.add_paragraph(style="CV Body")
-        p.paragraph_format.left_indent = Inches(0.18)
-        p.paragraph_format.first_line_indent = Inches(-0.12)
-        p.paragraph_format.space_after = Pt(1)
+        p.paragraph_format.left_indent = Inches(0.19)
+        p.paragraph_format.first_line_indent = Inches(-0.13)
+        p.paragraph_format.space_after = Pt(1.5)
         p.add_run("• ")
         p.add_run(str(text))
 
     doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="CV Name")
     doc.add_paragraph(model.get("headline") or "Medical Professional", style="CV Professional Title")
-    contact = " | ".join(str(x) for x in (model.get("contact_lines") or [model.get("location"), model.get("phone"), model.get("email")]) if x)
-    doc.add_paragraph(contact, style="CV Contact")
-    add_section("PROFESSIONAL SUMMARY")
-    doc.add_paragraph(model.get("profile") or "", style="CV Body")
-    if model.get("strengths"):
+    contact_line = _cv_contact_line(model)
+    if contact_line:
+        doc.add_paragraph(contact_line, style="CV Contact")
+
+    if model.get("profile"):
+        add_section("PROFESSIONAL SUMMARY")
+        doc.add_paragraph(model.get("profile") or "", style="CV Body")
+
+    groups = _cv_expertise_groups(model)
+    if groups:
         add_section("CORE PROFESSIONAL COMPETENCIES")
-        for value in model.get("strengths") or []:
-            add_bullet(value)
+        for group in groups:
+            p = doc.add_paragraph(style="CV Competency Group")
+            label = str(group.get("group") or "")
+            if label:
+                run = p.add_run(f"{label}: ")
+                run.bold = True
+                run.font.color.rgb = RGBColor(12, 52, 66)
+            p.add_run(" · ".join(str(item) for item in group.get("items") or []))
 
     experience = list(model.get("experience") or [])
-
-    def add_experience(title: str, entries: list[dict[str, Any]]) -> None:
-        if not entries:
-            return
-        add_section(title)
-        for item in entries:
+    if experience:
+        add_section("PROFESSIONAL EXPERIENCE")
+        for item in experience:
             doc.add_paragraph(item.get("role") or "", style="CV Role")
-            meta = " | ".join(x for x in [item.get("org"), item.get("loc"), item.get("dates")] if x)
-            doc.add_paragraph(meta, style="CV Meta")
+            meta = " | ".join(str(value) for value in [item.get("org"), item.get("loc"), item.get("dates")] if value)
+            if meta:
+                doc.add_paragraph(meta, style="CV Meta")
             for bullet in item.get("bullets") or []:
                 add_bullet(bullet)
 
@@ -633,26 +804,33 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
         ("EDUCATION", model.get("education") or []),
         ("PROFESSIONAL REGISTRATION", model.get("registration") or []),
         ("MEDICAL EXIT EXAMINATION", model.get("exit_exam") or []),
+        ("PROFESSIONAL TRAINING & CERTIFICATIONS", model.get("certifications") or []),
     ]:
         if values:
             add_section(title)
             for value in values:
                 add_bullet(value)
-    add_experience("PROFESSIONAL EXPERIENCE", experience)
-    if model.get("certifications"):
-        add_section("TRAINING & CERTIFICATIONS")
-        for value in model.get("certifications") or []:
-            add_bullet(value)
     if model.get("languages"):
         add_section("LANGUAGES")
-        language_line = "  |  ".join(f"{language} — {level}" if level else language for language, level in model.get("languages") or [])
-        add_bullet(language_line)
+        language_line = "  |  ".join(f"{name}{(' — ' + level) if level else ''}" for name, level in model.get("languages") or [])
+        doc.add_paragraph(language_line, style="CV Body")
+    references = [str(item) for item in (model.get("references") or []) if str(item).strip()]
+    if references:
+        add_section("REFERENCES")
+        for value in references:
+            doc.add_paragraph(value, style="CV Body")
 
+    # Footer: name on the left, a real page number on the right.
     footer = section.footer.paragraphs[0]
-    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    footer.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    footer.paragraph_format.tab_stops.add_tab_stop(Inches(7.2), WD_TAB_ALIGNMENT.RIGHT)
     run = footer.add_run(str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
     run.font.size = Pt(7)
     run.font.color.rgb = RGBColor(102, 115, 122)
+    page_run = footer.add_run("\tPage ")
+    page_run.font.size = Pt(7)
+    page_run.font.color.rgb = RGBColor(102, 115, 122)
+    _docx_page_field(footer)
     doc.save(str(path))
 
 
@@ -662,78 +840,89 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
 
 
 def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
+    """Render the cover letter with the same design system and auto-pagination.
 
-    fonts = _register_fonts()
-    serif, serif_bold, sans, sans_bold = fonts
-    width, height = A4
-    cnv = canvas.Canvas(str(path), pagesize=A4)
-    cnv.setTitle(f"{model.get('name')} — Cover Letter")
-    cnv.setAuthor(model.get("name") or "CONFIRM BEFORE SUBMISSION")
-    cnv.setFillColor(_c("#FFFFFF"))
-    cnv.rect(0, 0, width, height, stroke=0, fill=1)
-    cnv.setFillColor(_c(Theme.deep))
-    cnv.rect(0, height - 11, width, 11, stroke=0, fill=1)
-    cnv.setStrokeColor(_c(Theme.gold))
-    cnv.setLineWidth(1.2)
-    cnv.line(42, height - 48, width - 42, height - 48)
-    cnv.setFont(serif_bold, 24)
-    cnv.setFillColor(_c(Theme.deep))
-    cnv.drawString(42, height - 82, model.get("name") or "CONFIRM BEFORE SUBMISSION")
-    cnv.setFont(sans, 9.5)
-    cnv.setFillColor(_c(Theme.teal))
-    cnv.drawString(44, height - 101, model.get("headline") or "Medical Professional")
+    Content flows naturally across pages, so a longer verified letter can never
+    place its signature above its own closing paragraphs.
+    """
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer
+
+    serif, serif_bold, sans, sans_bold = _register_fonts()
+    doc = SimpleDocTemplate(
+        str(path), pagesize=A4, rightMargin=20 * mm, leftMargin=20 * mm,
+        topMargin=14 * mm, bottomMargin=15 * mm,
+        title=f"{model.get('name')} — Cover Letter",
+        author=model.get("name") or "CONFIRM BEFORE SUBMISSION",
+        subject="Application letter",
+    )
+    styles = getSampleStyleSheet()
+
+    def esc(value: Any) -> str:
+        import html
+
+        return html.escape(str(value or ""))
+
+    name_style = ParagraphStyle("CLName", parent=styles["Title"], fontName=serif_bold, fontSize=20, leading=23, textColor=colors.HexColor(Theme.deep), spaceAfter=1, alignment=0)
+    headline_style = ParagraphStyle("CLHeadline", parent=styles["Normal"], fontName=sans, fontSize=10.2, leading=12.6, textColor=colors.HexColor(Theme.teal), spaceAfter=2)
+    contact_style = ParagraphStyle("CLContact", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.6, textColor=colors.HexColor(Theme.muted), spaceAfter=6)
+    target_style = ParagraphStyle("CLTarget", parent=styles["Normal"], fontName=sans_bold, fontSize=9.2, leading=11.6, textColor=colors.HexColor(Theme.deep), spaceAfter=1)
+    recipient_style = ParagraphStyle("CLRecipient", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.6, textColor=colors.HexColor(Theme.muted), spaceAfter=8)
+    section_style = ParagraphStyle("CLSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=9.4, leading=11.4, textColor=colors.HexColor(Theme.deep), spaceBefore=4, spaceAfter=3)
+    subject_style = ParagraphStyle("CLSubject", parent=styles["Normal"], fontName=sans_bold, fontSize=9.6, leading=12, textColor=colors.HexColor(Theme.ink), spaceAfter=8)
+    body_style = ParagraphStyle("CLBody", parent=styles["Normal"], fontName=sans, fontSize=9.1, leading=12.4, textColor=colors.HexColor(Theme.ink), spaceAfter=6)
+    bullet_style = ParagraphStyle("CLBullet", parent=body_style, leftIndent=12, firstLineIndent=-8, bulletIndent=0, spaceAfter=3, bulletFontName=sans, bulletFontSize=8.4, bulletColor=colors.HexColor(Theme.teal))
+    signature_style = ParagraphStyle("CLSignature", parent=styles["Normal"], fontName=serif_bold, fontSize=12, leading=14, textColor=colors.HexColor(Theme.deep), spaceBefore=4)
+    signature_meta_style = ParagraphStyle("CLSignatureMeta", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.4, textColor=colors.HexColor(Theme.muted), spaceAfter=1)
+
+    def footer(canvas, document):
+        canvas.saveState()
+        canvas.setStrokeColor(colors.HexColor(Theme.rule))
+        canvas.setLineWidth(0.5)
+        canvas.line(20 * mm, 12 * mm, A4[0] - 20 * mm, 12 * mm)
+        canvas.setFont(sans, 7)
+        canvas.setFillColor(colors.HexColor(Theme.muted))
+        canvas.drawString(20 * mm, 8 * mm, f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Cover Letter")
+        canvas.drawRightString(A4[0] - 20 * mm, 8 * mm, f"Page {document.page}")
+        canvas.restoreState()
+
+    story: list[Any] = [
+        Paragraph(esc(model.get("name")), name_style),
+        Paragraph(esc(model.get("headline") or "Application Letter"), headline_style),
+    ]
     contact = model.get("contact") or {}
-    contact_line = " | ".join([x for x in [contact.get("location"), contact.get("phone"), contact.get("email")] if x])
-    cnv.setFont(sans, 7.8)
-    cnv.setFillColor(_c(Theme.muted))
-    cnv.drawString(44, height - 118, contact_line)
-    y = height - 155
-    cnv.setFont(sans_bold, 7.0)
-    cnv.setFillColor(_c(Theme.gold))
-    cnv.drawString(44, y, "APPLICATION LETTER")
-    cnv.setFont(sans_bold, 8.3)
-    cnv.setFillColor(_c(Theme.deep))
-    target = f"{model.get('target_role')} — {model.get('target_org')}"
-    cnv.drawString(150, y, target[:98])
-    y -= 15
-    cnv.setFont(sans, 7.2)
-    cnv.setFillColor(_c(Theme.muted))
-    recipient = f"To: Hiring Committee, {model.get('target_org')}"
-    cnv.drawString(150, y, recipient[:112])
+    contact_line = " | ".join(str(value) for value in [contact.get("location"), contact.get("phone"), contact.get("email")] if value)
+    if contact_line:
+        story.append(Paragraph(esc(contact_line), contact_style))
+    story.append(HRFlowable(width="100%", thickness=0.9, color=colors.HexColor(Theme.gold), spaceBefore=1, spaceAfter=9))
+    target_line = " — ".join(str(value) for value in [model.get("target_role"), model.get("target_org")] if value)
+    if target_line:
+        story.append(Paragraph(esc(target_line), target_style))
+    recipient = f"To: Hiring Committee, {model.get('target_org')}" if model.get("target_org") else "To: Hiring Committee"
     if model.get("reference"):
-        cnv.drawRightString(width - 68, y, f"Reference: {model.get('reference')}")
-    y -= 28
-    y = _draw_section(cnv, "Subject", 90, y, width - 180, fonts)
-    y = _draw_wrapped(cnv, model.get("subject") or "Application", 90, y, width - 180, font=sans_bold, size=9.0, leading=12)
-    y -= 12
-    cnv.setStrokeColor(_c(Theme.gold))
-    cnv.setLineWidth(1.1)
-    cnv.line(90, y + 7, 90, 158)
+        recipient += f" | Reference: {model.get('reference')}"
+    story.append(Paragraph(esc(recipient), recipient_style))
+    story.append(Paragraph("SUBJECT", section_style))
+    story.append(Paragraph(esc(model.get("subject") or model.get("target_role") or "Application"), subject_style))
     for line in model.get("body_lines", []):
-        if line.lower().startswith("subject:"):
-            continue
-        if line in {model.get("name"), "Sincerely,"}:
-            continue
         if line.startswith("-"):
-            y = _draw_bullet(cnv, _clean_bullet(line), 112, y, width - 202, fonts, size=8.35, leading=11.2)
+            story.append(Paragraph(esc(_clean_bullet(line)), bullet_style, bulletText="\u2022"))
         else:
-            y = _draw_wrapped(cnv, line, 112, y, width - 202, font=sans, size=8.55, leading=11.5)
-        y -= 6
-    y = max(y, 112)
-    cnv.setFont(sans, 8.7)
-    cnv.setFillColor(_c(Theme.ink))
-    cnv.drawString(112, y, "Sincerely,")
-    cnv.setFont(serif_bold, 12)
-    cnv.setFillColor(_c(Theme.deep))
-    cnv.drawString(112, y - 22, model.get("name") or "CONFIRM BEFORE SUBMISSION")
-    cnv.setStrokeColor(_c(Theme.rule))
-    cnv.line(42, 38, width - 42, 38)
-    cnv.setFont(sans, 6.6)
-    cnv.setFillColor(_c(Theme.muted))
-    cnv.drawString(42, 25, f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Cover Letter")
-    cnv.save()
+            story.append(Paragraph(esc(line), body_style))
+    signature = model.get("signature") or {}
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Sincerely,", body_style))
+    story.append(Paragraph(esc(model.get("name") or signature.get("name") or "CONFIRM BEFORE SUBMISSION"), signature_style))
+    if signature.get("title"):
+        story.append(Paragraph(esc(signature["title"]), signature_meta_style))
+    if signature.get("email"):
+        story.append(Paragraph(esc(f"Email: {signature['email']}"), signature_meta_style))
+    if signature.get("phone"):
+        story.append(Paragraph(esc(f"Phone: {signature['phone']}"), signature_meta_style))
+    doc.build(story, onFirstPage=footer, onLaterPages=footer)
 
 
 def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
@@ -783,7 +972,7 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
     doc.add_paragraph("SUBJECT", style="JF Section")
     doc.add_paragraph(model.get("subject") or model.get("target_role") or "Application", style="JF Section")
     for line in model.get("body_lines", []):
-        if line.lower().startswith("subject:") or line in {model.get("name"), "Sincerely,"}:
+        if line.lower().startswith("subject:"):
             continue
         if line.startswith("-"):
             p = doc.add_paragraph(style="JF Body")
@@ -793,7 +982,11 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
         else:
             doc.add_paragraph(line, style="JF Body")
     doc.add_paragraph("Sincerely,", style="JF Body")
-    doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="JF Signature")
+    doc.add_paragraph((model.get("signature") or {}).get("name") or model.get("name") or "CONFIRM BEFORE SUBMISSION", style="JF Signature")
+    signature = model.get("signature") or {}
+    for value in [signature.get("title"), f"Email: {signature['email']}" if signature.get("email") else "", f"Phone: {signature['phone']}" if signature.get("phone") else ""]:
+        if value:
+            doc.add_paragraph(value, style="JF Contact")
     for section in doc.sections:
         f = section.footer.paragraphs[0]
         f.alignment = WD_ALIGN_PARAGRAPH.CENTER

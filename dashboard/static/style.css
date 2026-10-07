@@ -263,6 +263,7 @@ input:focus-visible { outline: 3px solid rgba(31, 95, 104, .28); outline-offset:
 .sectionIntro h2 { margin: 0; }
 .sectionIntro p,
 .sectionHelp { color: var(--muted); line-height: 1.55; }
+.pendingList { color: var(--muted); font-style: italic; line-height: 1.55; margin: 0.35rem 0 0; padding-left: 1.1rem; }
 
 .jobList { display: grid; gap: .9rem; }
 .compactList { gap: .75rem; }

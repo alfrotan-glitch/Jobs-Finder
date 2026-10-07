@@ -4,6 +4,7 @@ return.
 """
 
 import io
+import re
 from pathlib import Path
 
 import pytest
@@ -265,3 +266,149 @@ def test_professional_title_is_confirmed_as_a_personal_field(client):
     review_after = client.get("/api/profile/review").json()
     title_after = next(f for f in review_after["fields"] if f["key"] == "professional_title")
     assert title_after["status"] == "Verified"
+
+
+# ---------------------------------------------------------------------------
+# Position-neutral Master CV from the dashboard
+#
+# The dashboard's Master CV button is a local generation action: it must be
+# driven by the canonical profile, must produce all three artifacts, and must
+# never mutate the canonical profile or claim an application was submitted.
+# ---------------------------------------------------------------------------
+
+
+CANONICAL_DASHBOARD_PROFILE = {
+    "personal": {
+        "first_name": "Dashboard",
+        "last_name": "Applicant",
+        "professional_title": "Medical Doctor / Health & Nutrition Specialist",
+        "email": "dashboard.applicant@example.org",
+        "phone": "+93 700 555 111",
+        "location": "Kabul, Afghanistan",
+        "verification": {
+            "first_name": True,
+            "last_name": True,
+            "professional_title": True,
+            "email": True,
+            "phone": True,
+            "location": True,
+        },
+    },
+    "medical_education": [{"degree": "Doctor of Medicine (MD)", "field": "Curative Medicine", "institution": "Verified Medical University", "start": "2013", "end": "2020", "verified": True}],
+    "license_registration": {"status": "Valid medical professional registration/license", "verified": True},
+    "medical_exit_exam": {"status": "Completed", "verified": True},
+    "clinical_experience": {"years": "> 3", "verified": True},
+    "work_history": [
+        {
+            "title": "Health & Nutrition Supervisor",
+            "organization": "Verified NGO",
+            "location": "Daikundi, Afghanistan",
+            "responsibilities": [
+                "Supervised health and nutrition service delivery across the supported coverage areas",
+                "Supported IMAM/CMAM implementation, including SAM/MAM case identification and OTP service linkage",
+                "Conducted field monitoring visits and reviewed service records to support timely HMIS reporting",
+                "Coordinated with MoPH and health-authority counterparts on BPHS/EPHS-aligned service delivery",
+            ],
+            "verified": True,
+        }
+    ],
+    "skills": {
+        "medical": [{"name": "IMAM/CMAM", "verified": True}],
+        "public_health": [{"name": "HMIS/DHIS2", "verified": True}],
+        "management": [{"name": "Team supervision/capacity building", "verified": True}],
+    },
+    "certificates": [{"name": "Safeguarding & PSEA — Verified NGO — 2024", "verified": True}],
+    "languages": [
+        {"name": "Dari/Persian", "level": "Native", "verified": True},
+        {"name": "English", "level": "Fluent", "verified": True},
+    ],
+}
+
+
+def test_master_cv_endpoint_writes_all_artifacts_without_mutating_or_submitting(tmp_path, monkeypatch):
+    monkeypatch.setattr(profile_repository, "CANONICAL_PROFILE_PATH", tmp_path / "profile.yaml")
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
+    monkeypatch.setattr(server, "ROOT", tmp_path)
+    profile_repository.save_canonical_profile(CANONICAL_DASHBOARD_PROFILE)
+    before = profile_repository.canonical_profile_path().read_bytes()
+
+    response = TestClient(server.app).post("/api/master-cv")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["position_neutral"] is True
+    assert body["no_submission_performed"] is True
+    paths = body["documents"]
+    for kind in ["txt", "docx", "pdf"]:
+        assert Path(paths[kind]).is_file(), kind
+    text = Path(paths["txt"]).read_text(encoding="utf-8")
+    assert "Dashboard Applicant" in text
+    assert "PROFESSIONAL SUMMARY" in text
+    assert "CORE PROFESSIONAL COMPETENCIES" in text
+    assert "PROFESSIONAL EXPERIENCE" in text
+    assert "IMAM/CMAM" in text
+    assert "Available on request for shortlisted applications." in text
+    # Generation is a local write only: the canonical profile is untouched.
+    assert profile_repository.canonical_profile_path().read_bytes() == before
+
+
+def test_profile_view_separates_confirmed_scope_from_unconfirmed_drafts(tmp_path, monkeypatch):
+    """The owner-facing view must never pass a draft off as confirmed experience.
+
+    ``responsibilities`` is verification-gated. The review page shows the
+    confirmed scope as the role's bullets and lists the held-back drafts
+    separately, so the owner can confirm or discard them. Raw profile objects
+    (including their internal `verified`/`basis` keys) must never be stringified
+    into the page.
+    """
+    real_profile = profile_repository.load_canonical_profile(required=True)
+    monkeypatch.setattr(profile_repository, "CANONICAL_PROFILE_PATH", tmp_path / "profile.yaml")
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
+    profile_repository.save_canonical_profile(real_profile)
+
+    response = TestClient(server.app).get("/api/profile/details")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exists"] is True
+    experience = body["details"]["experience"]
+    assert len(experience) == 5
+    confirmed_total = 0
+    draft_total = 0
+    for role in experience:
+        confirmed_total += len(role["bullets"])
+        draft_total += len(role["pending_bullets"])
+        for bullet in role["bullets"]:
+            assert "{" not in bullet and "'verified'" not in bullet, bullet
+            assert "basis" not in bullet, bullet
+            assert "NEEDS_VERIFICATION" not in bullet, bullet
+        for draft in role["pending_bullets"]:
+            assert "{" not in draft and "NEEDS_VERIFICATION" not in draft, draft
+    assert confirmed_total == 5  # one applicant-supported scope line per role
+    assert draft_total == 28  # every held-back draft is still visible to the owner
+
+
+def test_profile_view_drafts_are_never_listed_as_confirmed_experience(tmp_path, monkeypatch):
+    """A duty the applicant never supplied must not appear as a role's bullets."""
+    real_profile = profile_repository.load_canonical_profile(required=True)
+    monkeypatch.setattr(profile_repository, "CANONICAL_PROFILE_PATH", tmp_path / "profile.yaml")
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
+    profile_repository.save_canonical_profile(real_profile)
+
+    payload = TestClient(server.app).get("/api/profile/details").json()["details"]
+    confirmed = [bullet for role in payload["experience"] for bullet in role["bullets"]]
+    drafts = [draft for role in payload["experience"] for draft in role["pending_bullets"]]
+
+    for role in real_profile["work_history"]:
+        for item in role["needs_verification"]:
+            assert item["text"] not in confirmed
+            assert item["text"] in drafts
+    # Confirmed scope restates supplied facts only: each line is about its own
+    # role, so it shares the role title's own wording.
+    def significant_tokens(text: str) -> set[str]:
+        return {token for token in re.split(r"[^a-z]+", str(text).lower()) if len(token) > 3}
+
+    for role, entry in zip(payload["experience"], real_profile["work_history"]):
+        shared = significant_tokens(entry["title"]) & significant_tokens(role["bullets"][0])
+        assert len(shared) >= 2, (entry["title"], role["bullets"][0], sorted(shared))

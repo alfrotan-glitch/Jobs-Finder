@@ -106,8 +106,42 @@ clinical_experience:
 #     location: Your confirmed location
 #     start: "YYYY-MM"
 #     end: Present
-#     bullets: ["Confirmed responsibility copied from your reviewed CV"]
+#     responsibilities:
+#       - text: What this role actually involved, in your own words
+#         verified: true
+#     needs_verification: []
 #     verified: true
+#
+# `responsibilities` is verification-gated, exactly like every other claim in
+# this file: only an item written as `{text: ..., verified: true}` is confirmed
+# professional experience and may be printed in an employer-facing document. An
+# item with `verified: false`, or a bare string, is a draft: it is kept for your
+# review and listed in the review warnings, and it is never printed.
+#
+# Write only what you can stand behind. A job title, a professional norm, a
+# skill, or a certificate is NOT evidence of a duty: "Medical Doctor" does not
+# by itself mean the CV may claim diagnosis and treatment; "Infection
+# Prevention and Control" as a skill does not by itself mean the CV may claim
+# that IPC measures were applied in a specific role. Add a line only when you
+# actually did it.
+#
+# If you want to record a plausible-but-unconfirmed duty, put it in
+# `needs_verification` instead. The system preserves that wording, excludes it
+# from every generated document, and reports it to you for confirmation. That
+# is the intended place for a system- or owner-suggested scope line, so nothing
+# is lost and nothing is asserted before you confirm it.
+#
+# Keep confirmed lines factual: no patient counts, budgets, project values,
+# percentages, results, or achievements that were not supplied. Example of the
+# shape for a health/nutrition role (illustrative wording only -- use yours):
+#   responsibilities:
+#     - text: Supervised the health and nutrition team's daily service delivery
+#       verified: true
+#   needs_verification:
+#     - text: Conducted field monitoring visits and reviewed service records
+#       verified: false
+#       status: NEEDS_VERIFICATION
+#       basis: suggested scope line awaiting owner confirmation
 
 work_history: []
 

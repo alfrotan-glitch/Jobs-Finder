@@ -26,7 +26,7 @@ from utils.discovery import (
     RELIEFWEB_DEFAULT_TIMEOUT_SECONDS,
     run_discovery_scan,
 )
-from utils.documents import prepare_application_bundle
+from utils.documents import prepare_application_bundle, write_master_cv
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.profile import (
@@ -179,9 +179,46 @@ def _clean_value(value: Any) -> str:
     return "" if is_unresolved_value(text) else text
 
 
+def _verified_responsibility_texts(value: Any) -> list[str]:
+    """Verified responsibility text from a canonical entry.
+
+    ``responsibilities`` is verification-gated: only an item carrying a literal
+    ``verified: true`` is confirmed professional experience. This mirrors
+    ``utils.documents`` so the owner's review view and the generated document
+    agree on what counts as a fact.
+    """
+    texts: list[str] = []
+    if not isinstance(value, list):
+        return texts
+    for item in value:
+        if isinstance(item, dict) and item.get("verified") is True:
+            text = _clean_value(item.get("text"))
+            if text:
+                texts.append(text)
+    return texts
+
+
+def _pending_responsibility_texts(item: dict[str, Any]) -> list[str]:
+    """Duty drafts held back from generated documents, for owner confirmation."""
+    texts: list[str] = []
+    for entry in item.get("needs_verification") or []:
+        if isinstance(entry, dict) and entry.get("verified") is not True:
+            text = _clean_value(entry.get("text"))
+            if text:
+                texts.append(text)
+    return texts
+
+
 def _date_range(item: dict[str, Any]) -> str:
-    start = _clean_value(item.get("start"))
-    end = _clean_value(item.get("end"))
+    """Human-readable supplied dates, using the same rule as the generated CV.
+
+    Only the *format* of a supplied value changes ("2020-10" reads "Oct 2020");
+    an unsupplied date stays empty, and no precision is ever added.
+    """
+    from utils.documents import _display_period
+
+    start = _display_period(_clean_value(item.get("start")))
+    end = _display_period(_clean_value(item.get("end")))
     return f"{start} – {end}" if start and end else start or end
 
 
@@ -222,16 +259,24 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
     for item in profile.get("work_history") or []:
         if not isinstance(item, dict):
             continue
-        bullets = item.get("bullets") or item.get("responsibilities") or []
-        if isinstance(bullets, str):
-            bullets = [bullets]
+        gated = "responsibilities" in item or "needs_verification" in item
+        verified = _verified_responsibility_texts(item.get("responsibilities"))
+        pending = _pending_responsibility_texts(item)
+        if not gated:
+            # Owner-authored free-form profile shape: bullet lists carry no
+            # per-item verification flag, so they are shown as supplied.
+            free_form = item.get("bullets") or item.get("duties") or item.get("achievements") or []
+            if isinstance(free_form, str):
+                free_form = [free_form]
+            verified = [_clean_value(bullet) for bullet in free_form if _clean_value(bullet)]
         experience.append(
             {
                 "title": _clean_value(item.get("title")),
                 "organization": _clean_value(item.get("organization")),
                 "location": _clean_value(item.get("location")),
                 "dates": _date_range(item),
-                "bullets": [_clean_value(bullet) for bullet in bullets if _clean_value(bullet)],
+                "bullets": verified,
+                "pending_bullets": pending,
             }
         )
 
@@ -626,6 +671,25 @@ async def api_find():
     result = scan.to_dict()
     log_scan_result(result)
     return result
+
+
+@app.post("/api/master-cv")
+def api_master_cv():
+    """Write the position-neutral Master CV from verified canonical evidence.
+
+    This is a local generation action, not a submission. It reads only the
+    canonical profile, writes TXT/DOCX/PDF under ignored ``documents/``, and
+    never mutates ``profile.yaml``.
+    """
+    profile = _runtime_profile(True)
+    master = write_master_cv(profile)
+    return {
+        "ok": True,
+        "position_neutral": bool(master.get("position_neutral")),
+        "documents": master.get("generated_paths", {}),
+        "review_warnings": master.get("review_warnings", []),
+        "no_submission_performed": True,
+    }
 
 
 @app.get("/api/jobs/{job_id}")

@@ -86,8 +86,11 @@ def test_cover_letter_claims_language_only_when_explicitly_verified_without_inte
     profile["languages"] = [{"name": "English", "level": "Fluent", "verified": True}]
     report = match_job_against_profile(job, profile, today=date(2026, 10, 1)).to_dict()
     docs = generate_tailored_documents(job, profile, report)
-    assert "language profile includes English" in docs["cover_letter"]
+    # The letter states the verified language profile plainly; it never claims
+    # an unverified level and never prints internal review vocabulary.
+    assert "Languages: English (fluent)" in docs["cover_letter"]
     assert "verified language profile" not in docs["cover_letter"].lower()
+    assert "Needs verification" not in docs["cover_letter"]
 
 
 def test_generated_text_never_contains_raw_placeholder_tokens():

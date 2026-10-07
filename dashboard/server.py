@@ -180,8 +180,15 @@ def _clean_value(value: Any) -> str:
 
 
 def _date_range(item: dict[str, Any]) -> str:
-    start = _clean_value(item.get("start"))
-    end = _clean_value(item.get("end"))
+    """Human-readable supplied dates, using the same rule as the generated CV.
+
+    Only the *format* of a supplied value changes ("2020-10" reads "Oct 2020");
+    an unsupplied date stays empty, and no precision is ever added.
+    """
+    from utils.documents import _display_period
+
+    start = _display_period(_clean_value(item.get("start")))
+    end = _display_period(_clean_value(item.get("end")))
     return f"{start} – {end}" if start and end else start or end
 
 

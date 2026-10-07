@@ -658,3 +658,106 @@ def test_cover_letter_renders_signature_after_the_closing_paragraph(tmp_path):
     # The canonical text keeps the same order and the letter still fits one page.
     assert txt.index("Sincerely,") < txt.rindex("Dr. Allah Yar Frotan")
     assert _pdf_pages(paths["pdf"]) == 1
+
+
+#: The lead competency group each vacancy family must present first, derived
+#: from the vacancy's own wording. This is the tailoring contract: the group
+#: that names the vacancy's area leads, and every other group still follows.
+LEAD_GROUP_MATRIX = [
+    (
+        (
+            "Clinical Officer. Patient assessment, diagnosis, treatment, referral, clinical audit, "
+            "infection prevention and control, and OPD services required."
+        ),
+        "Clinical & Medical Practice",
+    ),
+    (
+        (
+            "Medical Doctor (MD) required. Valid medical registration, Medical Exit Exam, three years clinical "
+            "experience, patient assessment, diagnosis, treatment, infection prevention and control, clinical "
+            "audit, and HMIS reporting required."
+        ),
+        "Clinical & Medical Practice",
+    ),
+    (
+        "Nutrition Officer. SAM/MAM, CMAM, IYCF, nutrition screening and therapeutic feeding unit services required.",
+        "Health & Nutrition Programming",
+    ),
+    (
+        (
+            "Health & Nutrition Supervisor. IMAM/CMAM, SAM/MAM, TFU/OTP, IYCF, outreach supervision, HMIS/DHIS2 "
+            "reporting, MoPH coordination, medical supply forecasting, and field monitoring required."
+        ),
+        "Health & Nutrition Programming",
+    ),
+    (
+        (
+            "Health Programme Coordinator. Coordinate health programme implementation, supervise provincial "
+            "teams, liaise with MoPH and government authorities, stakeholder engagement, monitoring, reporting, "
+            "and field coordination required."
+        ),
+        "Programme Coordination & Field Operations",
+    ),
+    (
+        "Medical Logistics Officer. Medical supply forecasting, stock management, and procurement required.",
+        "Supply Chain, Logistics & Administration",
+    ),
+    (
+        (
+            "Safeguarding & PSEA Officer. Safeguarding, PSEA, child protection, awareness raising, reporting "
+            "channels, and coordination with health programmes required."
+        ),
+        "Safeguarding, Protection & Compliance",
+    ),
+]
+
+
+def test_each_vacancy_family_leads_with_its_own_competency_group():
+    profile = _profile()
+    verified = {item["name"] for item in _verified_skill_items(profile)}
+    for index, (description, expected_lead) in enumerate(LEAD_GROUP_MATRIX):
+        job = {
+            "id": f"lead-group-{index}",
+            "title": "Vacancy",
+            "company": "Health Organization",
+            "location": "Kabul",
+            "url": f"https://jobs.example.org/lead-group-{index}",
+            "apply_url": "hr@example.org",
+            "description": f"{description} Apply to hr@example.org by 2026-12-31.",
+            "metadata": {"closing_date": "2026-12-31"},
+        }
+        report = match_job_against_profile(job, profile, today=TODAY).to_dict()
+        model = generate_tailored_documents(job, profile, report)["tailored_cv_model"]
+        groups = model["expertise"]
+        assert groups[0]["group"] == expected_lead, (description, [group["group"] for group in groups])
+        # Emphasis changes; the evidence set never does.
+        assert {item for group in groups for item in group["items"]} == verified
+        assert len(model["experience"]) == len(profile["work_history"])
+
+
+def test_common_vacancy_wording_maps_to_verified_competency_terms():
+    """Employer wording must reach the verified competency it names.
+
+    A vacancy that writes only the long form of an acronym still has to
+    emphasize the verified competency, because the CV prints the verified
+    acronym. Matching it is presentation; the evidence itself is unchanged.
+    """
+    profile = _profile()
+    job = {
+        "id": "long-form-wording",
+        "title": "Infection Prevention and Control Officer",
+        "company": "Health Organization",
+        "location": "Kabul",
+        "url": "https://jobs.example.org/long-form",
+        "apply_url": "hr@example.org",
+        "description": (
+            "Infection prevention and control, patient safety, clinical audit, health data management, and "
+            "capacity building for health staff required. Apply to hr@example.org by 2026-12-31."
+        ),
+        "metadata": {"closing_date": "2026-12-31"},
+    }
+    report = match_job_against_profile(job, profile, today=TODAY).to_dict()
+    model = generate_tailored_documents(job, profile, report)["tailored_cv_model"]
+    groups = [group["group"] for group in model["expertise"]]
+    assert groups[0] == "Clinical & Medical Practice", groups
+    assert "Infection Prevention and Control (IPC)" in " ".join(model["strengths"])

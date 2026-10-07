@@ -412,6 +412,8 @@ TAILORING_KEYWORDS = [
     "supervision", "supervise", "mentor", "capacity", "training", "management", "coordination",
     "moph", "government", "authority", "stakeholder", "referral", "medicine", "medicines", "supply", "supplies", "stock", "logistics",
     "quality", "ipc", "patient safety", "safecare", "emergency", "outbreak", "covid", "safeguarding", "psea",
+    "field", "assessment", "outpatient", "inpatient", "ward", "clinical audit", "case management",
+    "child protection", "protection", "infection", "prevention",
     "english", "dari", "pashto", "software", "computer", "ms office",
 ]
 
@@ -452,6 +454,23 @@ def _focus_term_hits(text: str, terms: set[str]) -> list[str]:
         "supplies": ["supply", "supplies", "stock", "logistics"],
         "clinical": ["clinical", "clinic"],
         "health": ["health", "healthcare"],
+        # Employers write the long form of a verified acronym. Matching it is
+        # presentation only: the acronym itself still has to exist as verified
+        # canonical evidence before it is printed.
+        "ipc": ["ipc", "infection prevention", "infection control"],
+        "patient": ["patient", "patients"],
+        "patient safety": ["patient safety", "clinical safety"],
+        "assessment": ["assessment", "assessments"],
+        "nutrition": ["nutrition", "nutritional", "malnutrition"],
+        "safeguarding": ["safeguarding", "safeguard"],
+        "psea": ["psea", "sexual exploitation"],
+        "quality": ["quality", "quality improvement", "quality assurance"],
+        "monitoring": ["monitoring", "monitor"],
+        "hmis": ["hmis", "dhis2", "health management information system", "health data"],
+        "training": ["training", "training follow-up", "capacity building"],
+        "capacity": ["capacity", "capacity building"],
+        "moph": ["moph", "ministry of public health", "public health directorate"],
+        "government": ["government", "governor"],
     }
     for term in terms:
         if not term or term in FOCUS_STOP_TERMS:
@@ -567,11 +586,12 @@ def _rank_strings_for_job(items: list[str], job: dict[str, Any], match_report: d
         "\n".join(_focus_labels(match_report, limit=20)),
     ])
     terms = _tokenize_focus(focus_text)
-    if not terms:
+    priority_terms = _job_title_terms(job)
+    if not terms and not priority_terms:
         return _safe_bullets(items, limit=limit)
 
     def score(item: str) -> tuple[int, int, int]:
-        hits = len(_focus_term_hits(item, terms))
+        hits = len(_focus_term_hits(item, terms)) + len(_focus_term_hits(item, priority_terms))
         if hits <= 0:
             return (0, 0, -abs(len(item) - 160))
         lower = item.lower()
@@ -601,11 +621,11 @@ def _vacancy_fit_highlights(profile: dict[str, Any], job: dict[str, Any], match_
 def _work_entry_relevance(entry: dict[str, Any], job: dict[str, Any], match_report: dict[str, Any]) -> int:
     """Deterministically score only textual overlap; never create a new fact."""
     focus = _tokenize_focus("\n".join([
-        str(job.get("title") or ""), str(job.get("description") or ""),
+        str(job.get("description") or ""),
         " ".join(_focus_labels(match_report, limit=20)),
     ]))
     text = "\n".join([_experience_header(entry), *_entry_text_values(entry)])
-    hits = len(_focus_term_hits(text, focus))
+    hits = len(_focus_term_hits(text, focus)) + len(_focus_term_hits(text, _job_title_terms(job)))
     lower = text.lower()
     # Direct clinical/health roles should remain prominent for clinical health
     # vacancies even when a terse vacancy omits detailed keywords.
@@ -756,19 +776,6 @@ def _professional_background_sentence(profile: dict[str, Any]) -> str:
     return ""
 
 
-def _verified_summary_sentence(
-    profile: dict[str, Any], evidence, job: dict[str, Any], match_report: dict[str, Any]
-) -> str:
-    """Backwards-compatible entry point for the professional profile builder."""
-    verified_skills, _ = _skills_by_verification(profile)
-    return _professional_profile_paragraph(
-        profile,
-        evidence,
-        job,
-        match_report,
-        sorted(verified_skills, key=_focus_rank_key(_focus_terms(job, match_report))),
-    )
-
 MONTH_ABBREVIATIONS = {
     1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
     7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
@@ -862,12 +869,18 @@ def build_expertise_groups(skills: list[str], *, rank_key=None) -> list[dict[str
     sequence = [title for title, _ in EXPERTISE_GROUP_RULES] + [UNGROUPED_EXPERTISE_TITLE]
     groups = [(title, buckets[title]) for title in sequence if buckets.get(title)]
     if rank_key is not None:
-        # A group's position reflects the relevance of the whole group, so the
-        # vacancy-relevant area leads the section while every group and every
+        # A group's position reflects the relevance of the group as a whole --
+        # its own title plus its best-matching competency -- so the group named
+        # after the vacancy's own area leads, while every group and every
         # competency is still printed.
         def group_key(pair: tuple[str, list[str]]) -> tuple[int, int, int]:
-            scores = [rank_key(item) for item in pair[1]]
-            return (sum(score[0] for score in scores), min(score[0] for score in scores), -len(pair[1]))
+            # ``rank_key`` returns (-hits, ...). A group whose own title names
+            # the vacancy's area is weighted highest; within that, a group whose
+            # competencies match broadly leads a group with a single match.
+            title_hits = -rank_key(pair[0])[0]
+            item_hits = [-rank_key(item)[0] for item in pair[1]]
+            relevance = 3 * title_hits + sum(item_hits)
+            return (-relevance, -sum(item_hits), -len(pair[1]))
 
         groups.sort(key=group_key)
     return [{"group": title, "items": group_items} for title, group_items in groups]
@@ -882,18 +895,35 @@ def _focus_terms(job: dict[str, Any], match_report: dict[str, Any]) -> set[str]:
     return _tokenize_focus(focus_text)
 
 
-def _focus_rank_key(terms: set[str]):
+def _job_title_terms(job: dict[str, Any]) -> set[str]:
+    """Focus terms taken from the vacancy title.
+
+    The advertised title is the strongest statement of what a role is about, so
+    its terms are counted in addition to the description's when ranking
+    verified evidence. It is a presentation signal only -- no term can introduce
+    evidence the canonical profile does not already verify.
+    """
+    if not isinstance(job, dict):
+        return set()
+    return _tokenize_focus(str(job.get("title") or ""))
+
+
+def _focus_rank_key(terms: set[str], priority_terms: set[str] | None = None):
     """Stable relevance ordering. Equal relevance keeps canonical order.
 
     With no usable vacancy focus terms (for example the position-neutral
     master CV) the key is constant, so every caller keeps its canonical
     order instead of an arbitrary length-based shuffle.
     """
-    if not terms:
+    terms = terms or set()
+    priority_terms = priority_terms or set()
+    if not terms and not priority_terms:
         return lambda _text: (0, 0)
 
     def key(text: str) -> tuple[int, int]:
         hits = len(_focus_term_hits(text, terms))
+        if priority_terms:
+            hits += len(_focus_term_hits(text, priority_terms))
         return (-hits, abs(len(str(text)) - 160))
 
     return key
@@ -1322,7 +1352,7 @@ def generate_tailored_documents(
     # Tailoring is ordering, never selection: every verified competency is kept
     # and only its position inside its professional group (and the position of
     # the group itself) is driven by the vacancy's focus.
-    focus_rank_key = _focus_rank_key(_focus_terms(job, match_report))
+    focus_rank_key = _focus_rank_key(_focus_terms(job, match_report), _job_title_terms(job))
     skills_bullets = sorted(verified_skills, key=focus_rank_key)
     expertise = build_expertise_groups(verified_skills, rank_key=focus_rank_key)
 

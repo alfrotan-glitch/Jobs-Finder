@@ -99,9 +99,22 @@ Important rules:
 - Leave missing facts blank or marked `Needs verification`.
 - Every claim, including experience duration, location preference, and deployment preference, needs its own adjacent literal `verified: true` before it is verified evidence.
 - Do not invent license numbers, issue dates, expiry dates, document paths, credentials, or language levels.
-- Professional references are private metadata inside this canonical record: they are not matching, employment, or credential evidence and are excluded from default CVs, cover letters, and application-package serialization. Release requires a vacancy-specific need and the owner's explicit approval.
+- Professional reference contact data is **not stored in the tracked canonical profile or repository**. The canonical profile holds only a private-reference boundary. If the owner keeps a private reference file, it must be outside the repository, explicitly selected with `JOBS_FINDER_PRIVATE_REFERENCES_PATH`, and can only be read for a vacancy that explicitly requires references **and** after vacancy-specific owner approval. References are never matching evidence and are never automatically serialized into a CV, cover letter, dashboard response, SQLite record, or normal package.
 - The database stores vacancies, scans, match outputs, and packages — never a second applicant profile.
 - Resume extraction caches are not used. A CV is not runtime applicant evidence.
+
+### Canonical-profile release contract
+
+The release profile is checked by `utils.profile.assert_canonical_profile_complete()` and CI regression tests. It verifies the real identity/contact details, MD education (field, institution, and 2013–2020 dates), Medical Exit Exam, valid registration status, verified lower-bound clinical experience, supplied work history, medical/public-health/management skills, languages, certificates, humanitarian evidence, and the private-reference boundary.
+
+The contract reports four distinct states instead of forcing fabricated precision:
+
+- `VERIFIED` — explicitly verified fact;
+- `KNOWN_BUT_NON_PRECISE` — verified fact with intentionally unknown exact dates/duration;
+- `NEEDS_VERIFICATION` — evidence is absent or unverified;
+- `NOT_PROVIDED` — optional precision (for example a license number or expiry date) is intentionally absent.
+
+The current profile deliberately records `> 3` as a lower bound, has blank ACF-role dates, and has no license number/date/document path. Those are not defects to be filled with guesses.
 
 CV import is a transient **preview only**; it cannot write or replace `profile.yaml`, create a backup/draft profile, retain an upload, or automatically verify anything:
 
@@ -121,7 +134,7 @@ python main.py master-cv
 
 It writes TXT, DOCX, and PDF files under ignored `documents/master_cv/`. The Master CV contains no vacancy, employer, target-role, or application wording; it is a general presentation of the canonical profile. `prepare` is the separate downstream step that analyzes one vacancy and creates a vacancy-specific CV without modifying either `profile.yaml` or the Master CV.
 
-Professional references are private metadata in the canonical profile, but they are not matching, employment, or credential evidence and are never printed in the Master CV or a vacancy-specific CV by default. When a vacancy asks for references, the package presents a generic manual checklist; the owner decides whether to release approved contact details.
+Professional reference contacts are outside the tracked canonical profile and are never printed in a Master CV or vacancy-specific CV. When a vacancy asks for references, the package presents a generic manual checklist; the owner may decide to release approved contacts through the documented external private-reference boundary.
 
 ### Local dashboard privacy
 
@@ -178,6 +191,10 @@ Maintained active sources are intentionally few:
 
 Other official employer and UN routes are treated as trusted application routes when discovered, but not claimed as active parser-backed sources unless maintained.
 
+### Provenance and direct-route rule
+
+Every vacancy preserves four independent fields: `source_url` (official listing/home source), `vacancy_url` (the advertised vacancy page), `application_url` (a direct form), and `application_email`. A missing source URL remains **missing**; the system never substitutes the vacancy page. A vacancy page by itself is not a direct application route. `READY_TO_APPLY` requires a valid source provenance plus a source-provided direct email or application/form URL.
+
 ## Application package output
 
 Generated files are written under `documents/applications/` and are ignored by Git because they may contain personal data.
@@ -197,7 +214,7 @@ Each package includes:
 Three separate states are tracked and never confused with each other:
 
 - **Eligibility** (`READY_TO_APPLY` / `NEEDS_VERIFICATION` / `NOT_ELIGIBLE`): whether the vacancy's requirements are currently met by verified evidence. It does not mean a package has been prepared.
-- **Package state** (`NOT_CREATED` / `READY_FOR_REVIEW` / `NEEDS_USER_INPUT`): whether a generated application package still has unresolved blockers (e.g. missing contact info or unresolved evidence). A package is never reported ready when it actually needs user input.
+- **Package state** (`NOT_CREATED` / `IN_PROGRESS` / `READY_FOR_REVIEW` / `NEEDS_USER_INPUT` / `BLOCKED` / `FAILED`): whether a generated application package exists and still has unresolved blockers. A package is never reported ready when it actually needs user input, is blocked, or failed. The dashboard shows file-level `NOT CREATED` versus `READY FOR REVIEW`, never optimistic checkmarks.
 - **Application progress** (`FOUND` / `REVIEWED` / `PACKAGE_READY` / `PACKAGE_NEEDS_INPUT` / `APPLIED_MANUALLY`): the simple progress shown in the Applications tab. `PACKAGE_READY` is only ever used when the package state is `READY_FOR_REVIEW`; otherwise `PACKAGE_NEEDS_INPUT` is used so the UI never claims a package is ready when it still needs your input.
 
 ## Safety rules
@@ -211,6 +228,8 @@ The matching and document systems use:
 Vacancies classified `NOT_ELIGIBLE` do not receive an application package.
 
 Vacancies classified `NEEDS_VERIFICATION` keep visible warnings in the package so the user can verify facts before applying.
+
+`READY_TO_APPLY` is intentionally strict: it requires verified compatibility with every extracted critical requirement, including professional role/qualification, applicable education/license/experience, location, explicit gender/nationality/residency constraints, a non-expired closing date, direct application route, and a required email subject/reference. A missing deadline, route, source provenance, or critical requirement is `NEEDS_VERIFICATION`, never an assumption that it is safe to proceed. The word `subject` alone is not enough: it must occur in an email/application-subject instruction (English or Dari/Persian).
 
 ### Document evidence gate
 

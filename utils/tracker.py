@@ -206,10 +206,15 @@ APPLIED_MANUALLY = "APPLIED_MANUALLY"
 NEEDS_VERIFICATION = "NEEDS_VERIFICATION"
 NOT_ELIGIBLE = "NOT_ELIGIBLE"
 
-# Package-state vocabulary (kept separate from the two above).
+# Package-state vocabulary (kept separate from application-progress status).
+# These values are authoritative backend states consumed verbatim by the UI;
+# a package is never labelled ready merely because a prepare action was tried.
 PACKAGE_NOT_CREATED = "NOT_CREATED"
+PACKAGE_IN_PROGRESS = "IN_PROGRESS"
 PACKAGE_READY_FOR_REVIEW = "READY_FOR_REVIEW"
 PACKAGE_STATUS_NEEDS_USER_INPUT = "NEEDS_USER_INPUT"
+PACKAGE_BLOCKED = "BLOCKED"
+PACKAGE_FAILED = "FAILED"
 
 
 def now_iso() -> str:
@@ -598,7 +603,15 @@ def update_tailored_resume(job_id: str, documents: dict[str, Any]) -> None:
     """
     package = documents.get("application_package") or {}
     package_status = str(package.get("package_status") or PACKAGE_READY_FOR_REVIEW)
-    status = PACKAGE_NEEDS_INPUT if package_status == PACKAGE_STATUS_NEEDS_USER_INPUT else PACKAGE_READY
+    if package_status == PACKAGE_READY_FOR_REVIEW:
+        status = PACKAGE_READY
+    elif package_status == PACKAGE_STATUS_NEEDS_USER_INPUT:
+        status = PACKAGE_NEEDS_INPUT
+    elif package_status == PACKAGE_BLOCKED:
+        status = NOT_ELIGIBLE
+    else:
+        # Unknown/in-progress/failed package work must never look review-ready.
+        status = PACKAGE_NEEDS_INPUT
     with _write_connection() as conn:
         _trace_database("update_tailored_resume", "before_update", conn)
         conn.execute(

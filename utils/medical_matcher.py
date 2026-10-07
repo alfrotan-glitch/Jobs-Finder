@@ -268,6 +268,18 @@ def _role_family_match(requirement: Requirement, evidence: ProfileEvidence) -> R
             snippets,
             value.get("explanation") or "This role requires a different professional license/qualification and does not state that MD/physician credentials are accepted.",
         )
+    if classification == "specialist_qualification_required":
+        specialist_keys = value.get("specialist_evidence_keys")
+        keys = [str(key) for key in specialist_keys] if isinstance(specialist_keys, list) else []
+        specialist_evidence: list[str] = []
+        for key in keys:
+            specialist_evidence.extend(evidence.evidence_text(key, verified_only=True))
+        if specialist_evidence:
+            return _met(requirement, specialist_evidence[:3], "Verified canonical-profile evidence supports the specialist qualification required for this role.")
+        return _needs_verification(
+            requirement,
+            "The title requires a specialist credential. A verified general MD is not treated as equivalent; verify the actual specialty qualification before applying.",
+        )
     if classification == "md_physician_role":
         if evidence.has_verified("md_degree"):
             return _met(requirement, evidence.evidence_text("md_degree", verified_only=True)[:3] or snippets, "Verified profile evidence supports the MD/medical-doctor qualification required or accepted for this role.")
@@ -335,7 +347,11 @@ def _years_match(requirement: Requirement, evidence: ProfileEvidence) -> Require
     required_years = float(requirement.value or 0)
     candidate_keys = [requirement.key]
     if requirement.key == "general_experience_years":
-        candidate_keys.extend(["clinical_experience_years", "public_health_experience_years", "ngo_experience_years", "management_experience_years"])
+        candidate_keys.extend([
+            "clinical_experience_years", "health_nutrition_experience_years",
+            "frontline_experience_years", "public_health_experience_years",
+            "ngo_experience_years", "management_experience_years",
+        ])
     elif requirement.key == "afghanistan_health_experience_years":
         candidate_keys.extend(["public_health_experience_years", "clinical_experience_years"])
 

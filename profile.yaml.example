@@ -179,3 +179,13 @@ job_sources:
   reliefweb:
     # timeout_seconds:
     # limit:               # Current ReliefWeb result-page bound.
+
+# Never place reference names, phone numbers, emails, or notes in this tracked
+# profile. The normal product never releases references automatically. If the
+# owner keeps a private external store, it must be outside this repository and
+# may only be read after both a vacancy-specific reference requirement and
+# explicit owner approval.
+private_reference_boundary:
+  release_requires_owner_approval: true
+  external_private_store_required: true
+  runtime_release_default: "NOT_RELEASED"

@@ -1,165 +1,150 @@
-# Final system audit — Jobs-Finder
+# Release audit — Jobs-Finder
 
-**Audit date:** 2026-10-06
-**Repository:** `alfrotan-glitch/Jobs-Finder`  
-**Working branch:** `arena/01a10495-jobs-finder`
+**Audit date:** 2026-10-07 UTC
+**Scope:** canonical profile, privacy, source provenance, matching/readiness,
+discovery, documents/packages, dashboard state, persistence, tests, and
+cross-platform CI configuration.
 
-## 1. Scope and branch decision
+## Executive verdict
 
-The repository and branch topology were inspected before repair work.
+The local release gate is **passing**. The repository now has a complete,
+verified public canonical profile for **Dr. Allah Yar Frotan**, an explicit
+four-state profile-completeness contract, truthful source/application-route
+semantics, strict readiness gating, and adversarial regression coverage.
 
-| Check | Result |
-| --- | --- |
-| `main` at audit start | `81bf555e140536bb8537d32dcbb92652d53cc91c` |
-| Working branch at audit start | `81bf555e140536bb8537d32dcbb92652d53cc91c` |
-| Merge base | the same commit |
-| `main...arena/01a10495-jobs-finder` divergence at audit start | `0 0` |
-| Integration decision | No merge, fork, repository, or duplicate profile was needed. Repairs belong directly on the existing Arena branch. |
+The only non-local limitation is live official-source reachability from this
+execution environment; it is recorded precisely below and is represented by
+the system as `SOURCES_UNAVAILABLE`, not “no jobs found.” Remote GitHub CI is
+verified only after the release branch is pushed and its workflow completes.
 
-The audit covers the production CLI/dashboard, canonical profile handling, CV import, matching, document generation, discovery/source reporting, tracker/recommendation accounting, tests, configuration, and documentation.
+## Significant findings and remediation
 
-Before the final push, the remote copy of this same fixed Arena branch was fetched and found to contain two concurrent canonical-profile commits (`3e5aa58`, `19e88b7`) not present in the initially mounted local ref. They were merge-integrated into this branch; the audited content was retained and the complete checks below were rerun after the merge.
+| Finding | Root cause | Remediation |
+| --- | --- | --- |
+| The tracked canonical profile was structurally sparse despite tests passing. | Earlier tests exercised synthetic profiles and did not enforce the real profile’s required owner-supplied facts. | Completed `profile.yaml`; added `canonical_profile_completeness_report()` / `assert_canonical_profile_complete()` and a real-profile release test. The contract reports `VERIFIED`, `KNOWN_BUT_NON_PRECISE`, `NEEDS_VERIFICATION`, and `NOT_PROVIDED`, so it does not require invented dates, identifiers, or durations. |
+| Reference PII was present in a tracked public file while labelled private. | Naming a field private did not create an actual repository/privacy boundary. | Removed reference-contact PII from the tracked profile. Added an explicit external private-reference boundary, repository ignore rules, a guarded external-only loader, and `docs/privacy.md`. Loading requires both a vacancy-specific reference requirement and explicit owner approval; normal flows never invoke it. |
+| A vacancy URL could become a fabricated `source_url`. | `canonical_source_fields()` and enrichment used vacancy/application URLs as fallback source provenance. | Removed that fallback and source-URL list fallback. `source_url`, `vacancy_url`, `application_url`, and `application_email` remain independent; missing source provenance stays missing. |
+| Arbitrary linked job/careers URLs could be considered application routes. | URL extraction allowed weak URL-name terms and a generic first-link fallback. | Direct-form extraction now requires a recognised application endpoint or nearby explicit apply/submit instruction. A vacancy page alone is only a manual-review route. |
+| Every word “subject” created an application-subject requirement. | The detector used a broad single-word regex. | It now requires email/application-subject context plus a title/reference/code instruction, including relevant Dari/Persian patterns. Policy/legal uses of “subject” are regression-tested. |
+| Specialist roles could be treated as general-MD roles. | The role classifier lacked a specialist qualification family. | Pediatrician, General Surgeon, and Specialist Physician now produce `specialist_qualification_required`; a general MD is `NEEDS_VERIFICATION` until verified specialist evidence exists and is not recommended automatically. |
+| Experience dimensions were conflated and dated subsets could act as a full career total. | Matching had limited duration keys; inferred date intervals were treated as exact totals. | Added health/nutrition and frontline lower-bound evidence plus qualitative public-health, humanitarian, supervision, coordination, emergency, and Afghanistan-field dimensions. Inferred dated work intervals are lower bounds; they cannot falsely prove or disprove a higher threshold. |
+| Unknown vacancy deadline could leave an optimistic ready state. | No explicit closing-date requirement existed when extraction found no date. | A missing deadline is now an essential `NEEDS_VERIFICATION` blocker. Structured source date metadata is accepted when valid; passed dates remain `NOT_ELIGIBLE`. |
+| Package UI showed unconditional completion checkmarks. | Dashboard package rendering inferred success from package presence rather than actual artifact paths/state. | Dashboard now displays authoritative package state and file-level `NOT CREATED` / `READY FOR REVIEW`; a manual-applied control is shown only for a review-ready package. Backend supports `NOT_CREATED`, `IN_PROGRESS`, `READY_FOR_REVIEW`, `NEEDS_USER_INPUT`, `BLOCKED`, and `FAILED` vocabulary. |
+| Direct package creation could describe a proven-ineligible role too positively. | The lower-level package helper lacked an explicit blocked response. | It now returns `BLOCKED` without email/form output for `NOT_ELIGIBLE`; the normal orchestrator continues to refuse artifact generation. |
 
-## 2. Canonical applicant architecture
+## Canonical-profile result
 
-`profile.yaml` in the project root is now the sole production applicant record. Runtime callers reach it through `utils.paths.CANONICAL_PROFILE_PATH` and the repository API in `utils.profile`:
+`profile.yaml` remains the only runtime applicant source. SQLite, browser
+state, imported CV previews, generated CVs, application packages, caches, and
+fixtures do not provide applicant facts to matching or document generation.
 
-- `load_canonical_profile()` is the only production loader.
-- `save_canonical_profile()` atomically writes only that path and accepts no caller-selected path.
-- `profile.yaml.example` is a schema/template only, never a fallback.
-- The SQLite database is a vacancy/scan/package store, not an applicant-profile store.
-- The repository-root `profile.yaml` is the one Git-tracked canonical applicant record. It synchronizes through ordinary Git push/pull between the Agent workspace, GitHub, and the Windows Desktop checkout.
+The release contract verifies:
 
-The owner explicitly authorized tracking the real canonical profile. It retains the confirmed identity, medical education, registration status without invented identifiers or dates, Medical Exit Exam, supplied work history, and private reference metadata. Runtime boundaries remain unchanged: professional references are excluded from evidence, matching, default CVs, cover letters, and automatic package serialization. The test suite validates that the tracked file is the only runtime applicant source and that Master-CV and vacancy-tailoring workflows consume it without creating another profile.
+- Dr. Allah Yar Frotan; Medical Doctor / Health & Nutrition Specialist; Kabul;
+  verified email and phone;
+- MD in Curative Medicine, Kabul Medical Science University, 2013–2020;
+  completed Medical Exit Exam; verified valid medical registration status;
+- verified `> 3` lower-bound clinical/health/nutrition/frontline experience;
+- all five supplied employment records, with ACF dates intentionally blank;
+- supplied medical, public-health, and management skills; language levels;
+  seven supplied certificates; and humanitarian/field evidence dimensions;
+- an actual external private-reference boundary.
 
-Conservative omissions are intentional:
+It intentionally reports ACF dates and the overall lower-bound duration as
+`KNOWN_BUT_NON_PRECISE`, and registration number/issue date/expiry/document
+path as `NOT_PROVIDED`. No unsupported precision was added.
 
-- no registration/license number, issue date, expiry date, or document path;
-- no dates for either ACF role;
-- no invented exact aggregate experience duration;
-- no invented current employer or current title;
-- no unconfirmed nationality, gender, relocation, or field-deployment assertion.
+## Matching, readiness, and documents
 
-The three owner-supplied professional references are private metadata in the tracked canonical record. They are deliberately excluded from matching, qualification/employment evidence, and default Master/tailored CV output. A vacancy that requests references receives a generic manual checklist; release of approved contact details remains an owner decision.
+`READY_TO_APPLY` requires all extracted essential/required checks to be met.
+This includes source validity, compatible profession/qualifications, applicable
+experience, location/residency/nationality/gender requirements, open deadline,
+direct route, and exact subject/reference where explicitly required. Unknown
+critical facts are `NEEDS_VERIFICATION`; known conflicts are `NOT_ELIGIBLE`.
 
-## 3. Verification and evidence repairs
+Master-CV generation is position-neutral and only uses verified canonical
+facts. Tailoring selects/reorders verified canonical facts, never mutates the
+profile or master output. Generated packages are review artifacts only: no
+submission, email sending, CAPTCHA/MFA/login bypass, recipient invention,
+attachment invention, or application-evidence fabrication occurs.
 
-The codebase now enforces one literal verification rule: only an adjacent Boolean `verified: true` counts. String values such as `"true"`, `"yes"`, `1`, missing flags, and placeholder text do not count.
+## Discovery, accounting, and recommendation authority
 
-Notable repairs:
+ACBAR follows pagination to an observable empty page, reports repeated pages,
+count mismatches, parse/detail failures, and explicit bounds as partial. The
+ReliefWeb adapter’s configured one-page bound is explicitly `PARTIAL` when
+reached. Source unavailability, partial scans, successful empty scans, and no
+configured sources retain distinct overall statuses.
 
-1. **Experience lower bounds are preserved.** `> 3` is stored as a verified lower-bound claim, not silently converted into exactly three years. It can satisfy a three-year minimum; it cannot prove five years, which is reported as `Needs verification`, not `Not met`.
-2. **Medical exams are distinct.** A vacancy requiring a **Medical Council Exam** produces an independent essential requirement and is not satisfied by verified **Medical Exit Exam** evidence. A vacancy that actually says “exit exam” can use exit-exam evidence.
-3. **Work history and competency evidence remain per-item.** Dated work is counted only when that entry is explicitly verified; overlapping dated intervals are merged rather than double counted.
-4. **Dashboard confirmation is atomic.** The dashboard refuses to bulk-verify a multi-entry education list. A one-click confirmation can affect only the one safe field/entry; otherwise the owner must review entries individually in the canonical file.
-5. **Personal data in documents is evidence-gated.** Employer-facing name, email, phone, location, and LinkedIn data require their own personal verification flag. Unverified/missing name, email, and phone are replaced by `CONFIRM BEFORE SUBMISSION`; unverified location/LinkedIn is omitted. Package readiness remains blocked until identity/contact review is complete.
+Recommendation selection has one authority in `utils.recommendations`; CLI,
+dashboard, scan summaries, and persisted scan results consume its same ordered
+collection. Broad discovery may retain roles for manual review, but
+recommendations require a positive MD/public-health classification and
+reviewable readiness.
 
-## 4. CV import and sample-data isolation
+## Security and privacy result
 
-CV import is intentionally limited to an in-memory `DRAFT` preview:
+- No secrets, database, generated artifacts, private-reference store, or
+  reference-contact PII are tracked. The owner-authorized canonical applicant
+  identity/contact facts in `profile.yaml` are intentionally tracked.
+- Generated documents and SQLite remain ignored by Git.
+- Reference data cannot flow through canonical evidence, documents, package
+  JSON, dashboard profile output, recommendations, or SQLite.
+- CV imports are bounded, temporary previews and cannot overwrite canonical
+  profile data.
+- The local dashboard uses no-store, restrictive CSP/frame/referrer headers,
+  no CORS opt-in, and same-origin protection for browser writes. It remains a
+  loopback-first local tool, not an authenticated public service.
 
-- dashboard uploads are accepted only as supported PDF/plain-text formats, streamed through an 8 MiB limit, and held in a system temporary directory only for extraction;
-- no imported CV path, cache, backup, YAML profile, or database applicant record is created;
-- no extracted fact can be marked verified by the importer;
-- draft previews are rejected by matching and document generation;
-- stale `resume_<hash>.txt` cache content is not trusted as input.
+## Verification
 
-The synthetic CV fixture is retained only at `tests/fixtures/sample_jane_doe_cv.txt`. Regression coverage scans repository text to ensure that fixture identity does not appear in production files or generated production content.
+The regression suite includes canonical-profile completeness, source-provenance
+permutations, direct-route truthfulness, subject-detection adversarial cases,
+role-family matrix, specialist qualification handling, dimensional experience,
+deadline semantics, package blocking/state truthfulness, reference release
+controls, and a real-profile end-to-end acceptance pipeline.
 
-## 5. Matching behavior
+Run after remediation:
 
-`utils.medical_requirements.py` and `utils.medical_matcher.py` were audited and hardened for deterministic, conservative assessment:
+```text
+python -m pytest -q                       279 passed, 1 upstream warning
+python -m ruff check .                    passed
+python -m compileall -q main.py dashboard utils tests   passed
+node --check dashboard/static/app.js      passed
+git diff --check                          passed
+```
 
-- MD/medical education, registration/license, Medical Exit Exam, council exam, experience, language, role family, location, nationality/residency, gender, deadline, source validity, and application route remain distinct checks.
-- A known conflict such as a verified gender mismatch or an incompatible regulated profession remains `NOT_ELIGIBLE`.
-- Unknown or unverified evidence remains `NEEDS_VERIFICATION`; it is not promoted to a match and is not incorrectly treated as a proven failure.
-- Generic health words do not automatically make a programme/operations vacancy recommended. Recommendation requires both reviewable readiness and a positively compatible MD/public-health role classification.
-- The match report contains requirement evidence/provenance and does not use a single opaque score.
+A no-persistence FastAPI `TestClient` dashboard/API smoke also passed for
+`/`, `/api/health`, `/api/profile`, `/api/profile/details`, `/api/jobs`, and
+`/api/recommended`; it confirmed the canonical summary identity and no
+`professional_references` response field. The test suite warning is upstream:
+Starlette deprecates its current `httpx` TestClient integration.
 
-## 6. Documents and application packages
+The GitHub Actions workflow runs the same lint, compile, JavaScript syntax, and
+pytest checks on Ubuntu and Windows with Python 3.11 and 3.12. The Windows
+launcher is assertion-covered; this Linux audit did not execute an interactive
+Windows desktop launcher.
 
-Tailoring is selection, ordering, and emphasis of verified evidence only. It does not alter the input profile mapping or write a vacancy-specific version of the master profile.
+## Live official-source validation
 
-The document pipeline:
+Read-only direct official-source probes at **2026-10-07T05:10:24+00:00**:
 
-- rejects `DRAFT` imported profiles;
-- excludes unverified education, work history, skills, certificates, languages, license, and exit-exam claims from employer-facing factual content;
-- uses generic safe text or review warnings where evidence is unavailable;
-- checks current profile evidence again before putting registration/exit-exam claims into a cover letter, so a stale match report cannot become a second evidence store;
-- creates review-first TXT/DOCX/PDF CV and cover-letter artifacts plus package/checklist files;
-- refuses packages for deterministic `NOT_ELIGIBLE` vacancies;
-- never sends email, submits forms, bypasses CAPTCHA/MFA/login, or marks an application applied without explicit user confirmation.
+| Source | URL | Result | Affected validation |
+| --- | --- | --- | --- |
+| ACBAR | `https://www.acbar.org/en/jobs` | `httpx.ConnectError`: TLS/SSL connection closed (EOF), before HTTP response | Live listing/detail/pagination parsing could not be exercised. |
+| ReliefWeb | `https://reliefweb.int/jobs?search=Afghanistan%20health%20medical%20nutrition` | `httpx.ConnectError`: TLS/SSL connection closed (EOF), before HTTP response | Live listing/detail/route parsing could not be exercised. |
 
-A position-neutral Master CV can be written locally from verified canonical evidence only. It receives no vacancy, employer, target-title, or application input, and writes ignored TXT/DOCX/PDF artifacts under `documents/master_cv/`. Three different role packages were regression-tested against one master mapping; each tailored output varied while the source profile stayed byte-for-byte unchanged.
+A no-persistence full discovery invocation at
+**2026-10-07T05:10:27+00:00** made one request to each adapter and returned
+`SOURCES_UNAVAILABLE` with zero retained jobs. This is the correct resulting
+system state; it is not a claim that no current jobs exist. Fixture-backed
+pagination, detail, accounting, partial-scan, and unavailable-source tests
+passed locally.
 
-## 7. Dashboard, CLI, and database
+## Remaining limitation
 
-The CLI and dashboard both use the canonical profile repository and the shared recommendation orchestration.
-
-The dashboard was runtime-smoke-tested with the local profile:
-
-- `GET /` — HTTP 200
-- `GET /api/health` — HTTP 200
-- `GET /api/profile` — HTTP 200
-- `GET /api/profile/details` — HTTP 200
-- `GET /api/profile/review` — HTTP 200
-- `GET /api/settings` — HTTP 200
-
-The settings response confirmed that background scanning and automatic submission are disabled. The dashboard does not keep a separate mutable applicant profile.
-
-Browser-facing dashboard hardening is also enforced centrally:
-
-- Swagger/ReDoc/OpenAPI endpoints are disabled; the supported interfaces are the dashboard and CLI;
-- every dashboard response is marked `no-store`/private and carries CSP, anti-frame, no-referrer, no-sniff, and restrictive browser-permission headers;
-- the dashboard does not enable CORS, and foreign-origin/referer state-changing browser requests are rejected before they can start a scan, alter verification, prepare a package, or mark an application;
-- these are defence-in-depth privacy controls for the loopback-first workstation app, not authentication. Public/shared-network deployment still requires real access control and TLS.
-
-Recommendation accounting has one authority in `utils.recommendations`:
-
-- scan recommendations are collected once from `(job, match)` pairs;
-- `recommended_from_scan == len(scan.recommendations)` is structural;
-- CLI scan output, dashboard scan response/activity, and persisted scan collection use that same list;
-- the stored-history view applies the same recommendation gate and ordering;
-- recommendation API responses include a saved-scan timestamp/status context (or an explicit stored-history origin), and the dashboard visibly labels that provenance rather than implying a live refresh.
-
-## 8. Discovery and source status
-
-The maintained source registry contains ACBAR and ReliefWeb with explicit official URLs and source adapters.
-
-### ACBAR
-
-Normal ACBAR discovery requests successive listing pages until an actual empty listing page reports `END_REACHED`. It has no normal page-count or detail-count ceiling. It tracks parse failures, repeated pages, reported-listing-count mismatches, listing/detail request failures, explicit URL scopes, and bounded detail concurrency. Any inability to reach a real end is represented as partial/failure rather than “zero jobs.”
-
-### ReliefWeb
-
-ReliefWeb is accurately documented as a bounded one-result-page secondary route, not a full pagination crawler. The default bound is 20. If the first result page reaches that bound, the source reports `RESULT_LIMIT_REACHED` and the overall scan is partial; fewer results are only the observable end of that one-page route.
-
-No live external market scan was run for this audit. Read-only official-listing connectivity probes were retried on **2026-10-06T16:04:03+00:00**: both `https://www.acbar.org/en/jobs` and `https://reliefweb.int/jobs?search=Afghanistan%20health%20medical%20nutrition` failed before receiving an HTTP response with `httpx.ConnectError: TLS/SSL connection has been closed (EOF) (_ssl.c:992)`. No listing/detail HTML was parsed, no vacancy was created, and no scan result was persisted. Therefore this report makes **no claim** that there were zero jobs or that the live Afghanistan job market was empty. Network/source failure must remain an environment limitation (`SOURCES_UNAVAILABLE`, `PARTIAL_SCAN`, or `SCAN_FAILED` as applicable), not a market conclusion.
-
-## 9. Tests and static/runtime checks
-
-Executed in this checkout using a freshly created project `.venv` on Python 3.11:
-
-| Check | Result |
-| --- | --- |
-| Targeted dashboard/canonical-profile/provenance/security regressions | **39 passed, 1 skipped** |
-| Final full suite with the tracked canonical `profile.yaml` present | **243 passed, 1 warning** in 7.72 s |
-| Ruff | `python -m ruff check .` — **passed** |
-| Bytecode compilation | `python -m compileall -q main.py dashboard utils tests` — **passed** |
-| Dashboard JavaScript syntax | `node --check dashboard/static/app.js` — **passed** |
-| Patch whitespace | `git diff --check` — **passed** |
-| Dashboard endpoint smoke without a private profile | **passed**: root, health, profile, recommendations, and scan endpoints returned HTTP 200; profile reported absent rather than loading a fallback |
-| CI configuration | The cross-platform GitHub Actions matrix now runs Ruff, Python compilation, JavaScript syntax validation, and pytest before reporting success. |
-
-The test run emitted one upstream FastAPI/Starlette TestClient deprecation warning about the installed `httpx` integration. It did not fail tests.
-
-No direct Windows filesystem checkout or interactive Windows-launcher execution was performed in this Linux audit environment. Existing CI/launcher contract tests were run, but that is not represented as a direct Windows runtime validation.
-
-## 10. Remaining limits and user actions
-
-1. `profile.yaml` is the authorized tracked canonical record. Before use, the owner should review it directly and only add future facts, dates, identifiers, documents, or preferences when confirmed.
-2. A Medical Council Exam requirement remains deliberately unresolved unless the applicant provides verified council-exam evidence or the vacancy explicitly establishes equivalence to the Medical Exit Exam.
-3. The exact duration beyond `> 3` years remains intentionally unasserted. Higher thresholds require verified exact/adequate evidence.
-4. ReliefWeb coverage is bounded by design and clearly marked partial when the configured first-page bound is reached.
-5. Generated packages are review artifacts only; the applicant must verify every warning and submit manually.
-6. Live discovery results are time- and network-dependent. A source outage must never be interpreted as “0 jobs.”
+Only the environment-level external TLS/SSL failure above prevents live source
+content validation. All local safeguards and tests were completed; retry live
+validation from a network that can reach the official sources. Remote CI status
+must be checked after push before declaring the remote branch’s release gate
+fully green.

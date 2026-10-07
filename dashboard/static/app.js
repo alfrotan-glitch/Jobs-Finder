@@ -162,8 +162,12 @@ function directApplicationRouteAvailable(job) {
   return (method === "EMAIL" && Boolean(applyEmail(job))) || (method === "WEB" && Boolean(webApplyUrl(job)));
 }
 
-function packageReady(job) {
+function packageExists(job) {
   return ["PACKAGE_READY", "PACKAGE_NEEDS_INPUT", "APPLIED_MANUALLY"].includes(job.status) || Boolean(job.package?.package_status);
+}
+
+function packageReadyForReview(job) {
+  return job.status === "APPLIED_MANUALLY" || job.status === "PACKAGE_READY" || job.package?.package_status === "READY_FOR_REVIEW";
 }
 
 function generatedPaths(job) {
@@ -204,8 +208,8 @@ function jobCard(job, {compact = false} = {}) {
       <div class="cardActions">
         <button class="secondary" data-action="view-job" data-job-id="${id}">View details</button>
         ${!isNotEligible && directApplicationRouteAvailable(job) ? `<button class="primary subtle" data-action="prepare-job" data-job-id="${id}">${method === "EMAIL" ? "Prepare email" : "Prepare application"}</button>` : ""}
-        ${packageReady(job) ? `<button class="secondary" data-action="review-package" data-job-id="${id}">Review package</button>` : ""}
-        ${packageReady(job) && job.status !== "APPLIED_MANUALLY" ? `<button class="secondary" data-action="mark-applied" data-job-id="${id}">Mark applied</button>` : ""}
+        ${packageExists(job) ? `<button class="secondary" data-action="review-package" data-job-id="${id}">Review package</button>` : ""}
+        ${packageReadyForReview(job) && job.status !== "APPLIED_MANUALLY" ? `<button class="secondary" data-action="mark-applied" data-job-id="${id}">Mark applied</button>` : ""}
       </div>
     </article>`;
 }
@@ -547,9 +551,13 @@ function renderApplicationMethod(job) {
   return `<div class="routePanel unavailable"><p class="microLabel">Application route unavailable</p><h3>No direct route found</h3><p>Open the official vacancy page and verify how to apply before proceeding.</p>${page ? `<a class="button secondary" href="${escapeAttr(page)}" target="_blank" rel="noopener">Official vacancy page</a>` : ""}</div>`;
 }
 
-function documentCard(label, path, fallbackText = "Ready for review") {
-  if (!path) return `<div class="documentCard"><div><strong>${escapeHtml(label)}</strong><span>Not generated yet</span></div></div>`;
-  return `<div class="documentCard"><div><strong>${escapeHtml(label)}</strong><span>${escapeHtml(fallbackText)}</span></div><a class="button secondary" href="${escapeAttr(openFileUrl(path))}" target="_blank" rel="noopener">Open</a></div>`;
+function documentCard(label, path) {
+  if (!path) return `<div class="documentCard"><div><strong>${escapeHtml(label)}</strong><span>NOT CREATED</span></div></div>`;
+  return `<div class="documentCard"><div><strong>${escapeHtml(label)}</strong><span>READY FOR REVIEW</span></div><a class="button secondary" href="${escapeAttr(openFileUrl(path))}" target="_blank" rel="noopener">Open</a></div>`;
+}
+
+function artifactStatusLabel(path) {
+  return path ? "READY FOR REVIEW" : "NOT CREATED";
 }
 
 function renderPackage(job) {
@@ -560,14 +568,17 @@ function renderPackage(job) {
   const packagePath = paths.application_package_txt;
   const email = pkg.email_draft;
   if (!pkg.package_status && !paths.tailored_cv) {
-    return `<section class="detailSection"><h3>Your application package</h3><p class="sectionHelp">No package has been prepared yet.</p></section>`;
+    return `<section class="detailSection"><h3>Your application package</h3><p class="sectionHelp">NOT CREATED — no package has been prepared yet.</p></section>`;
   }
+  const packageState = friendlyStatus(pkg.package_status || job.package_status || "NOT_CREATED");
+  const stateNote = pkg.package_status === "NEEDS_USER_INPUT" ? "Required user input or verification remains." : pkg.package_status === "BLOCKED" ? "The authoritative eligibility state blocks this package." : "Generated files remain for human review only.";
   return `<section class="detailSection"><h3>Your application package</h3>
-    <div class="packageStatus"><span>✓ Tailored CV</span><span>✓ Cover letter</span>${email ? `<span>✓ Email draft</span>` : ""}</div>
+    <p class="sectionHelp"><strong>Package state: ${escapeHtml(packageState)}</strong> — ${escapeHtml(stateNote)}</p>
+    <div class="packageStatus"><span>${escapeHtml(artifactStatusLabel(cvPath))}: Tailored CV</span><span>${escapeHtml(artifactStatusLabel(coverPath))}: Cover letter</span>${email ? `<span>READY FOR REVIEW: Email draft</span>` : ""}</div>
     <div class="documentGrid">
       ${documentCard("Tailored CV", cvPath)}
       ${documentCard("Cover letter", coverPath)}
-      ${email ? `<div class="documentCard"><div><strong>Email draft</strong><span>Prepared for manual sending</span></div><button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Open</button></div>` : ""}
+      ${email ? `<div class="documentCard"><div><strong>Email draft</strong><span>READY FOR REVIEW — manual sending only</span></div><button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Open</button></div>` : ""}
       ${packagePath ? documentCard("Application instructions", packagePath) : ""}
     </div>
   </section>`;

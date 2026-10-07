@@ -378,7 +378,10 @@ def _verification_warnings(match_report: dict[str, Any]) -> list[str]:
 def _package_verification_blockers(match_report: dict[str, Any]) -> list[dict[str, str]]:
     """Return unmet/unverified requirements that must stay visible in review packages."""
     blockers: list[dict[str, str]] = []
-    ignored_keys = {"closing_date", "application_subject"}
+    # Missing/expired closing dates are application blockers. The application
+    # subject has its own exact-route handling below, but every other matcher
+    # blocker is surfaced verbatim rather than being silently downgraded.
+    ignored_keys = {"application_subject"}
     for item in match_report.get("requirement_matches", []):
         if not isinstance(item, dict) or item.get("key") in ignored_keys:
             continue
@@ -1496,6 +1499,37 @@ def generate_application_package(
     for the actual license/registration number or document, the matcher should
     keep the job out of READY_TO_APPLY until those facts are explicitly present.
     """
+    profile = require_runtime_profile(profile)
+    if str((match_report or {}).get("readiness_status") or "") == NOT_ELIGIBLE_STATUS:
+        # Keep this callable for an explicit, auditable blocked-state response
+        # (the bundle orchestrator refuses document generation earlier). Never
+        # represent a proven-ineligible role as a review-ready package.
+        blocked = {
+            "job_id": job.get("id"),
+            "job_title": str(job.get("title") or "the advertised role"),
+            "company": str(job.get("company") or ""),
+            "route_type": "blocked",
+            "application_method": "UNAVAILABLE",
+            "package_status": "BLOCKED",
+            "source_url": "",
+            "official_vacancy_page": "",
+            "deadline": "",
+            "vacancy_reference": "",
+            "application_route": "",
+            "apply_email": "",
+            "apply_url": None,
+            "email_draft": None,
+            "online_application": None,
+            "form_fields_checklist": [],
+            "required_documents_checklist": [],
+            "review_warnings": ["BLOCKED: authoritative matching classified this vacancy as NOT_ELIGIBLE."],
+            "special_instructions": [],
+            "user_required_actions": ["Do not submit an application package unless the authoritative eligibility finding is corrected with verified evidence."],
+            "missing_items": ["Eligibility is NOT_ELIGIBLE"],
+            "no_submission_performed": True,
+        }
+        blocked["text"] = render_application_package(blocked)
+        return blocked
     facts = match_report.get("facts", {}) if isinstance(match_report, dict) else {}
     metadata = job.get("metadata", {}) if isinstance(job.get("metadata", {}), dict) else {}
     docs = tailored_documents or {}
@@ -1503,7 +1537,9 @@ def generate_application_package(
     name = _full_name(profile)
     title = str(job.get("title") or docs.get("job_title") or "the advertised role")
     company = str(job.get("company") or docs.get("company") or "")
-    source_url = facts.get("source_url") or metadata.get("source_url") or job.get("url") or ""
+    # Source listing provenance is independent from the vacancy page. Never
+    # relabel job.url as a source URL when the source did not provide one.
+    source_url = facts.get("source_url") or metadata.get("source_url") or ""
     deadline = facts.get("closing_date") or metadata.get("closing_date") or metadata.get("deadline") or ""
     application_method = str(facts.get("application_method") or metadata.get("application_method") or "UNAVAILABLE").upper()
     email_to = _extract_email(facts.get("apply_email") or facts.get("application_email") or metadata.get("apply_email") or metadata.get("application_email") or job.get("apply_email"))

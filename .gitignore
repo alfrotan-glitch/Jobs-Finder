@@ -19,6 +19,13 @@ applications.db-shm
 # record. The application never reads the remaining paths below as profile
 # data, and it never creates profile backups or alternate applicant records.
 profile.yaml.bak
+# Reference contact metadata is never committed with the public canonical
+# applicant profile. If used, it must live outside the repository; these names
+# prevent accidental local copies from being staged as well.
+private_references.yaml
+private_references.yml
+private_references/
+private/
 resumes/
 profiles/
 documents/

@@ -129,6 +129,7 @@ def test_no_direct_route_is_unavailable_but_keeps_vacancy_page():
     assert source["application_method"] == "UNAVAILABLE"
     assert source["apply_email"] == ""
     assert source["apply_url"] is None
+    assert source["direct_application_route_actionable"] is False
     assert source["vacancy_url"] == "https://jobs.example.org/vacancies/email-md"
 
 

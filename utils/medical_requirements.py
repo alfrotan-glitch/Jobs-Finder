@@ -1488,11 +1488,20 @@ def extract_gender_requirement(text: str) -> str | None:
 
 
 def extract_nationality_requirement(text: str) -> str | None:
-    lower = text.lower()
+    lower = normalize_text(text).lower()
+    # Nationality frequently appears in vacancy prose as ``Afghan nationality
+    # is required`` rather than the older ``Afghan national required`` form.
+    # Treat it as an eligibility requirement only in explicit requirement/value
+    # contexts; a bare discussion of nationality must not silently constrain a
+    # candidate.
+    afghan_requirement_patterns = [
+        r"\bafghan\s+(?:national(?:ity)?|citizen|applicant)s?\s*(?:(?:is|are|be)\s+)?(?:required|mandatory|only)\b",
+        r"\bonly\s+afghan\s+(?:nationals?|citizens?|applicants?)\b",
+        r"\bnationality\s*[:\-]?\s*(?:afghan|national)\b",
+    ]
     if (
-        re.search(r"\bafghan\s+(?:national|citizen|applicant)s?\b", lower)
+        any(re.search(pattern, lower) for pattern in afghan_requirement_patterns)
         or "national position" in lower
-        or re.search(r"\bnationality\s*[:\-]\s*(?:afghan|national)\b", lower)
     ):
         return "Afghan"
     if (

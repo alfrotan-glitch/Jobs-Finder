@@ -27,6 +27,7 @@ from utils.medical_requirements import (
     analyze_professional_role,
     application_subject_required,
     canonical_source_fields,
+    extract_nationality_requirement,
 )
 from utils.private_references import (
     PrivateReferenceError,
@@ -222,6 +223,36 @@ def test_missing_deadline_blocks_ready_state_instead_of_assuming_open():
     ).to_dict()
     deadline = next(item for item in report["requirement_matches"] if item["key"] == "closing_date")
     assert deadline["status"] == "Needs verification"
+    assert report["readiness_status"] == NEEDS_VERIFICATION_STATUS
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("Afghan nationality is required.", "Afghan"),
+        ("Nationality: Afghan", "Afghan"),
+        ("Only Afghan nationals may apply.", "Afghan"),
+        ("The report discusses Afghan nationality trends.", None),
+    ],
+)
+def test_nationality_extraction_requires_an_actual_eligibility_instruction(text, expected):
+    assert extract_nationality_requirement(text) == expected
+
+
+def test_real_profile_unknown_nationality_blocks_ready_state():
+    profile = load_canonical_profile(required=True)
+    report = match_job_against_profile(
+        _job(
+            description=(
+                "Medical Doctor (MD) required. Valid medical registration and Medical Exit Exam required. "
+                "Afghan nationality is required. Apply to recruitment@example.org by 2026-12-31."
+            )
+        ),
+        profile,
+        today=TODAY,
+    ).to_dict()
+    nationality = next(item for item in report["requirement_matches"] if item["key"] == "nationality_requirement")
+    assert nationality["status"] == "Needs verification"
     assert report["readiness_status"] == NEEDS_VERIFICATION_STATUS
 
 

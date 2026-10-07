@@ -31,7 +31,11 @@ async def test_all_sources_unavailable_is_not_empty_market(monkeypatch):
 @pytest.mark.asyncio
 async def test_partial_scan_keeps_successful_jobs(monkeypatch):
     async def good(profile):
-        return [Job("j1", "Medical Officer", "FMIC", "Kabul", "https://example.org/job", "hr@example.org", "test", "MD required. Send CV to hr@example.org by 2026-12-31")]
+        return [Job(
+            "j1", "Medical Officer", "FMIC", "Kabul", "https://example.org/job", "hr@example.org", "test",
+            "MD required. Send CV to hr@example.org by 2026-12-31",
+            metadata={"source_name": "Good", "source_url": "https://example.org/jobs", "vacancy_url": "https://example.org/job"},
+        )]
 
     async def bad(profile):
         raise RuntimeError("blocked")

@@ -387,6 +387,189 @@ def canonical_profile_fingerprint(profile: dict[str, Any] | None = None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Release canonical-profile completeness contract
+# ---------------------------------------------------------------------------
+#
+# Generic unit-test profiles intentionally remain allowed to be small.  This
+# contract is instead the explicit release gate for the one tracked Dr. Allah
+# Yar Frotan profile.  It makes accidental removal of owner-verified facts a
+# CI failure without demanding unsupported precision such as a license number,
+# expiry date, or dates for the two ACF roles.
+
+VERIFIED = "VERIFIED"
+KNOWN_BUT_NON_PRECISE = "KNOWN_BUT_NON_PRECISE"
+NEEDS_VERIFICATION = "NEEDS_VERIFICATION"
+NOT_PROVIDED = "NOT_PROVIDED"
+
+
+@dataclass(frozen=True)
+class CanonicalProfileCheck:
+    """One auditable fact check in the release-profile contract."""
+
+    key: str
+    status: str
+    detail: str
+    required_for_release: bool = True
+
+    def to_dict(self) -> dict[str, str | bool]:
+        return asdict(self)
+
+
+def _normalised_claims(value: Any) -> list[str]:
+    """Return verified textual claims from a nested profile section."""
+    claims: list[str] = []
+    if isinstance(value, dict):
+        if value.get("name") and is_verified_flag(value.get("verified")):
+            claims.append(str(value["name"]))
+        for child in value.values():
+            claims.extend(_normalised_claims(child))
+    elif isinstance(value, list):
+        for child in value:
+            claims.extend(_normalised_claims(child))
+    return claims
+
+
+def _release_check(
+    key: str,
+    condition: bool,
+    detail: str,
+    *,
+    non_precise: bool = False,
+    required_for_release: bool = True,
+) -> CanonicalProfileCheck:
+    return CanonicalProfileCheck(
+        key=key,
+        status=(KNOWN_BUT_NON_PRECISE if non_precise and condition else VERIFIED if condition else NEEDS_VERIFICATION),
+        detail=detail,
+        required_for_release=required_for_release,
+    )
+
+
+def canonical_profile_completeness_report(profile: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Assess the tracked owner's complete profile without inventing precision.
+
+    The returned statuses are deliberately four-valued:
+
+    * ``VERIFIED`` — an explicitly verified, sufficiently precise fact;
+    * ``KNOWN_BUT_NON_PRECISE`` — a verified fact whose unsupported exact
+      duration/date/identifier is intentionally absent;
+    * ``NEEDS_VERIFICATION`` — a required fact is absent or not explicitly
+      verified; and
+    * ``NOT_PROVIDED`` — optional precision is consciously not supplied.
+
+    ``release_ready`` only depends on the verified facts the owner actually
+    supplied.  It never turns optional number/date/document omissions into a
+    false requirement to manufacture data.
+    """
+    profile = load_canonical_profile(required=True) if profile is None else require_runtime_profile(profile)
+    personal = profile.get("personal") if isinstance(profile.get("personal"), dict) else {}
+    education = profile.get("medical_education") if isinstance(profile.get("medical_education"), list) else []
+    work = profile.get("work_history") if isinstance(profile.get("work_history"), list) else []
+    skills = profile.get("skills") if isinstance(profile.get("skills"), dict) else {}
+    languages = profile.get("languages") if isinstance(profile.get("languages"), list) else []
+    certificates = profile.get("certificates") if isinstance(profile.get("certificates"), list) else []
+    experience = profile.get("experience_evidence") if isinstance(profile.get("experience_evidence"), dict) else {}
+    checks: list[CanonicalProfileCheck] = []
+
+    def personal_ok(key: str, expected: str) -> bool:
+        return str(personal.get(key) or "").strip() == expected and personal_field_is_verified(profile, key)
+
+    checks.extend([
+        _release_check("identity", personal_ok("first_name", "Dr. Allah Yar") and personal_ok("last_name", "Frotan"), "Verified applicant identity is Dr. Allah Yar Frotan."),
+        _release_check("professional_title", personal_ok("professional_title", "Medical Doctor / Health & Nutrition Specialist"), "Verified professional title."),
+        _release_check("email", personal_ok("email", "alfrotan@gmail.com"), "Verified contact email."),
+        _release_check("phone", personal_ok("phone", "+93 766 462 006"), "Verified contact phone."),
+        _release_check("location", personal_ok("location", "Kabul, Afghanistan"), "Verified applicant location."),
+    ])
+
+    md = next((item for item in education if isinstance(item, dict) and is_verified_flag(item.get("verified")) and "doctor of medicine" in str(item.get("degree") or "").lower()), {})
+    checks.extend([
+        _release_check("md_education", bool(md), "Verified Doctor of Medicine education."),
+        _release_check("medical_education_field", str(md.get("field") or "") == "Curative Medicine", "Verified medical field of study."),
+        _release_check("medical_education_institution", str(md.get("institution") or "") == "Kabul Medical Science University", "Verified medical institution."),
+        _release_check("medical_education_dates", str(md.get("start") or "") == "2013" and str(md.get("end") or "") == "2020", "Verified education dates."),
+    ])
+    exit_exam = profile.get("medical_exit_exam") if isinstance(profile.get("medical_exit_exam"), dict) else {}
+    registration = profile.get("license_registration") if isinstance(profile.get("license_registration"), dict) else {}
+    clinical = profile.get("clinical_experience") if isinstance(profile.get("clinical_experience"), dict) else {}
+    checks.extend([
+        _release_check("medical_exit_exam", is_verified_flag(exit_exam.get("verified")) and str(exit_exam.get("status") or "").lower() == "completed", "Medical Exit Exam is verified completed."),
+        _release_check("license_registration", is_verified_flag(registration.get("verified")) and "valid" in str(registration.get("status") or "").lower(), "Valid medical professional registration/license is verified."),
+        _release_check("clinical_experience_lower_bound", is_verified_flag(clinical.get("verified")) and str(clinical.get("years") or "").strip() in {"> 3", "3+"}, "Verified lower-bound clinical/health/nutrition/frontline experience; no exact total is asserted.", non_precise=True),
+    ])
+
+    required_work = [
+        ("TFU Medical Doctor & Safeguarding Focal Point", "ACF-International"),
+        ("Health & Nutrition Supervisor", "ACF-International"),
+        ("Medical Doctor / COVID-19 Rapid Response Team Leader", "Daikundi Provincial Public Health Directorate"),
+        ("Public Relations & Communications Advisor", "Daikundi Governor’s Office"),
+        ("Administrative and Finance Officer", "Trend for a Better Tomorrow (TBT)"),
+    ]
+    work_ok = all(any(isinstance(item, dict) and is_verified_flag(item.get("verified")) and item.get("title") == title and item.get("organization") == org for item in work) for title, org in required_work)
+    checks.append(_release_check("verified_work_history", work_ok, "All owner-supplied work-history entries are present and individually verified."))
+    acf_entries = [item for item in work if isinstance(item, dict) and item.get("organization") == "ACF-International"]
+    checks.append(_release_check("acf_dates_non_precise", len(acf_entries) == 2 and all(not item.get("start") and not item.get("end") for item in acf_entries), "ACF role dates were not supplied and remain intentionally blank.", non_precise=True))
+
+    skill_claims = {claim.casefold() for claim in _normalised_claims(skills)}
+    medical_skill_claims = ["health & nutrition program implementation", "imam/cmAM", "sam/mam", "tfu/otp", "imnci", "iycf", "infection prevention and control (ipc)"]
+    public_skill_claims = ["bphs/ephs", "hmis/dhis2", "moph liaison/coordination", "clinical audit/quality improvement", "emergency/outbreak/covid response", "safeguarding/psea"]
+    management_skill_claims = ["team supervision/capacity building", "medical supply forecasting/logistics", "procurement/admin/finance support"]
+    def all_claims(expected: list[str]) -> bool:
+        return all(value.casefold() in skill_claims for value in expected)
+    checks.extend([
+        _release_check("medical_skills", all_claims(medical_skill_claims), "Verified medical and nutrition skills."),
+        _release_check("public_health_skills", all_claims(public_skill_claims), "Verified public-health, HMIS, coordination, safeguarding, and emergency skills."),
+        _release_check("management_skills", all_claims(management_skill_claims), "Verified supervision, logistics, and administrative-support skills."),
+    ])
+
+    expected_languages = {"dari/persian": "native", "english": "fluent", "pashto": "intermediate"}
+    language_ok = all(any(isinstance(item, dict) and is_verified_flag(item.get("verified")) and str(item.get("name") or "").casefold() == name and str(item.get("level") or "").casefold() == level for item in languages) for name, level in expected_languages.items())
+    checks.append(_release_check("languages", language_ok, "Verified Dari/Persian, English, and Pashto proficiency."))
+
+    certificate_claims = {claim.casefold() for claim in _normalised_claims(certificates)}
+    required_certificates = [
+        "Safeguarding & PSEA — ACF — 2024", "Infection Prevention & Control (IPC) — ACF — 2023",
+        "Inpatient Mgmt. of SAM (IPD-SAM) — ACF — 2023 & 2024", "HMIS Reporting & Health Data Mgmt. — ACF — 2023",
+        "IMAM, IMNCI, IYCF & Stock Mgmt. — ACF — 2022", "Project Management — Coventry University, UK — 2023",
+        "People Management Skills — CIPD — 2023",
+    ]
+    checks.append(_release_check("certificates", all(item.casefold() in certificate_claims for item in required_certificates), "All supplied certificates/training are individually verified."))
+
+    required_dimensions = {"health_nutrition", "public_health", "humanitarian", "supervisory", "program_coordination", "emergency_outbreak_response", "afghanistan_field"}
+    dimensions_ok = all(isinstance(experience.get(key), dict) and is_verified_flag(experience[key].get("verified")) for key in required_dimensions)
+    checks.append(_release_check("experience_dimensions", dimensions_ok, "Verified qualitative evidence exists for health/nutrition, public-health, humanitarian, supervision, coordination, emergency, and Afghanistan field dimensions.", non_precise=True))
+
+    boundary = profile.get("private_reference_boundary") if isinstance(profile.get("private_reference_boundary"), dict) else {}
+    private_boundary_ok = (
+        "professional_references" not in profile
+        and is_verified_flag(boundary.get("release_requires_owner_approval"))
+        and is_verified_flag(boundary.get("external_private_store_required"))
+        and str(boundary.get("runtime_release_default") or "") == "NOT_RELEASED"
+    )
+    checks.append(_release_check("private_reference_boundary", private_boundary_ok, "Reference PII is external to the tracked canonical profile and requires owner approval for any release."))
+
+    for key, label in [("license_number", "license number"), ("license_issue_date", "license issue date"), ("license_expiry_date", "license expiry date"), ("license_document_path", "license document path")]:
+        value_key = {"license_number": "number", "license_issue_date": "issue_date", "license_expiry_date": "expiry_date", "license_document_path": "document_path"}[key]
+        status = NOT_PROVIDED if not registration.get(value_key) else VERIFIED
+        checks.append(CanonicalProfileCheck(key, status, f"Optional {label} is intentionally not supplied; the validator never requires invention.", required_for_release=False))
+
+    return {
+        "profile_contract_version": profile.get("profile_contract_version"),
+        "checks": [check.to_dict() for check in checks],
+        "release_ready": all(check.status in {VERIFIED, KNOWN_BUT_NON_PRECISE} for check in checks if check.required_for_release),
+    }
+
+
+def assert_canonical_profile_complete(profile: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Raise a useful error when the release-profile contract is not satisfied."""
+    report = canonical_profile_completeness_report(profile)
+    missing = [f"{item['key']} ({item['status']})" for item in report["checks"] if item["required_for_release"] and item["status"] not in {VERIFIED, KNOWN_BUT_NON_PRECISE}]
+    if missing:
+        raise CanonicalProfileError("Canonical profile completeness contract failed: " + ", ".join(missing))
+    return report
+
+
+# ---------------------------------------------------------------------------
 # Date and experience helpers
 # ---------------------------------------------------------------------------
 
@@ -740,14 +923,59 @@ def _add_experience_years(evidence: ProfileEvidence, profile: dict[str, Any], to
         parsed = _verified_years_value(clinical.get("years") or clinical.get("years_total"))
         if parsed:
             years, display, lower_bound = parsed
-            evidence.add(
-                "clinical_experience_years",
-                years,
-                "profile.clinical_experience",
-                f"{display} clinical experience",
-                verified=True,
-                lower_bound=lower_bound,
-            )
+            # The owner supplied one combined lower-bound claim covering
+            # clinical, health/nutrition, and frontline work. It is recorded
+            # under each of those *explicitly stated* dimensions; it is not
+            # silently reused for public-health, NGO, management, or any other
+            # category whose duration was not supplied.
+            for key, label in [
+                ("clinical_experience_years", "clinical experience"),
+                ("health_nutrition_experience_years", "health/nutrition experience"),
+                ("frontline_experience_years", "frontline experience"),
+            ]:
+                evidence.add(
+                    key,
+                    years,
+                    "profile.clinical_experience",
+                    f"{display} {label}",
+                    verified=True,
+                    lower_bound=lower_bound,
+                )
+
+    # Qualitative experience evidence is useful for non-numeric requirements,
+    # but it deliberately does not become a made-up duration. A job requiring
+    # a number of public-health, NGO, supervisory, or Afghanistan-field years
+    # remains NEEDS_VERIFICATION unless a corresponding years value is later
+    # explicitly supplied and verified.
+    dimensions = profile.get("experience_evidence")
+    if isinstance(dimensions, dict):
+        dimension_keys = {
+            "health_nutrition": "health_nutrition_experience",
+            "public_health": "public_health_experience",
+            "humanitarian": "ngo_humanitarian",
+            "supervisory": "supervision_management",
+            "program_coordination": "program_coordination",
+            "emergency_outbreak_response": "emergency_response",
+            "afghanistan_field": "afghanistan_experience",
+        }
+        for dimension, evidence_key in dimension_keys.items():
+            entry = dimensions.get(dimension)
+            if not isinstance(entry, dict) or not is_verified_flag(entry.get("verified")):
+                continue
+            status = entry.get("status") or entry.get("description") or dimension.replace("_", " ")
+            if not is_unresolved_value(status):
+                evidence.add(evidence_key, True, f"profile.experience_evidence.{dimension}", str(status), verified=True)
+            parsed = _verified_years_value(entry.get("years") or entry.get("years_total"))
+            if parsed:
+                years, display, lower_bound = parsed
+                evidence.add(
+                    f"{dimension}_experience_years",
+                    years,
+                    f"profile.experience_evidence.{dimension}",
+                    f"{display} {dimension.replace('_', ' ')} experience",
+                    verified=True,
+                    lower_bound=lower_bound,
+                )
 
     ngo = profile.get("ngo_humanitarian_experience", {})
     if isinstance(ngo, dict) and is_verified_flag(ngo.get("verified")):
@@ -782,7 +1010,18 @@ def _add_experience_years(evidence: ProfileEvidence, profile: dict[str, Any], to
     ]:
         inferred = infer_years_from_history(profile, kind=kind, today=today)
         if inferred:
-            evidence.add(key, inferred, "profile.work_history", f"{inferred} years inferred from explicitly verified work-history entries", verified=True)
+            # A dated subset of work history establishes *at least* the
+            # computed interval, not a complete career total. Treating it as
+            # exact would falsely rule someone out whenever older/undated
+            # verified roles exist.
+            evidence.add(
+                key,
+                inferred,
+                "profile.work_history",
+                f"at least {inferred} years inferred from explicitly verified dated work-history entries",
+                verified=True,
+                lower_bound=True,
+            )
 
 
 

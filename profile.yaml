@@ -1,18 +1,20 @@
-# Canonical applicant profile — tracked as the single shared source of truth.
-# This file is consumed directly by the CLI, dashboard, Master-CV generator,
-# matching, and vacancy-tailoring workflows. profile.yaml.example is schema
-# documentation only and is never a runtime fallback.
+# Canonical applicant profile — the single runtime source of applicant facts.
+# This public, tracked record intentionally contains no reference-contact PII.
+# It is consumed directly by the CLI, dashboard, Master-CV generator, matching,
+# and vacancy-tailoring workflows. profile.yaml.example is schema documentation
+# only and is never a runtime fallback.
 #
-# Verification contract: only the literal Boolean `verified: true` adjacent to
-# a claim makes that claim usable as verified evidence. Professional references
-# below are private metadata, never matching/credential/employment evidence.
+# Verification contract: only literal Boolean `verified: true` beside a claim
+# makes that claim usable as verified evidence. Unknown precision stays unknown;
+# do not add dates, numbers, IDs, paths, or duties that have not been supplied.
 
+profile_contract_version: 1
 personal:
   first_name: "Dr. Allah Yar"
   last_name: "Frotan"
-  email: ""
-  phone: ""
-  location: ""
+  email: "alfrotan@gmail.com"
+  phone: "+93 766 462 006"
+  location: "Kabul, Afghanistan"
   nationality: ""
   gender: ""
   linkedin: ""
@@ -20,9 +22,9 @@ personal:
   verification:
     first_name: true
     last_name: true
-    email: false
-    phone: false
-    location: false
+    email: true
+    phone: true
+    location: true
     nationality: false
     gender: false
     linkedin: false
@@ -30,8 +32,15 @@ personal:
 
 medical_education:
   - degree: "Doctor of Medicine (MD)"
+    field: "Curative Medicine"
+    institution: "Kabul Medical Science University"
+    start: "2013"
+    end: "2020"
     verified: true
 
+# Status is verified. Deliberately blank fields are NOT missing facts: exact
+# registration authority/number, issue/expiry date, and a document path were
+# never supplied and must not be fabricated.
 license_registration:
   authority: ""
   number: ""
@@ -45,61 +54,163 @@ medical_exit_exam:
   status: "Completed"
   verified: true
 
+# Verified lower-bound only; this does not claim an exact duration or prove a
+# higher threshold such as five years.
 clinical_experience:
   years: "> 3"
-  settings: []
+  settings:
+    - name: "Clinical, health, nutrition, and frontline experience"
+      verified: true
   verified: true
 
-# The two Action Against Hunger roles intentionally have no supplied dates.
-# No current employer or current role is implied by either historical entry.
+# Evidence is deliberately dimensioned. A dimension may be VERIFIED without a
+# duration; absence of a duration must remain NEEDS_VERIFICATION for a vacancy
+# that asks for a numeric threshold in that dimension.
+experience_evidence:
+  health_nutrition:
+    status: "Verified health and nutrition experience; exact duration not supplied separately"
+    verified: true
+  public_health:
+    status: "Verified public-health evidence; exact duration not supplied separately"
+    verified: true
+  humanitarian:
+    status: "Verified humanitarian experience with ACF-International; exact duration not supplied"
+    verified: true
+  supervisory:
+    status: "Verified supervision evidence; exact duration not supplied"
+    verified: true
+  program_coordination:
+    status: "Verified program-coordination evidence; exact duration not supplied"
+    verified: true
+  emergency_outbreak_response:
+    status: "Verified emergency/outbreak/COVID response evidence; exact duration not supplied"
+    verified: true
+  afghanistan_field:
+    status: "Verified Afghanistan field experience; exact duration not supplied"
+    verified: true
+
+# The two ACF-International roles have no supplied dates. No current employer,
+# current role, or unsupported responsibility is implied by either entry.
 work_history:
-  - title: "TFU Doctor & Safeguarding/PSEA Focal Point"
-    organization: "Action Against Hunger (ACF)"
+  - title: "TFU Medical Doctor & Safeguarding Focal Point"
+    organization: "ACF-International"
+    location: "Sang-e-Takht TFU, Daikundi, Afghanistan"
     start: ""
     end: ""
     bullets: []
     verified: true
   - title: "Health & Nutrition Supervisor"
-    organization: "Action Against Hunger (ACF)"
+    organization: "ACF-International"
+    location: "Gizab & Sang-e-Takht, Daikundi, Afghanistan"
     start: ""
     end: ""
     bullets: []
     verified: true
-  - title: "COVID-19 RRT"
-    organization: ""
+  - title: "Medical Doctor / COVID-19 Rapid Response Team Leader"
+    organization: "Daikundi Provincial Public Health Directorate"
+    location: "Daikundi, Afghanistan"
     start: "2020-10"
     end: "2020-12"
     bullets: []
     verified: true
-  - title: "Governor's Office"
-    organization: "Governor's Office"
+  - title: "Public Relations & Communications Advisor"
+    organization: "Daikundi Governor’s Office"
+    location: "Daikundi, Afghanistan"
     start: "2020-12"
     end: "2021-08"
     bullets: []
     verified: true
-  - title: "TBT"
-    organization: "TBT"
+  - title: "Administrative and Finance Officer"
+    organization: "Trend for a Better Tomorrow (TBT)"
     start: "2019-05"
     end: "2019-09"
     bullets: []
     verified: true
 
 skills:
-  medical: []
-  public_health: []
-  management: []
+  medical:
+    - name: "Health & Nutrition Program Implementation"
+      verified: true
+    - name: "IMAM/CMAM"
+      verified: true
+    - name: "SAM/MAM"
+      verified: true
+    - name: "TFU/OTP"
+      verified: true
+    - name: "IMNCI"
+      verified: true
+    - name: "IYCF"
+      verified: true
+    - name: "Infection Prevention and Control (IPC)"
+      verified: true
+  public_health:
+    - name: "BPHS/EPHS"
+      verified: true
+    - name: "HMIS/DHIS2"
+      verified: true
+    - name: "MoPH liaison/coordination"
+      verified: true
+    - name: "Clinical audit/quality improvement"
+      verified: true
+    - name: "Emergency/outbreak/COVID response"
+      verified: true
+    - name: "Field monitoring/reporting"
+      verified: true
+    - name: "Stakeholder coordination"
+      verified: true
+    - name: "Safeguarding/PSEA"
+      verified: true
+    - name: "Child Protection"
+      verified: true
+  management:
+    - name: "Team supervision/capacity building"
+      verified: true
+    - name: "Medical supply forecasting/logistics"
+      verified: true
+    - name: "Procurement/admin/finance support"
+      verified: true
 
-languages: []
-certificates: []
+languages:
+  - name: "Dari/Persian"
+    level: "Native"
+    verified: true
+  - name: "English"
+    level: "Fluent"
+    verified: true
+  - name: "Pashto"
+    level: "Intermediate"
+    verified: true
 
+certificates:
+  - name: "Safeguarding & PSEA — ACF — 2024"
+    verified: true
+  - name: "Infection Prevention & Control (IPC) — ACF — 2023"
+    verified: true
+  - name: "Inpatient Mgmt. of SAM (IPD-SAM) — ACF — 2023 & 2024"
+    verified: true
+  - name: "HMIS Reporting & Health Data Mgmt. — ACF — 2023"
+    verified: true
+  - name: "IMAM, IMNCI, IYCF & Stock Mgmt. — ACF — 2022"
+    verified: true
+  - name: "Project Management — Coventry University, UK — 2023"
+    verified: true
+  - name: "People Management Skills — CIPD — 2023"
+    verified: true
+
+# No duration was supplied; verified ACF work is available as qualitative
+# humanitarian evidence only, not as a fabricated years-of-experience claim.
 ngo_humanitarian_experience:
   years: ""
-  organizations: []
-  verified: false
+  organizations:
+    - name: "ACF-International"
+      verified: true
+  verified: true
 
 preferences:
   roles: []
-  locations: []
+  locations:
+    - name: "Kabul, Afghanistan"
+      verified: true
   willing_to_relocate:
     value: "Needs verification"
     verified: false
@@ -115,25 +226,11 @@ job_sources:
   acbar: {}
   reliefweb: {}
 
-# Private reference metadata. It is deliberately excluded from profile evidence,
-# matching, default CVs, cover letters, and automatic application-package
-# serialization. Contact details may be released only when a specific vacancy
-# requires references and the owner explicitly approves that release.
-professional_references:
+# Private references are deliberately NOT stored in this tracked public record.
+# The named owner-supplied referees must be stored outside the repository in a
+# locally protected file explicitly selected through JOBS_FINDER_PRIVATE_REFERENCES_PATH.
+# This boundary is not matching evidence and is never automatically released.
+private_reference_boundary:
   release_requires_owner_approval: true
-  entries:
-    - name: "Musa Sultani"
-      role: "Former AIHRC Head of Office, Bamyan"
-      phone: "+33 758 819 459"
-      email: "sultanimusa@gmail.com"
-      verified: true
-    - name: "Mohammad Hussain Nussrat"
-      role: "Former Human Rights Officer, UNAMA"
-      phone: "+93 770 717 210"
-      email: "nussrat@gmail.com"
-      verified: true
-    - name: "Dr. Qurban Sorush"
-      role: "Nutrition & Health Deputy Program Manager, ACF"
-      phone: "+93 776 812 860"
-      email: "nutdpm-dk@af-actionagainsthunger.org"
-      verified: true
+  external_private_store_required: true
+  runtime_release_default: "NOT_RELEASED"

@@ -349,7 +349,9 @@ def enrich_job(job: Job, *, today: date | None = None) -> Job:
     job.metadata.setdefault("source", job.platform)
     job.metadata.setdefault("source_name", job.metadata.get("source") or job.platform)
     job.metadata.setdefault("vacancy_url", job.url)
-    job.metadata.setdefault("source_urls", [url for url in [job.metadata.get("source_url"), job.url, job.apply_url] if url])
+    # Keep source provenance separate from vacancy/application routes. A
+    # vacancy page must never become a fabricated replacement source URL.
+    job.metadata.setdefault("source_urls", [url for url in [job.metadata.get("source_url")] if url])
     if not job.metadata.get("closing_date"):
         parsed = parse_closing_date("\n".join([job.title, job.location, job.description, str(job.metadata)]))
         if parsed:

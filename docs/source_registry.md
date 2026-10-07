@@ -23,7 +23,23 @@ A failed or unavailable source is never represented as "0 jobs". Overall scan st
 
 - **ReliefWeb** (`official_name`: ReliefWeb Afghanistan jobs) — current public jobs search HTML, queried for Afghanistan health/medical/nutrition vacancies. Afghanistan cards are normalized and their public detail pages are enriched before medical relevance is decided. The maintained route requests **one** result page, bounded by `job_sources.reliefweb.limit` (registry default 20); it is not a full pagination crawler. A page that reaches the bound is reported `RESULT_LIMIT_REACHED` / `PARTIAL`, while fewer results are the observable end of that one-page route.
 
-## Manual official routes
+## Vacancy provenance and direct application routes
+
+Each normalized vacancy has independent provenance fields:
+
+- `source_url` — official listing, source search page, or official source home supplied by the adapter;
+- `vacancy_url` — the official vacancy-detail page;
+- `application_url` — a direct application/form URL; and
+- `application_email` — a direct application inbox.
+
+A missing `source_url` remains missing. The normalizer never relabels a
+`vacancy_url` as source provenance, and it does not treat an arbitrary careers,
+job, document, or vacancy link as a web-application form. A vacancy page alone
+is retained for manual review but cannot satisfy the direct application-route
+requirement for `READY_TO_APPLY`. The normalized
+`direct_application_route_actionable` flag is true only when independently
+valid source provenance and an actual direct form/email route are both present;
+it is deliberately distinct from retaining a source-valid vacancy for review.
 
 UN public careers/routes and official employer pages are preserved as trustworthy application routes when discovered, but they are not counted as active parser-backed sources unless they are added to `utils/source_registry.py` with an adapter and tests.
 

@@ -251,6 +251,32 @@ _PUBLIC_HEALTH_ROLE_DOMAINS = r"(?:public\s+health|health(?:\s+and\s+nutrition)?
 _PUBLIC_HEALTH_ROLE_NOUNS = r"(?:officer|advisor|specialist|coordinator|manager|supervisor|mentor|trainer|focal\s+point)"
 PUBLIC_HEALTH_ROLE_PATTERNS = [
     rf"\b{_PUBLIC_HEALTH_ROLE_DOMAINS}\s+{_PUBLIC_HEALTH_ROLE_NOUNS}\b",
+    r"\bhealth\s+(?:project|programme|program)\s+manager\b",
+    r"\bmedical\s+coordinator\b",
+]
+
+# An MD is a general medical qualification, not proof of a specialist
+# credential. Keep these titles in an explicit manual-verification family even
+# when a title also contains a broad word such as physician or surgeon.
+SPECIALIST_MEDICAL_ROLES: list[dict[str, Any]] = [
+    {
+        "key": "pediatric_specialist",
+        "label": "pediatric specialist role",
+        "title_patterns": [r"\bpa?ediatrician\b", r"\bpa?ediatric\s+(?:specialist|physician|doctor)\b"],
+        "evidence_keys": ["pediatric_specialist"],
+    },
+    {
+        "key": "general_surgeon",
+        "label": "general-surgeon role",
+        "title_patterns": [r"\bgeneral\s+surgeon\b", r"\bsurgeon\s+specialist\b"],
+        "evidence_keys": ["medical_specialist"],
+    },
+    {
+        "key": "specialist_physician",
+        "label": "specialist-physician role",
+        "title_patterns": [r"\bspecialist\s+(?:physician|doctor)\b", r"\bmedical\s+specialist\b"],
+        "evidence_keys": ["medical_specialist"],
+    },
 ]
 
 ROLE_DUTY_COMPATIBILITY_PATTERNS = [
@@ -827,11 +853,12 @@ def canonical_source_fields(job: Any) -> dict[str, Any]:
         metadata.get("source_url"),
         metadata.get("source_listing_url"),
         metadata.get("source_homepage"),
-        metadata.get("source_urls"),
     )
     vacancy_url = _first_valid_http(_job_get(job, "vacancy_url"), metadata.get("vacancy_url"), _job_get(job, "url"), metadata.get("url"))
-    if not source_url and vacancy_url:
-        source_url = vacancy_url
+    # Do not fabricate listing/source provenance from a vacancy page. These are
+    # intentionally independent concepts: a vacancy URL can prove where the
+    # posting was read, but it cannot prove its source/listing URL. Consumers
+    # must display ``missing`` until the source actually provides one.
 
     requested_method = _first_string(_job_get(job, "application_method"), metadata.get("application_method")).upper()
     raw_apply = _first_string(
@@ -909,6 +936,9 @@ def canonical_source_fields(job: Any) -> dict[str, Any]:
         "application_email": application_email,
         "application_url": application_url,
         "direct_application_route": direct_route,
+        # A source-valid vacancy may remain discoverable for manual route
+        # verification; this does not make its application route actionable.
+        "direct_application_route_actionable": source_valid and bool(direct_route),
         "source_valid": source_valid,
         "is_actionable": source_valid and bool(vacancy_url or direct_route),
         "problems": problems,
@@ -995,6 +1025,21 @@ def analyze_professional_role(title: str, text: str) -> dict[str, Any]:
             "explanation": f"The vacancy is {blocker['label']} and does not state that an MD/physician qualification is accepted.",
         }
 
+    for specialist in SPECIALIST_MEDICAL_ROLES:
+        specialist_hit = _pattern_hit(specialist["title_patterns"], clean_title)
+        if specialist_hit:
+            _, start, end = specialist_hit
+            return {
+                "classification": "specialist_qualification_required",
+                "role_family": specialist["key"],
+                "label": specialist["label"],
+                "md_accepted": False,
+                "requires_md": True,
+                "specialist_evidence_keys": specialist["evidence_keys"],
+                "evidence": _snippet(clean_title, start, end) or clean_title,
+                "explanation": "This is a specialist role. A general MD alone does not prove the specifically required specialty qualification; verify the actual specialist credential.",
+            }
+
     if md_title or md_accepted:
         hit = md_title or _pattern_hit(MD_ACCEPTANCE_PATTERNS, clean_title) or _md_qualification_acceptance_hit(scoped) or ("", 0, 0)
         quote_text = clean_title if md_title or _pattern_hit(MD_ACCEPTANCE_PATTERNS, clean_title) else scoped
@@ -1050,10 +1095,16 @@ def parse_closing_date(text: str, today: date | None = None) -> str | None:
     if not text:
         return None
     today = today or date.today()
-    label = r"(?:closing\s+date|deadline|apply\s+by|valid\s+until|last\s+date|submission\s+deadline)"
+    label = r"(?:closing\s+date|deadline|apply\s+by|valid\s+until|last\s+date|submission\s+deadline|(?:send|submit|email)\b[^.\n]{0,120}\bby)"
     windows = []
     for match in re.finditer(label, text, flags=re.IGNORECASE):
         windows.append(text[match.start(): match.start() + 180])
+    # Submission prose often reads "send CV to name@example.org by DATE".
+    # Dots in an email address prevent a naïve sentence-only label regex from
+    # reaching `by`; a date immediately following `by` is nevertheless a
+    # strong deadline signal.
+    for match in re.finditer(r"\bby\s+(?=(?:20\d{2})[-/.]|\d{1,2}[-/.]|[A-Za-z]{3,9}\s+\d)", text, flags=re.IGNORECASE):
+        windows.append(text[match.start(): match.start() + 120])
     if not windows:
         # Some ACBAR-style cards show "Close date: ..." or just "Close: ...".
         for close_match in re.finditer(r"(?:close\s+date|close|expires?)", text, flags=re.IGNORECASE):
@@ -1112,9 +1163,12 @@ def _minimum_years_from_match(match: re.Match) -> int:
 
 
 def _experience_scope(context: str) -> str:
+    """Classify the vacancy's requested experience dimension conservatively."""
     context = (context or "").lower()
     if any(term in context for term in ["pharmacy", "pharmacist", "pharmaceutical", "pharmacy technician"]):
         return "pharmacy_experience_years"
+    if any(term in context for term in ["health and nutrition", "health & nutrition", "health/nutrition", "nutrition program", "nutrition programme", "nutrition experience", "imam", "cmam", "sam", "mam", "tfu", "otp"]):
+        return "health_nutrition_experience_years"
     if any(term in context for term in ["management", "supervis", "lead", "coordinat", "mentor", "capacity", "مدیریت", "نظارت", "هماهنگ"]):
         return "management_experience_years"
     if any(term in context for term in ["clinical", "medical", "hospital", "clinic", "phc", "primary health", "patient", "curative", "doctor", "gp", "صحی", "کلینیک"]):
@@ -1123,6 +1177,8 @@ def _experience_scope(context: str) -> str:
         return "ngo_experience_years"
     if any(term in context for term in ["public health", "health program", "health sector", "health systems", "moph", "hmis", "صحت عامه", "برنامه های صحی"]):
         return "afghanistan_health_experience_years" if ("afghan" in context or "afghanistan" in context) else "public_health_experience_years"
+    if any(term in context for term in ["frontline", "field experience", "field-based", "field based"]):
+        return "frontline_experience_years"
     return "general_experience_years"
 
 
@@ -1256,23 +1312,34 @@ def extract_urls(text: str) -> list[str]:
 
 
 def extract_application_url(text: str, fallback: str = "") -> str | None:
+    """Return only a direct application/form URL, never an arbitrary link.
+
+    A vacancy, organisation, careers, job-board, document, or source URL is
+    not an application route merely because it appears in the text. A URL is
+    retained only when the URL itself is an established application endpoint
+    or the surrounding source instruction explicitly tells the applicant to
+    apply/submit through that URL. ``fallback`` is accepted only from a caller
+    that already holds a source-provided direct application URL.
+    """
     urls = extract_urls(text)
-    strong_terms = [
+    endpoint_terms = [
         "apply", "application", "applicationform", "forms.gle", "docs.google.com/forms",
-        "form", "greenhouse", "lever", "workday", "smartrecruiters",
+        "greenhouse", "lever.co", "workday", "smartrecruiters",
     ]
-    weak_terms = ["career", "job", "vacanc", "document"]
     for url in urls:
         lower = url.lower()
-        if any(term in lower for term in strong_terms):
+        if any(term in lower for term in endpoint_terms):
             return url
-    for url in urls:
-        lower = url.lower()
-        if any(term in lower for term in weak_terms):
+        escaped = re.escape(url)
+        # Keep the window narrow enough that a generic job-page link in an
+        # unrelated paragraph cannot acquire application semantics.
+        if re.search(
+            rf"(?:apply|application|submit|complete|fill\s+in|register)[^.\n]{{0,100}}{escaped}|{escaped}[^.\n]{{0,100}}(?:apply|application|submit|complete|fill\s+in|register)",
+            text or "",
+            flags=re.IGNORECASE,
+        ):
             return url
-    if fallback:
-        return fallback
-    return urls[0] if urls else None
+    return fallback if is_valid_http_url(fallback) else None
 
 
 def is_valid_application_url(url: str | None) -> bool:
@@ -1305,16 +1372,34 @@ def extract_application_subject(text: str, title: str = "") -> str | None:
 
 
 def application_subject_required(text: str) -> bool:
+    """Detect an actual application-email subject instruction.
+
+    The word ``subject`` is common in legal, policy, and employment language
+    (for example, "the employee will be subject to organisational policies").
+    It is never sufficient on its own. The surrounding context must connect a
+    subject/عنوان to email submission or explicitly direct the applicant to
+    include a job title, vacancy/reference code, or position code there.
+    """
     text = text or ""
-    if re.search(r"\bsubject\b", text, flags=re.IGNORECASE):
+    english_patterns = [
+        # "Email subject: ...", "Subject line must include vacancy code".
+        r"\b(?:email|e-mail)\s+subject(?:\s+line)?\b[^.\n]{0,160}\b(?:must|should|include|write|mention|indicate|state|use|required|as)\b",
+        r"\bsubject\s+line\b[^.\n]{0,160}\b(?:must|should|include|write|mention|indicate|state|use|required|as)\b",
+        r"\b(?:write|mention|include|indicate|state|use)\b[^.\n]{0,100}\b(?:job\s+title|position(?:\s+title)?|vacancy(?:\s+(?:number|no\.?|code|reference))?|reference(?:\s+(?:number|no\.?|code))?|(?:job|position)\s+code)\b[^.\n]{0,100}\b(?:email|e-mail)\s+(?:subject|subject\s+line)\b",
+        r"\b(?:write|mention|include|indicate|state|use)\b[^.\n]{0,100}\b(?:job\s+title|position(?:\s+title)?|vacancy(?:\s+(?:number|no\.?|code|reference))?|reference(?:\s+(?:number|no\.?|code))?|(?:job|position)\s+code)\b[^.\n]{0,100}\bsubject(?:\s+line)?\b",
+        r"\b(?:email|e-mail)\b[^.\n]{0,100}\b(?:subject|subject\s+line)\b[^.\n]{0,100}\b(?:job\s+title|position(?:\s+title)?|vacancy|reference|(?:job|position)\s+code)\b",
+    ]
+    if any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in english_patterns):
         return True
-    # Common Dari/Persian ACBAR wording: applicants must write the job title
-    # and position code in the email. If no exact code is present, readiness
-    # must remain NEEDS_VERIFICATION instead of inventing a subject/reference.
-    return bool(
-        re.search(r"عنوان.{0,80}(?:کد|كود|کُد|كد).{0,80}بست.{0,120}(?:ایمیل|ايميل).{0,80}الزام", text, flags=re.IGNORECASE)
-        or re.search(r"(?:ایمیل|ايميل).{0,120}عنوان.{0,80}(?:کد|كود|کُد|كد).{0,80}بست", text, flags=re.IGNORECASE)
-    )
+    # Common Dari/Persian wording. It requires the email/subject context plus
+    # an instruction to write/include the vacancy title or code; a free word
+    # عنوان elsewhere on a page is deliberately ignored.
+    persian_patterns = [
+        r"(?:موضوع|عنوان)\s*(?:ایمیل|ايميل).{0,160}(?:باید|بايد|الزامی|الزامى|ذکر|درج|بنویسید|بنويسيد|شامل).{0,120}(?:کد|كود|کُد|كد|عنوان\s*بست|شماره\s*بست)",
+        r"(?:ایمیل|ايميل).{0,120}(?:موضوع|عنوان).{0,160}(?:کد|كود|کُد|كد|عنوان\s*بست|شماره\s*بست).{0,120}(?:باید|بايد|الزامی|الزامى|ذکر|درج|بنویسید|بنويسيد|شامل)",
+        r"(?:در\s*)?(?:موضوع|عنوان)\s*(?:ایمیل|ايميل).{0,100}(?:عنوان|کد|كود|کُد|كد)\s*بست",
+    ]
+    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in persian_patterns)
 
 
 def extract_locations(text: str, explicit_location: str = "") -> list[str]:
@@ -1403,11 +1488,20 @@ def extract_gender_requirement(text: str) -> str | None:
 
 
 def extract_nationality_requirement(text: str) -> str | None:
-    lower = text.lower()
+    lower = normalize_text(text).lower()
+    # Nationality frequently appears in vacancy prose as ``Afghan nationality
+    # is required`` rather than the older ``Afghan national required`` form.
+    # Treat it as an eligibility requirement only in explicit requirement/value
+    # contexts; a bare discussion of nationality must not silently constrain a
+    # candidate.
+    afghan_requirement_patterns = [
+        r"\bafghan\s+(?:national(?:ity)?|citizen|applicant)s?\s*(?:(?:is|are|be)\s+)?(?:required|mandatory|only)\b",
+        r"\bonly\s+afghan\s+(?:nationals?|citizens?|applicants?)\b",
+        r"\bnationality\s*[:\-]?\s*(?:afghan|national)\b",
+    ]
     if (
-        re.search(r"\bafghan\s+(?:national|citizen|applicant)s?\b", lower)
+        any(re.search(pattern, lower) for pattern in afghan_requirement_patterns)
         or "national position" in lower
-        or re.search(r"\bnationality\s*[:\-]\s*(?:afghan|national)\b", lower)
     ):
         return "Afghan"
     if (
@@ -1503,6 +1597,8 @@ def extract_requirements_from_text(
     for key, min_years in years.items():
         label = {
             "clinical_experience_years": "Clinical experience",
+            "health_nutrition_experience_years": "Health / nutrition experience",
+            "frontline_experience_years": "Frontline / field experience",
             "ngo_experience_years": "NGO / humanitarian experience years",
             "management_experience_years": "Management / supervision experience years",
             "public_health_experience_years": "Public health experience years",
@@ -1653,6 +1749,43 @@ def extract_requirements_from_job(job: Any, today: date | None = None) -> Extrac
         application_url=direct_application_url or "",
         today=today,
     )
+    # A source adapter may have parsed a structured closing-date card even
+    # when the date is not repeated in the description text. Preserve that
+    # source-provided fact; otherwise an absent deadline is not evidence that a
+    # vacancy remains open and becomes a critical manual-verification item.
+    metadata_closing = str(metadata.get("closing_date") or "").strip()
+    if not extracted.facts.get("closing_date") and metadata_closing:
+        try:
+            date.fromisoformat(metadata_closing[:10])
+        except ValueError:
+            metadata_closing = ""
+        if metadata_closing:
+            extracted.facts["closing_date"] = metadata_closing[:10]
+            extracted.requirements.append(
+                Requirement(
+                    key="closing_date",
+                    label="Closing date",
+                    required="Information",
+                    value=metadata_closing[:10],
+                    evidence=[metadata_closing[:10]],
+                    source_field="source metadata",
+                    criticality="info",
+                )
+            )
+            extracted.provenance.append({"field": "closing_date", "source": "source metadata", "quote": metadata_closing[:10]})
+    if not extracted.facts.get("closing_date"):
+        extracted.requirements.append(
+            Requirement(
+                key="closing_date",
+                label="Closing date",
+                required="Required",
+                value=None,
+                evidence=[],
+                source_field="description/source metadata",
+                criticality="essential",
+            )
+        )
+        extracted.provenance.append({"field": "closing_date", "source": "description/source metadata", "quote": "No reliable closing date found."})
     source_requirement = Requirement(
         key="source_validity",
         label="Valid source and official vacancy route",

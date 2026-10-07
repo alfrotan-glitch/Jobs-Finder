@@ -14,8 +14,8 @@ semantics, strict readiness gating, and adversarial regression coverage.
 
 The only non-local limitation is live official-source reachability from this
 execution environment; it is recorded precisely below and is represented by
-the system as `SOURCES_UNAVAILABLE`, not “no jobs found.” Remote GitHub CI is
-verified only after the release branch is pushed and its workflow completes.
+the system as `SOURCES_UNAVAILABLE`, not “no jobs found.” Remote GitHub CI
+passed on the release pull request across its full Ubuntu/Windows matrix.
 
 ## Significant findings and remediation
 
@@ -121,9 +121,11 @@ A no-persistence FastAPI `TestClient` dashboard/API smoke also passed for
 Starlette deprecates its current `httpx` TestClient integration.
 
 The GitHub Actions workflow runs the same lint, compile, JavaScript syntax, and
-pytest checks on Ubuntu and Windows with Python 3.11 and 3.12. The Windows
-launcher is assertion-covered; this Linux audit did not execute an interactive
-Windows desktop launcher.
+pytest checks on Ubuntu and Windows with Python 3.11 and 3.12. Pull request
+[#21](https://github.com/alfrotan-glitch/Jobs-Finder/pull/21) passed all four
+matrix jobs: Ubuntu 3.11/3.12 and Windows 3.11/3.12. The Windows launcher is
+assertion-covered; this Linux audit did not execute an interactive Windows
+desktop launcher.
 
 ## Live official-source validation
 
@@ -144,7 +146,5 @@ passed locally.
 ## Remaining limitation
 
 Only the environment-level external TLS/SSL failure above prevents live source
-content validation. All local safeguards and tests were completed; retry live
-validation from a network that can reach the official sources. Remote CI status
-must be checked after push before declaring the remote branch’s release gate
-fully green.
+content validation. All local safeguards and remote CI checks were completed;
+retry live validation from a network that can reach the official sources.

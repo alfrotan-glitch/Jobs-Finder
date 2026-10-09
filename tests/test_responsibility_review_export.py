@@ -18,7 +18,6 @@ generated documents:
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import yaml
@@ -49,14 +48,14 @@ def _held_drafts(profile: dict) -> list[tuple[str, str]]:
 def test_review_export_is_read_only_for_the_canonical_profile(tmp_path, monkeypatch):
     """Preparing the review list must not touch profile.yaml or apply a decision."""
     before = PROFILE_PATH.read_bytes()
-    before_hash = hashlib.sha256(before).hexdigest()
+    before_hash = review.canonical_profile_digest()
 
     target = tmp_path / "held_responsibility_review.md"
     monkeypatch.setattr(review, "REVIEW_DOC_PATH", target)
     assert review.main([]) == 0
 
     assert PROFILE_PATH.read_bytes() == before
-    assert hashlib.sha256(PROFILE_PATH.read_bytes()).hexdigest() == before_hash
+    assert review.canonical_profile_digest() == before_hash
     assert target.exists()
     assert target.read_text(encoding="utf-8") == REVIEW_DOC_PATH.read_text(encoding="utf-8")
 
@@ -151,14 +150,14 @@ def test_no_decision_has_been_applied_to_the_canonical_profile():
     assert len(_held_drafts(profile)) == 24
     # The review workflow never writes the record, so the hash still matches the
     # one the shipped document was generated from.
-    digest = hashlib.sha256(PROFILE_PATH.read_bytes()).hexdigest()
+    digest = review.canonical_profile_digest()
     assert digest in REVIEW_DOC_PATH.read_text(encoding="utf-8")
 
 
 def test_committed_review_document_is_in_sync_with_the_canonical_record():
     profile = _profile()
     items = review.collect_review_items(profile)
-    digest = hashlib.sha256(PROFILE_PATH.read_bytes()).hexdigest()
+    digest = review.canonical_profile_digest()
     assert REVIEW_DOC_PATH.read_text(encoding="utf-8") == review.render_markdown(profile, digest, items)
 
 

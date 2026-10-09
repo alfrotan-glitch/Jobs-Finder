@@ -117,11 +117,21 @@ def _tokens(text: Any) -> set[str]:
     return {part for part in re.split(r"[^a-z0-9]+", str(text).lower()) if part}
 
 
+def canonical_profile_digest() -> str:
+    """SHA-256 of profile.yaml with line endings normalised to LF.
+
+    Windows checkouts (core.autocrlf) rewrite the file as CRLF; hashing the raw
+    bytes would make the recorded digest platform-dependent.
+    """
+    raw = PROFILE_PATH.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(raw).hexdigest()
+
+
 def _read_profile() -> tuple[dict[str, Any], str]:
     import yaml
 
-    raw = PROFILE_PATH.read_bytes()
-    digest = hashlib.sha256(raw).hexdigest()
+    raw = PROFILE_PATH.read_bytes().replace(b"\r\n", b"\n")
+    digest = canonical_profile_digest()
     try:
         profile = yaml.safe_load(raw.decode("utf-8"))
     except Exception as exc:  # pragma: no cover - defensive
@@ -599,7 +609,7 @@ def main(argv: list[str] | None = None) -> int:
 
     REVIEW_DOC_PATH.parent.mkdir(parents=True, exist_ok=True)
     REVIEW_DOC_PATH.write_text(rendered, encoding="utf-8")
-    if hashlib.sha256(PROFILE_PATH.read_bytes()).hexdigest() != digest:
+    if canonical_profile_digest() != digest:
         raise ReviewError("profile.yaml changed while the review list was being generated")
     print(f"WROTE: {_display_path(REVIEW_DOC_PATH)}")
     return 0

@@ -324,6 +324,10 @@ def test_master_cv_model_is_comprehensive_for_the_real_profile():
     evidence = build_profile_evidence(profile)
     verified_skills = [item["name"] for item in _verified_skill_items(profile)]
     grouped = [item for group in model["expertise"] for item in group["items"]]
+    # PR #25's de-duplication safeguard, independent of summary word count.
+    repeated = [skill for skill in verified_skills if skill in model["profile"]]
+    assert len(repeated) <= 6
+    assert len(repeated) < len(verified_skills)
     assert sorted(grouped) == sorted(verified_skills)
     assert [group["group"] for group in model["expertise"]][:2] == [
         "Clinical & Medical Practice",
@@ -338,6 +342,10 @@ def test_master_cv_model_is_comprehensive_for_the_real_profile():
         "Daikundi Governor’s Office",
         "Daikundi Provincial Public Health Directorate",
         "Trend for a Better Tomorrow (TBT)",
+    ]
+    assert [item["dates"] for item in model["experience"]] == [
+        "May 2023 – Jul 2025", "Feb 2022 – Dec 2022", "Dec 2020 – Aug 2021",
+        "Oct 2020 – Dec 2020", "May 2019 – Sep 2019",
     ]
     # Every role keeps an applicant-supported professional scope line. Nothing
     # more is claimed than the applicant-supported responsibilities.
@@ -1136,3 +1144,62 @@ def test_master_cv_never_claims_field_monitoring(tmp_path):
     assert "HMIS/DHIS2 reporting and data quality" in summary
     assert not re.search(r"field monitoring", summary, flags=re.IGNORECASE)
     assert not re.search(r"\bmonitoring\b", docs["tailored_cv_text"], flags=re.IGNORECASE)
+
+
+# Preserved from PR #25 (9325e5d), complementing the pipeline geometry tests.
+def test_long_titles_and_organizations_wrap_without_overflow(tmp_path):
+    """Very long role/organization strings wrap; nothing bleeds off the page."""
+    from utils import document_design
+
+    long_org = "International Committee for the Coordination of Community-Based Health, Nutrition and Emergency Relief Programmes in Afghanistan"
+    long_role = "Senior Medical Doctor & Provincial Health, Nutrition and Safeguarding Programme Coordination Lead"
+    model = {
+        "name": "Test Applicant",
+        "headline": "Medical Doctor",
+        "contact_lines": ["Kabul, Afghanistan"],
+        "profile": "Verified medical doctor with community-based health and nutrition experience.",
+        "expertise": [{"group": "Clinical & Medical Practice", "items": ["Infection Prevention and Control (IPC)"]}],
+        "strengths": ["Infection Prevention and Control (IPC)"],
+        "experience": [
+            {"role": long_role, "org": long_org, "loc": "Daikundi, Afghanistan",
+             "dates": "May 2023 – Jul 2025",
+             "bullets": ["Delivered clinical assessment, diagnosis, treatment, and follow-up care applying WHO and national clinical protocols for community-based therapeutic care."] * 3},
+        ],
+        "education": ["Doctor of Medicine (MD) — Curative Medicine — Kabul Medical Science University — 2013–2020"],
+        "registration": ["Valid medical professional registration/license"],
+        "exit_exam": ["Completed"],
+        "certifications": ["Infection Prevention & Control (IPC) — ACF — 2023"],
+        "languages": [("Dari/Persian", "Native"), ("English", "Fluent")],
+        "references": ["Available on request for shortlisted applications."],
+    }
+    pdf = tmp_path / "long.pdf"
+    docx = tmp_path / "long.docx"
+    document_design.render_cv_pdf(model, pdf)
+    document_design.render_cv_docx(model, docx)
+
+    with pdfplumber.open(pdf) as opened:
+        width = opened.pages[0].width
+        chars = [c for page in opened.pages for c in page.chars]
+        max_x1 = max(c["x1"] for c in chars)
+        text = " ".join((p.extract_text() or "") for p in opened.pages)
+    # No glyph may cross the right margin, and the long strings survive intact.
+    assert max_x1 <= width - 40, max_x1
+    assert long_org in " ".join(text.split())
+
+    docx_flat = " ".join(_docx_text(docx).split())
+    assert long_org in docx_flat
+    assert long_role in docx_flat
+
+
+def test_repeated_rendering_is_deterministic_and_source_stable(tmp_path):
+    """Two renders of the same profile produce identical substantive content."""
+    profile = _profile()
+    fingerprint_before = json.dumps(profile, sort_keys=True, ensure_ascii=False)
+    a = write_master_cv(profile, out_dir=tmp_path / "a")
+    b = write_master_cv(profile, out_dir=tmp_path / "b")
+
+    assert Path(a["generated_paths"]["txt"]).read_text(encoding="utf-8") == Path(b["generated_paths"]["txt"]).read_text(encoding="utf-8")
+    assert _pdf_text(a["generated_paths"]["pdf"]) == _pdf_text(b["generated_paths"]["pdf"])
+    assert _docx_text(a["generated_paths"]["docx"]) == _docx_text(b["generated_paths"]["docx"])
+    # Rendering is a pure presentation step: the canonical profile is untouched.
+    assert json.dumps(profile, sort_keys=True, ensure_ascii=False) == fingerprint_before

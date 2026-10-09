@@ -1,5 +1,7 @@
 # CV rendering remediation — inspected output, 9 October 2026
 
+> Historical baseline and first remediation. The follow-up [integration validation](cv_integration_validation.md) supersedes the DOCX-visual-verification limitation below, records real Writer rendering and the footer/year-range defects it exposed, and reconciles PRs #25 and #26.
+
 ## Scope and evidence
 
 Started from latest fetched `origin/main`, `2abf79e` (the merged application-subject fix). Work stays on the session branch `arena/db816076-jobs-finder`. The subject rules were not reimplemented or edited.

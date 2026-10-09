@@ -24,8 +24,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -r requirements.txt -r requirements-dev.txt
       - run: python -m ruff check .
-      - run: python -m compileall -q main.py dashboard utils tests
+      - run: python -m compileall -q main.py dashboard utils tests tools
       - run: node --check dashboard/static/app.js
+      - run: node --check tools/render_docx.mjs
       - run: python -m pytest -q --junitxml=.pytest_cache/results.xml
       - name: Annotate test failures
         if: failure()
@@ -40,3 +41,22 @@ jobs:
                       message = (failure.text or failure.get("message", ""))[:6000]
                       message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
                       print(f"::error title={case.get('name', 'Test failure')}::{message}")
+
+  docx-rendering:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install native Writer and the CV font family
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libreoffice-writer fonts-dejavu-core
+          libreoffice --version
+          fc-match 'DejaVu Sans'
+      - run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Verify production PDF and Writer-rendered DOCX for every CV family
+        run: python tools/render_previews.py --all --verify-docx --dpi 110 --out generated/ci-cv-validation
+      # Applicant documents/images stay ephemeral on the runner, not in Git or
+      # public CI artifacts. A human visual pass is documented separately.

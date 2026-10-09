@@ -43,3 +43,6 @@ generated/
 logs/
 *.log
 nohup.out
+
+# Local scratch and visual previews can contain applicant data.
+.arena/

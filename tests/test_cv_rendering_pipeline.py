@@ -89,7 +89,12 @@ def assert_geometry(pdf):
 def assert_model_preserved(model, text):
     text = flat(text)
     values = [model["name"], model["headline"], model["profile"], *model["contact_lines"]]
-    for key in ("education", "registration", "exit_exam", "certifications", "references"):
+    # Education is presented as degree/field + institution/dates lines.
+    # Check every source word in order, ignoring only the em-dash separator
+    # replaced by a paragraph boundary; no credential component is dropped.
+    for education in model["education"]:
+        assert flat(education).replace(" — ", " ") in text.replace(" — ", " ")
+    for key in ("registration", "exit_exam", "certifications", "references"):
         values.extend(model[key])
     for group in model["expertise"]:
         values.extend([group["group"], *group["items"]])
@@ -166,7 +171,12 @@ def test_word_shared_typography_semantic_hierarchy_and_pagination(tmp_path):
     footer = section.footer.paragraphs[0]
     tab = next(iter(footer.paragraph_format.tab_stops))
     assert tab.position == section.page_width - section.left_margin - section.right_margin
+    assert footer.style.name == "CV Footer"
+    assert footer.style.base_style.name == "Normal"
+    assert footer.style.font.size.pt == 7
     assert footer._p.xpath(".//w:instrText")[0].text == "PAGE"
+    assert [el.get(qn("w:fldCharType")) for el in footer._p.xpath(".//w:fldChar")] == ["begin", "separate", "end"]
+    assert footer._p.xpath("./w:pPr/w:pBdr/w:top")
     assert doc.settings.element.find(qn("w:updateFields")).get(qn("w:val")) == "true"
 
 

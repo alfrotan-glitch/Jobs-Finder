@@ -605,6 +605,16 @@ def _cv_bullet_glyph() -> str:
     return "•" if getattr(font, "_dynamicFont", False) else "-"
 
 
+def _cv_education_lines(value: str) -> list[str]:
+    """Separate degree/field from institution/dates without changing any fact.
+
+    The canonical education serializer uses spaced em dashes. Unknown shapes
+    remain verbatim rather than guessing where a degree or date begins.
+    """
+    parts = str(value).split(" — ")
+    return [" — ".join(parts[:2]), " — ".join(parts[2:])] if len(parts) >= 3 else [str(value)]
+
+
 def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, float]) -> int:
     """Build one CV PDF with the given typographic scale; return its page count."""
     from reportlab.lib import colors
@@ -727,7 +737,12 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
             # matching how LANGUAGES and REFERENCES are set.
             single = len(values) == 1
             for value in values:
-                if single:
+                if title == "EDUCATION":
+                    lines = _cv_education_lines(str(value))
+                    block = [Paragraph(f"<b>{esc(lines[0])}</b>", body_style)]
+                    block.extend(Paragraph(esc(line), body_style) for line in lines[1:])
+                    story.append(KeepTogether(block))
+                elif single:
                     story.append(Paragraph(esc(value), body_style))
                 else:
                     story.append(Paragraph(esc(value), bullet_style, bulletText=_cv_bullet_glyph()))
@@ -785,11 +800,14 @@ def _docx_page_field(paragraph) -> None:
     instruction = OxmlElement("w:instrText")
     instruction.set(qn("xml:space"), "preserve")
     instruction.text = "PAGE"
+    separator = OxmlElement("w:fldChar")
+    separator.set(qn("w:fldCharType"), "separate")
+    cached = OxmlElement("w:t")
+    cached.text = "1"
     end = OxmlElement("w:fldChar")
     end.set(qn("w:fldCharType"), "end")
-    run._r.append(begin)
-    run._r.append(instruction)
-    run._r.append(end)
+    for element in (begin, instruction, separator, cached, end):
+        run._r.append(element)
 
 
 def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, float] | None = None) -> None:
@@ -841,9 +859,11 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
     style("CV Body", scale["body"], leading=scale["leading"], after=3.2)
     style("CV Bullet", scale["body"], leading=scale["bullet_leading"], after=scale["bullet_after"])
 
-    def border(p, color, size):
+    style("CV Footer", 7, color=Theme.muted, leading=9)
+
+    def border(p, color, size, side="bottom"):
         borders = OxmlElement("w:pBdr")
-        bottom = OxmlElement("w:bottom")
+        bottom = OxmlElement("w:" + side)
         for key, value in {"val": "single", "sz": str(size), "color": color.lstrip("#"), "space": "3"}.items():
             bottom.set(qn("w:" + key), value)
         borders.append(bottom)
@@ -914,7 +934,14 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
             # real list is bulleted.
             single = len(values) == 1
             for value in values:
-                if single:
+                if title == "EDUCATION":
+                    lines = _cv_education_lines(str(value))
+                    p = doc.add_paragraph(style="CV Body")
+                    p.add_run(lines[0]).bold = True
+                    p.paragraph_format.keep_with_next = len(lines) > 1
+                    for line in lines[1:]:
+                        doc.add_paragraph(line, style="CV Body")
+                elif single:
                     doc.add_paragraph(str(value), style="CV Body")
                 else:
                     add_bullet(value)
@@ -930,6 +957,10 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
 
     # Footer: name on the left, a real page number on the right.
     footer = section.footer.paragraphs[0]
+    # Built-in Footer inherits a centre tab: a new right tab alone does not
+    # remove it. Use our own style so the first tab really reaches the edge.
+    footer.style = styles["CV Footer"]
+    footer.paragraph_format.tab_stops.clear_all()
     footer.alignment = WD_ALIGN_PARAGRAPH.LEFT
     footer.paragraph_format.tab_stops.add_tab_stop(section.page_width - section.left_margin - section.right_margin, WD_TAB_ALIGNMENT.RIGHT)
     run = footer.add_run(str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
@@ -943,7 +974,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
         run.font.name = font
         run.font.size = Pt(7)
         run.font.color.rgb = RGBColor.from_string(Theme.muted[1:])
-    border(footer, Theme.rule, 4)
+    border(footer, Theme.rule, 4, side="top")
     update = OxmlElement("w:updateFields")
     update.set(qn("w:val"), "true")
     doc.settings.element.append(update)

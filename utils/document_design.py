@@ -594,7 +594,8 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
         borderColor=colors.HexColor(Theme.rule), borderWidth=0, borderBottomWidth=.7, borderPadding=(0, 0, 2.6, 0),
         keepWithNext=True,
     )
-    group_style = ParagraphStyle("CVGroup", parent=styles["Normal"], fontName=sans, fontSize=scale["body"], leading=scale["leading"] * 0.99, textColor=colors.HexColor(Theme.ink), spaceAfter=scale["group_after"])
+    group_label_style = ParagraphStyle("CVGroupLabel", parent=styles["Normal"], fontName=sans_bold, fontSize=scale["body"] * 0.98, leading=scale["leading"] * 0.95, textColor=colors.HexColor(Theme.deep), spaceAfter=0.8)
+    group_style = ParagraphStyle("CVGroup", parent=styles["Normal"], fontName=sans, fontSize=scale["body"], leading=scale["leading"] * 0.99, textColor=colors.HexColor(Theme.ink), spaceAfter=scale["group_after"], leftIndent=9)
     role_style = ParagraphStyle("CVRole", parent=styles["Heading3"], fontName=serif_bold, fontSize=scale["role"], leading=scale["role"] * 1.19, textColor=colors.HexColor(Theme.deep), spaceBefore=scale["role_before"], spaceAfter=.8, keepWithNext=True)
     meta_style = ParagraphStyle("CVMeta", parent=styles["Normal"], fontName=sans, fontSize=scale["meta"], leading=scale["meta"] * 1.22, textColor=colors.HexColor(Theme.muted), spaceAfter=scale["meta_after"], keepWithNext=True)
     body_style = ParagraphStyle("CVBody", parent=styles["BodyText"], fontName=sans, fontSize=scale["body"], leading=scale["leading"], textColor=colors.HexColor(Theme.ink), spaceAfter=3.2)
@@ -636,10 +637,16 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
         for group in groups:
             items = " · ".join(esc(item) for item in group.get("items") or [])
             label = esc(group.get("group") or "")
-            paragraph = Paragraph(f"<b>{label}:</b> {items}" if label else items, group_style)
+            # A group is set as a bold label line with its competencies as an
+            # indented line beneath, so the seven groups read as a scannable
+            # index rather than seven dense run-on lines.
+            block: list[Any] = []
+            if label:
+                block.append(Paragraph(f"<b>{label}</b>", group_label_style))
+            block.append(Paragraph(items, group_style))
             # A group label must never be left stranded at the foot of a page
             # with its competencies continuing overleaf.
-            story.append(KeepTogether(paragraph))
+            story.append(KeepTogether(block))
 
     experience = list(model.get("experience") or [])
     if experience:
@@ -771,8 +778,11 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
     section_style = style("CV Section", 10.1, True, (12, 52, 66))
     section_style.paragraph_format.space_before = Pt(7)
     section_style.paragraph_format.space_after = Pt(2.5)
+    group_label_style = style("CV Competency Group Label", 8.9, True, (12, 52, 66))
+    group_label_style.paragraph_format.space_after = Pt(0.5)
     group_style = style("CV Competency Group", 8.9, False, (23, 42, 53))
-    group_style.paragraph_format.space_after = Pt(1.5)
+    group_style.paragraph_format.space_after = Pt(2.5)
+    group_style.paragraph_format.left_indent = Inches(0.13)
     role_style = style("CV Role", 10.4, True, (12, 52, 66), "Georgia")
     role_style.paragraph_format.space_before = Pt(5)
     role_style.paragraph_format.space_after = Pt(0)
@@ -817,12 +827,10 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
     if groups:
         add_section("CORE PROFESSIONAL COMPETENCIES")
         for group in groups:
-            p = doc.add_paragraph(style="CV Competency Group")
             label = str(group.get("group") or "")
             if label:
-                run = p.add_run(f"{label}: ")
-                run.bold = True
-                run.font.color.rgb = RGBColor(12, 52, 66)
+                doc.add_paragraph(label, style="CV Competency Group Label")
+            p = doc.add_paragraph(style="CV Competency Group")
             p.add_run(" · ".join(str(item) for item in group.get("items") or []))
 
     experience = list(model.get("experience") or [])

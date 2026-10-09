@@ -1306,8 +1306,11 @@ def _professional_profile_paragraph(
         sentences.append(f"{lead_in} {_join_and(organizations[:4])}.")
 
     if competencies:
-        lead_in = "My core technical competencies include" if first_person else "Core technical competencies include"
-        sentences.append(f"{lead_in} {_join_and(competencies[:8])}.")
+        # A short, vacancy-ranked highlight of the strongest competencies -- a
+        # headline, not a reprint of the grouped CORE PROFESSIONAL COMPETENCIES
+        # section that follows immediately below on the CV.
+        lead_in = "My strongest technical competencies include" if first_person else "Strongest technical competencies include"
+        sentences.append(f"{lead_in} {_join_and(competencies[:5])}.")
 
     if not has_languages_section:
         languages = _language_lines(profile, verified_only=True)
@@ -1408,9 +1411,10 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
 
     expertise = build_expertise_groups(verified_skills)
 
-    # The canonical profile keeps the owner's source order. In contrast to a
-    # vacancy CV, there is no relevance score and therefore no role-specific
-    # reordering or selection.
+    # The canonical profile keeps the owner's source order, but a professional
+    # CV presents employment newest-first. The master CV has no relevance
+    # score, so it is ordered strictly reverse-chronologically by verified end
+    # date (never by vacancy fit) and remains position-neutral and complete.
     experience = [
         {
             "role": _resolved_entry_value(entry, "title"),
@@ -1419,7 +1423,7 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
             "dates": _experience_dates(entry),
             "bullets": _split_substantive_bullets(_entry_text_values(entry)),
         }
-        for entry in work_entries
+        for entry in _reverse_chronological_entries(work_entries)
     ]
     model = {
         "name": _full_name(profile),

@@ -327,19 +327,30 @@ def test_master_cv_model_is_comprehensive_for_the_real_profile():
         "Health & Nutrition Programming",
     ]
 
-    # Every verified role, in canonical order, with a real description.
+    # Every verified role appears exactly once, ordered reverse-chronologically
+    # by verified end date (newest first), with a real description.
     assert len(model["experience"]) == len(profile["work_history"]) == 5
     assert [item["org"] for item in model["experience"]] == [
         "ACF-International",
         "ACF-International",
-        "Daikundi Provincial Public Health Directorate",
         "Daikundi Governor’s Office",
+        "Daikundi Provincial Public Health Directorate",
         "Trend for a Better Tomorrow (TBT)",
+    ]
+    # The Master CV presents employment newest-first: the 2021 role leads the
+    # two 2020/2021 roles, and the 2019 role closes the section.
+    assert [item["dates"] for item in model["experience"]] == [
+        "May 2023 – Jul 2025",
+        "Feb 2022 – Dec 2022",
+        "Dec 2020 – Aug 2021",
+        "Oct 2020 – Dec 2020",
+        "May 2019 – Sep 2019",
     ]
     # Every role keeps an applicant-supported professional scope line. Nothing
     # more is claimed, because the applicant supplied no duties for any role.
-    for item, entry in zip(model["experience"], profile["work_history"]):
-        verified = _verified_responsibilities(entry)
+    entries_by_title = {str(entry.get("title")): entry for entry in profile["work_history"]}
+    for item in model["experience"]:
+        verified = _verified_responsibilities(entries_by_title[item["role"]])
         assert item["bullets"] == [b for b in verified], item["role"]
         assert len(item["bullets"]) >= 1, item["role"]
         assert all(len(bullet) >= 40 for bullet in item["bullets"]), item["role"]
@@ -1136,3 +1147,122 @@ def test_master_cv_never_claims_field_monitoring(tmp_path):
     assert "HMIS/DHIS2 reporting and data quality" in summary
     assert not re.search(r"field monitoring", summary, flags=re.IGNORECASE)
     assert not re.search(r"\bmonitoring\b", docs["tailored_cv_text"], flags=re.IGNORECASE)
+
+
+# ---------------------------------------------------------------------------
+# Design & pagination regression guards (added in the production overhaul)
+# ---------------------------------------------------------------------------
+
+
+_MONTHS = {m: i for i, m in enumerate(
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
+
+
+def _end_sort_key(dates: str) -> tuple:
+    """Parse the *end* of a rendered 'Start – End' range for ordering checks."""
+    if not dates:
+        return (0, 0)
+    end = dates.split("–")[-1].strip()
+    parts = end.split()
+    if len(parts) == 2 and parts[0] in _MONTHS:
+        return (int(parts[1]), _MONTHS[parts[0]])
+    if parts and parts[0].isdigit():
+        return (int(parts[0]), 12)
+    return (0, 0)
+
+
+def test_master_cv_experience_is_strictly_reverse_chronological():
+    """Newest verified role first; the CV never prints source order."""
+    model = generate_master_cv(_profile())["master_cv_model"]
+    keys = [_end_sort_key(item["dates"]) for item in model["experience"]]
+    assert keys == sorted(keys, reverse=True), [item["dates"] for item in model["experience"]]
+    # And it is the verified end dates driving the order, not the profile order.
+    assert keys[0] == (2025, 7)
+    assert keys[-1] == (2019, 9)
+
+
+def test_summary_is_a_highlight_not_a_competency_reprint():
+    """The summary may name a few headline competencies, never the whole index.
+
+    The grouped CORE PROFESSIONAL COMPETENCIES section is the inventory; the
+    summary is a narrative. If the summary started reprinting most of the
+    verified skill list, the document would read as a keyword dump.
+    """
+    profile = _profile()
+    model = generate_master_cv(profile)["master_cv_model"]
+    summary = model["profile"]
+    verified_skills = [item["name"] for item in _verified_skill_items(profile)]
+    present = [skill for skill in verified_skills if skill in summary]
+    # A short headline list (<=6 of the inventory) is allowed; a reprint is not.
+    assert len(present) <= 6, present
+    assert len(verified_skills) > len(present), "summary duplicated the full competency index"
+
+
+def test_long_titles_and_organizations_wrap_without_overflow(tmp_path):
+    """Very long role/organization strings wrap; nothing bleeds off the page."""
+    from utils import document_design
+
+    long_org = "International Committee for the Coordination of Community-Based Health, Nutrition and Emergency Relief Programmes in Afghanistan"
+    long_role = "Senior Medical Doctor & Provincial Health, Nutrition and Safeguarding Programme Coordination Lead"
+    model = {
+        "name": "Test Applicant",
+        "headline": "Medical Doctor",
+        "contact_lines": ["Kabul, Afghanistan"],
+        "profile": "Verified medical doctor with community-based health and nutrition experience.",
+        "expertise": [{"group": "Clinical & Medical Practice", "items": ["Infection Prevention and Control (IPC)"]}],
+        "strengths": ["Infection Prevention and Control (IPC)"],
+        "experience": [
+            {"role": long_role, "org": long_org, "loc": "Daikundi, Afghanistan",
+             "dates": "May 2023 – Jul 2025",
+             "bullets": ["Delivered clinical assessment, diagnosis, treatment, and follow-up care applying WHO and national clinical protocols for community-based therapeutic care."] * 3},
+        ],
+        "education": ["Doctor of Medicine (MD) — Curative Medicine — Kabul Medical Science University — 2013–2020"],
+        "registration": ["Valid medical professional registration/license"],
+        "exit_exam": ["Completed"],
+        "certifications": ["Infection Prevention & Control (IPC) — ACF — 2023"],
+        "languages": [("Dari/Persian", "Native"), ("English", "Fluent")],
+        "references": ["Available on request for shortlisted applications."],
+    }
+    pdf = tmp_path / "long.pdf"
+    docx = tmp_path / "long.docx"
+    document_design.render_cv_pdf(model, pdf)
+    document_design.render_cv_docx(model, docx)
+
+    with pdfplumber.open(pdf) as opened:
+        width = opened.pages[0].width
+        chars = [c for page in opened.pages for c in page.chars]
+        max_x1 = max(c["x1"] for c in chars)
+        text = " ".join((p.extract_text() or "") for p in opened.pages)
+    # No glyph may cross the right margin, and the long strings survive intact.
+    assert max_x1 <= width - 40, max_x1
+    assert long_org in " ".join(text.split())
+
+    docx_flat = " ".join(_docx_text(docx).split())
+    assert long_org in docx_flat
+    assert long_role in docx_flat
+
+
+def test_repeated_rendering_is_deterministic_and_source_stable(tmp_path):
+    """Two renders of the same profile produce identical substantive content."""
+    profile = _profile()
+    fingerprint_before = json.dumps(profile, sort_keys=True, ensure_ascii=False)
+    a = write_master_cv(profile, out_dir=tmp_path / "a")
+    b = write_master_cv(profile, out_dir=tmp_path / "b")
+
+    assert Path(a["generated_paths"]["txt"]).read_text(encoding="utf-8") == Path(b["generated_paths"]["txt"]).read_text(encoding="utf-8")
+    assert _pdf_text(a["generated_paths"]["pdf"]) == _pdf_text(b["generated_paths"]["pdf"])
+    assert _docx_text(a["generated_paths"]["docx"]) == _docx_text(b["generated_paths"]["docx"])
+    # Rendering is a pure presentation step: the canonical profile is untouched.
+    assert json.dumps(profile, sort_keys=True, ensure_ascii=False) == fingerprint_before
+
+
+def test_no_section_heading_is_orphaned_at_a_page_foot(tmp_path):
+    """A section heading is never the last line of a page (keepWithNext holds)."""
+    master = write_master_cv(_profile(), out_dir=tmp_path)
+    with pdfplumber.open(master["generated_paths"]["pdf"]) as pdf:
+        for page in pdf.pages[:-1]:
+            lines = [ln.get("text", "").strip() for ln in page.extract_text_lines() if ln.get("text", "").strip()]
+            # The footer carries the name + page number; drop those two lines.
+            body = [ln for ln in lines if not ln.startswith("Dr. Allah Yar Frotan") and not ln.startswith("Page ")]
+            assert body, lines
+            assert body[-1] not in MASTER_SECTIONS, (page.page_number, body[-1])

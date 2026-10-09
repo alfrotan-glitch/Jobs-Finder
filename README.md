@@ -246,6 +246,10 @@ Every vacancy preserves four independent fields: `source_url` (official listing/
 
 One design system (`utils/document_design.py`, `jobs-finder-editorial-medical`) renders every CV and cover letter: a single ATS-readable column, one serif face for the name and role titles and one sans face for body text, a restrained teal/gold accent used only for the title line and section rules, explicit section headings, and a footer with the applicant name and page number. There are no icons, sidebars, graphics, or decorative shapes, and no hard-coded page breaks or content cut-offs — pagination is entirely driven by the verified content. If a CV would end with an almost-empty final page, it is re-rendered once at the compact setting of the same design system, and only when that actually removes the sparse page.
 
+Employment is presented reverse-chronologically (newest verified end date first) in both the Master CV and tailored CVs. Core competencies render as a scannable index — a bold group label with its competencies set on an indented line beneath — so the grouped skills architecture reads as a professional index rather than dense run-on lines, while the plain-text artifact keeps the ATS-friendly `Group: item; item` shape.
+
+**Visual inspection.** The deterministic structural contract (content integrity, hierarchy, wrapping, pagination, cross-format consistency) is enforced by the test-suite against the real PDF/DOCX artifacts, so CI needs no rasterizer. For a human visual pass, `tools/render_previews.py` renders any generated PDF (or the Master CV plus tailored CVs for the representative vacancy families with `--all`) to PNG. It is optional and degrades gracefully: install `pymupdf` locally (`python -m pip install pymupdf`) and run e.g. `python tools/render_previews.py --all --out .arena/previews`. PNGs and `documents/` are git-ignored, so no raster or personal data is ever committed.
+
 ## Application package output
 
 Generated files are written under `documents/applications/` and are ignored by Git because they may contain personal data.

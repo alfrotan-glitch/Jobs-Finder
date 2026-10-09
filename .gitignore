@@ -43,3 +43,6 @@ generated/
 logs/
 *.log
 nohup.out
+
+# Local scratch / visual previews (personal data must never be committed)
+.arena/

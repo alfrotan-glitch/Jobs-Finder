@@ -75,7 +75,8 @@ profile:
 - **Fact-checked role descriptions.** Each of the five verified roles carries
   the professional scope the applicant actually supplied (role, employer,
   location, and the applicant's own verified experience areas). The 28 detailed
-  duties that the system had *derived* from verified evidence are held in
+  duties that the system had *derived* from verified evidence (24 remain held
+  after the evidence recovery; see `docs/evidence_recovery_audit.md`) are held in
   `needs_verification`: preserved, excluded from every document, and reported
   for owner confirmation. Nothing numeric, dated, or achievement-shaped was
   added, and no duty is asserted on the strength of a job title, a skill, a

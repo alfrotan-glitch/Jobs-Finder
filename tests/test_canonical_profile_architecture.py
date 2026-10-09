@@ -255,11 +255,11 @@ def test_tracked_runtime_profile_is_the_real_source_for_master_cv_and_tailoring(
     assert personal["verification"]["last_name"] is True
     assert personal["verification"]["professional_title"] is True
     assert len(profile["work_history"]) == 5
-    assert profile["work_history"][0]["start"] == ""
-    assert profile["work_history"][0]["end"] == ""
-    assert profile["work_history"][1]["start"] == ""
-    assert profile["work_history"][1]["end"] == ""
-    assert [(entry["start"], entry["end"]) for entry in profile["work_history"][2:]] == [
+    # Both ACF roles carry the dates the applicant supplied in the source CV
+    # (recovered by the evidence-recovery audit).
+    assert [(entry["start"], entry["end"]) for entry in profile["work_history"]] == [
+        ("2023-05", "2025-07"),
+        ("2022-02", "2022-12"),
         ("2020-10", "2020-12"),
         ("2020-12", "2021-08"),
         ("2019-05", "2019-09"),

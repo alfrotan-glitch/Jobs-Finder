@@ -43,6 +43,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from utils.medical_matcher import MET, NEEDS_VERIFICATION, NOT_ELIGIBLE_STATUS, NOT_MET
+from utils.paths import project_path
 from utils.profile import (
     build_profile_evidence,
     is_unresolved_value,
@@ -275,10 +276,12 @@ def _verified_responsibility_texts(value: Any) -> list[str]:
 def _pending_responsibility_items(profile: dict[str, Any]) -> list[dict[str, str]]:
     """Drafts held back from employer-facing documents, for owner review only.
 
-    These are the detailed duties a CV would normally carry. They were written
-    by the system from verified profile evidence (role title, competency
-    inventory, certificates) rather than supplied by the applicant, so they are
-    reported to the owner instead of being printed as fact.
+    These are duty suggestions that no applicant evidence covers. Each one was
+    written by the system from verified profile evidence (role title, competency
+    inventory, certificates) rather than supplied by the applicant, so it is
+    reported to the owner instead of being printed as fact. Where the
+    applicant's own supplied CV did document a duty, that duty now lives in
+    ``responsibilities`` with ``verified: true`` and is printed normally.
     """
     pending: list[dict[str, str]] = []
     for entry in _profile_list(profile, "work_history"):
@@ -305,7 +308,7 @@ def _pending_responsibility_warning(profile: dict[str, Any]) -> str:
     roles = sorted({item["role"] for item in pending if item["role"]})
     return (
         f"{len(pending)} detailed responsibility draft(s) for {len(roles)} role(s) are NOT presented as verified "
-        "experience: no duties were supplied for these positions, so the wording is system-authored. "
+        "experience: the applicant supplied no duties covering them, so the wording is system-authored. "
         "Confirm each line against your own record and move it to `responsibilities` with `verified: true` to publish "
         "it. Roles affected: " + "; ".join(roles)
     )
@@ -900,6 +903,11 @@ EXPERTISE_GROUP_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("Clinical & Medical Practice", ("clinical care", "clinical practice", "clinical assessment", "diagnosis", "treatment", "patient", "curative", "medical doctor", "infection prevention", "ipc")),
     ("Health & Nutrition Programming", ("nutrition", "imam", "cmam", "sam", "mam", "tfu", "otp", "iycf", "imnci", "malnutrition")),
     ("Public Health Systems & Quality", ("bphs", "ephs", "hmis", "dhis2", "moph", "liaison", "quality", "audit")),
+    # "Provincial & Ministry of Public Health Stakeholder Coordination" is the
+    # applicant's own wording for a coordination competency, so it belongs with
+    # the other coordination evidence rather than in the public-health group:
+    # a hit-rich label in the wrong group can outvote the group the vacancy
+    # itself names.
     ("Programme Coordination & Field Operations", ("coordination", "stakeholder", "monitoring", "reporting", "emergency", "outbreak", "covid", "program implementation", "programme implementation")),
     ("Supervision & Capacity Building", ("supervision", "supervisory", "capacity", "team")),
     ("Safeguarding, Protection & Compliance", ("safeguarding", "psea", "child protection", "protection")),
@@ -1008,7 +1016,13 @@ def _without_attribution(text: str) -> str:
     Used only where the surrounding sentence already states the role, so a
     letter bullet stays readable. The wording itself is never changed.
     """
-    cleaned = re.sub(r"\s*\([^()]*\|[^()]*\)\s*$", "", str(text or "").strip())
+    # One nested group is allowed so a parenthesised date range inside the
+    # attribution, e.g. "(Role | Org | Place (2020-10 – 2020-12))", is removed.
+    cleaned = re.sub(
+        r"\s*\((?:[^()]|\([^()]*\))*\|(?:[^()]|\([^()]*\))*\)\s*$",
+        "",
+        str(text or "").strip(),
+    )
     return cleaned.rstrip(".").strip() or str(text or "").strip().rstrip(".")
 
 
@@ -1092,8 +1106,15 @@ def _experience_coverage_clauses(evidence, rank_key=None) -> list[str]:
     add("public-health service delivery", "public_health_experience")
     add("team supervision and capacity building", "supervision_management")
     add("programme coordination", "program_coordination")
-    add("field monitoring and reporting", "reporting")
-    add("HMIS/DHIS2 health information management", "hmis")
+    # The applicant supplied "HMIS/DHIS2 reporting and data quality" as one
+    # competency. The earlier clause pair split it into a reporting clause that
+    # added "field monitoring" -- a duty this profile explicitly holds as
+    # unsupported -- and a rephrased HMIS clause. The reporting evidence now
+    # carries the applicant's own wording, and nothing more, exactly once.
+    if evidence.has_verified("hmis"):
+        clauses.append("HMIS/DHIS2 reporting and data quality")
+    elif evidence.has_verified("reporting"):
+        clauses.append("health-data reporting")
     add("clinical audit and quality improvement", "quality_improvement")
     add("MoPH and health-authority coordination", "moph_coordination")
     add("emergency and outbreak response", "emergency_response")
@@ -1101,6 +1122,75 @@ def _experience_coverage_clauses(evidence, rank_key=None) -> list[str]:
     add("medical supply forecasting and logistics", "supply_logistics")
     if rank_key is not None:
         clauses.sort(key=rank_key)
+    return clauses
+
+
+def _is_health_supervisory_role(job: dict[str, Any]) -> bool:
+    """True for a supervisory health or nutrition vacancy, judged by its title."""
+    title = str(job.get("title") or "").lower()
+    return "supervisor" in title and ("health" in title or "nutrition" in title)
+
+
+# Priority tiers for a supervisory health/nutrition letter, strongest first.
+# Clinical, safeguarding, and other lines fall after every tier.
+_SUPERVISORY_TIER_TERMS = (
+    ("supervis", "nutrition", "bphs", "ephs"),
+    ("logistic", "supply", "procure"),
+    ("coordinat", "ministry of public health", "moph", "stakeholder", "health authorit"),
+    ("hmis", "dhis2"),
+)
+
+
+def _supervisory_tier(text: str) -> int:
+    lower = text.lower()
+    for tier, terms in enumerate(_SUPERVISORY_TIER_TERMS):
+        if any(term in lower for term in terms):
+            return tier
+    return len(_SUPERVISORY_TIER_TERMS)
+
+
+def _supervisory_letter_highlights(items: list[str], *, limit: int) -> list[str]:
+    """Order verified evidence for a supervisory letter; select, never add.
+
+    Role-attributed experience lines come before bare competency lines (a line
+    with a ``|`` in its attribution is a role). Within that, the priority tier
+    decides, and the vacancy ranking order breaks ties.
+    """
+
+    def key(pair: tuple[int, str]) -> tuple[bool, int, int]:
+        index, text = pair
+        is_experience = "|" in text
+        return (not is_experience, _supervisory_tier(text), index)
+
+    return [text for _, text in sorted(enumerate(items), key=key)][:limit]
+
+
+# Experience dimensions in the order a supervisory health/nutrition letter leads with.
+_SUPERVISORY_DIMENSION_ORDER = (
+    "supervision_management",
+    "health_nutrition_experience_years",
+    "frontline_experience_years",
+    "clinical_experience_years",
+)
+
+
+def _supervisory_lead_clauses(evidence) -> list[str]:
+    """Coverage clauses for a supervisory health/nutrition letter, verified only.
+
+    Each clause is gated on the same verified evidence key that the general
+    coverage clauses use. Clauses without verified evidence are omitted.
+    """
+    clauses: list[str] = []
+
+    def add(clause: str, *keys: str) -> None:
+        if any(evidence.has_verified(key) for key in keys):
+            clauses.append(clause)
+
+    add("team supervision and capacity building", "supervision_management")
+    add("health and nutrition service delivery", "health_nutrition_experience")
+    add("BPHS/EPHS-related service delivery", "bphs", "ephs")
+    add("medical supply forecasting and logistics", "supply_logistics")
+    add("MoPH and health-authority coordination", "moph_coordination")
     return clauses
 
 
@@ -1164,19 +1254,27 @@ def _professional_profile_paragraph(
     if evidence.has_verified("license_registration"):
         credentials.append("a valid medical professional registration/license")
     lead = f"I am a {identity}" if first_person else identity
-    sentences.append(lead + (f", with {_join_and(credentials)}" if credentials else "") + ".")
+    identity_sentence = lead + (f", with {_join_and(credentials)}" if credentials else "") + "."
+    # A cover letter for a supervisory health/nutrition vacancy leads with the
+    # verified supervision and field experience; the medical identity follows.
+    supervisory = first_person and _is_health_supervisory_role(job)
+    if not supervisory:
+        sentences.append(identity_sentence)
 
     duration = _verified_duration_phrase(evidence)
     if duration:
-        dimensions = [
-            label
-            for key, label in [
-                ("clinical_experience_years", "clinical practice"),
-                ("health_nutrition_experience_years", "health and nutrition"),
-                ("frontline_experience_years", "frontline"),
-            ]
-            if evidence.has_verified(key)
+        dimension_pairs = [
+            ("clinical_experience_years", "clinical"),
+            ("health_nutrition_experience_years", "health and nutrition"),
+            # The applicant's own profile claims "combined field and
+            # supervisory experience", so supervision is named whenever the
+            # canonical record carries supervision evidence.
+            ("supervision_management", "supervisory"),
+            ("frontline_experience_years", "field"),
         ]
+        if supervisory:
+            dimension_pairs.sort(key=lambda pair: _SUPERVISORY_DIMENSION_ORDER.index(pair[0]))
+        dimensions = [label for key, label in dimension_pairs if evidence.has_verified(key)]
         if dimensions:
             joined = _join_and(dimensions) if len(dimensions) > 1 else dimensions[0]
             amount = f"{duration} of combined {joined} experience" if len(dimensions) > 1 else f"{duration} of {joined} experience"
@@ -1186,10 +1284,12 @@ def _professional_profile_paragraph(
             else:
                 sentences.append(f"Brings {amount}" + (f" in {context}" if context else "") + ".")
 
-    clauses = _experience_coverage_clauses(evidence, rank_key)
+    clauses = _supervisory_lead_clauses(evidence) if supervisory else _experience_coverage_clauses(evidence, rank_key)
     if clauses:
         lead_in = "My professional experience covers" if first_person else "Professional experience covers"
         sentences.append(f"{lead_in} {_join_and(clauses[:6])}.")
+    if supervisory:
+        sentences.append(identity_sentence)
 
     organizations = _verified_organizations(profile)
     if organizations and organization_order:
@@ -1380,7 +1480,7 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
 def write_master_cv(
     profile: dict[str, Any],
     *,
-    out_dir: str | Path = "documents/master_cv",
+    out_dir: str | Path = project_path("documents/master_cv"),
 ) -> dict[str, Any]:
     """Write TXT/DOCX/PDF position-neutral master-CV artifacts locally.
 
@@ -1422,7 +1522,14 @@ def generate_tailored_documents(
 
     focus_labels = _focus_labels(match_report)
     focus_phrases = _job_focus_phrases(job, match_report)
-    vacancy_highlights = _vacancy_fit_highlights(profile, job, match_report, limit=6)
+    if _is_health_supervisory_role(job):
+        # Every verified evidence line is a candidate; the supervisory priority
+        # orders them. The vacancy-overlap filter is not used here, because it
+        # would drop verified logistics evidence that shares no keyword with
+        # the vacancy text.
+        vacancy_highlights = _supervisory_letter_highlights(_profile_evidence_lines(profile), limit=6)
+    else:
+        vacancy_highlights = _vacancy_fit_highlights(profile, job, match_report, limit=6)
 
     # DOCUMENT EVIDENCE GATE: every factual section below is restricted to
     # explicitly verified items. Credential-style facts (education, license,
@@ -1528,11 +1635,12 @@ def generate_tailored_documents(
     facts = match_report.get("facts", {})
     metadata = job.get("metadata", {}) if isinstance(job.get("metadata", {}), dict) else {}
     reference = facts.get("reference_number") or metadata.get("reference_number")
-    subject_parts = []
-    if reference:
-        subject_parts.append(str(reference))
-    subject_parts.append(str(title))
-    suggested_subject = facts.get("application_subject") or metadata.get("application_subject") or " — ".join(subject_parts)
+    # One subject rule for the letter and the email draft, so they cannot drift.
+    suggested_subject = _email_subject(
+        str(job.get("title") or ""),
+        requested_subject=str(facts.get("application_subject") or metadata.get("application_subject") or ""),
+        reference=str(reference or ""),
+    )
 
     cover_lines = [
         f"Subject: {suggested_subject}",
@@ -2201,7 +2309,7 @@ def write_application_bundle_files(
     tailored_documents: dict[str, Any],
     package: dict[str, Any],
     *,
-    out_dir: str | Path = "documents/applications",
+    out_dir: str | Path = project_path("documents/applications"),
 ) -> dict[str, Any]:
     """Persist a complete review package for one vacancy.
 
@@ -2261,7 +2369,7 @@ def prepare_application_bundle(
     profile: dict[str, Any],
     match_report: dict[str, Any],
     *,
-    out_dir: str | Path = "documents/applications",
+    out_dir: str | Path = project_path("documents/applications"),
 ) -> dict[str, Any]:
     """Generate documents, application package, and file exports for one job.
 

@@ -1346,7 +1346,20 @@ def is_valid_application_url(url: str | None) -> bool:
     return is_valid_http_url(url)
 
 
+# "vacancy number in the subject line", "job title in the subject". The posting
+# names the item that goes in the email subject; the vacancy number is then the
+# subject itself, so no title or other wording is added.
+_VACANCY_NUMBER_IN_SUBJECT = (
+    r"\b(?:vacancy|job|position|reference|announcement)\s*(?:number|no\.?|code|reference|title|id)\b"
+    r"[^.\n]{0,40}\b(?:in|on)\s+the\s+subject(?:\s+line)?\b"
+)
+
+
 def extract_application_subject(text: str, title: str = "") -> str | None:
+    if re.search(_VACANCY_NUMBER_IN_SUBJECT, text or "", flags=re.IGNORECASE):
+        reference = extract_reference_number(text or "")
+        if reference:
+            return reference
     if title and (
         re.search(r"\b(?:mention|write|include|indicat(?:e|ing))\b[^\n\r]{0,120}\b(?:job\s+title|position(?:\s+title)?|title)\b[^\n\r]{0,120}\bsubject\b", text or "", flags=re.IGNORECASE)
         or re.search(r"\bmention\b[^\n\r]{0,80}\bposition\b[^\n\r]{0,120}\bsubject\b", text or "", flags=re.IGNORECASE)
@@ -1382,6 +1395,8 @@ def application_subject_required(text: str) -> bool:
     """
     text = text or ""
     english_patterns = [
+        # "Send CV with vacancy number in the subject line" (ACBAR wording).
+        _VACANCY_NUMBER_IN_SUBJECT,
         # "Email subject: ...", "Subject line must include vacancy code".
         r"\b(?:email|e-mail)\s+subject(?:\s+line)?\b[^.\n]{0,160}\b(?:must|should|include|write|mention|indicate|state|use|required|as)\b",
         r"\bsubject\s+line\b[^.\n]{0,160}\b(?:must|should|include|write|mention|indicate|state|use|required|as)\b",

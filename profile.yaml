@@ -7,6 +7,12 @@
 # Verification contract: only literal Boolean `verified: true` beside a claim
 # makes that claim usable as verified evidence. Unknown precision stays unknown;
 # do not add dates, numbers, IDs, paths, or duties that have not been supplied.
+#
+# The applicant evidence for this record is the applicant's own supplied CV,
+# preserved verbatim under `applicant_supplied_source` below. A fact is
+# supported when the applicant previously supplied it there or elsewhere in the
+# canonical record -- not merely when a sentence happens to be present in this
+# normalized file.
 
 profile_contract_version: 1
 personal:
@@ -89,102 +95,152 @@ experience_evidence:
     status: "Verified Afghanistan field experience; exact duration not supplied"
     verified: true
 
+# ---------------------------------------------------------------------------
+# APPLICANT-SUPPLIED SOURCE EVIDENCE (recovered)
+# ---------------------------------------------------------------------------
+# Verbatim professional content from the applicant's own supplied CV. This is
+# applicant-supplied evidence, not system-authored text: it was recovered from
+# the repository history (tests/test_dr_frotan_profile.py, SOURCE_CV_EXCERPT,
+# added in commit 05fbf60, removed in commit 58ae0d5), where it was used as the
+# resume input to the profile builder. The normalized profile below had dropped
+# it; nothing here is invented, inferred, or paraphrased.
+#
+# `responsibilities` may restate what this block (and the rest of the tracked
+# record) already establishes. It may not add a duty, number, achievement,
+# place, employer, or date that the applicant never supplied.
+applicant_supplied_source:
+  recovered_from: "tests/test_dr_frotan_profile.py (SOURCE_CV_EXCERPT) at commit 05fbf60; source-CV excerpt supplied by the applicant"
+  professional_profile:
+    - "Medical Doctor with over three years of combined field and supervisory experience across Daikundi Province's health, nutrition, and provincial governance sectors."
+    - "Proven track record supervising mobile health and nutrition teams delivering BPHS/EPHS and IMAM/CMAM services, maintaining HMIS/DHIS2 reporting and data quality, coordinating medical supply forecasting and logistics, safeguarding (PSEA and Child Protection Focal Point), and cross-sector communication during the COVID-19 emergency response."
+    - "Native Dari (Persian) speaker with fluent English and intermediate Pashto."
+  core_competencies:
+    - "Provincial & Ministry of Public Health Stakeholder Coordination"
+    - "Health & Nutrition Program Supervision"
+    - "Team Supervision & Capacity Building"
+    - "HMIS / DHIS2 Reporting & Data Quality"
+    - "Emergency & Outbreak Response (COVID-19)"
+    - "Safeguarding, PSEA & Child Protection"
+    - "BPHS/EPHS & IMAM/CMAM Program Knowledge"
+  supplied_role_notes:
+    - role: "TFU Medical Doctor & Safeguarding Focal Point"
+      supplied:
+        - "Maintained accurate HMIS records and served as Safeguarding Focal Point supporting PSEA and child protection."
+        - "Delivered clinical assessment, diagnosis, treatment, and follow-up care for children with SAM applying WHO, IMAM/CMAM, and national clinical protocols."
+    - role: "Health and Nutrition Supervisor"
+      supplied:
+        - "Supervised mobile health and nutrition teams delivering community-based BPHS/EPHS-related services."
+    - role: "Medical Doctor / COVID-19 Rapid Response Team Leader"
+      supplied:
+        - "Coordinated with Ministry of Public Health representatives, provincial health authorities, and partner organizations."
+    - role: "Public Relations & Communications Advisor"
+      supplied:
+        - "Supported communication and coordination between provincial government departments, NGOs, communities, and development partners."
+    - role: "Administrative and Finance Officer"
+      supplied:
+        - "Supported administrative operations, procurement processes, financial documentation, and program logistics."
+
 # `responsibilities` records the applicant-supported professional scope of each
 # role. Each entry is an object and the canonical rule is unchanged: only a
 # literal `verified: true` beside a claim makes that claim usable as verified
 # evidence. A verified entry may restate only what the applicant actually
-# supplied for that role -- its title, employer, and location. It must not add
-# duties, activities, achievements, numbers, dates, results, or attribute a
-# skill or certificate to the role.
+# supplied for that role.
 #
-# The detailed duties an owner would normally record here were never supplied
-# by the applicant for any of the five roles below. Instead of inventing them,
-# they are held in `needs_verification`: preserved verbatim, excluded from every
-# generated document, and listed for owner review. Confirming a line means
-# checking it against the applicant's own record and moving it into
-# `responsibilities` with `verified: true`.
+# The duties below were rebuilt from `applicant_supplied_source` by the
+# evidence-recovery audit (docs/evidence_recovery_audit.md, section 6): a line is restored
+# only where the applicant's own supplied CV documents it, and only the
+# supported portion of a partly supported draft is kept. Draft wording that no
+# applicant evidence supports (for example infection-prevention measures, audit
+# and case review, liaison, coordination meetings, filing, or payment records)
+# stays in `needs_verification`, excluded from every generated document, until
+# the owner supplies it.
 #
-# The two ACF-International roles have no supplied dates. No current employer,
-# current role, or unsupported responsibility is implied by either entry, and
-# dated precision is deliberately not invented for them.
+# The two ACF-International roles carry the dates the applicant supplied for
+# them (TFU May 2023 - Jul 2025, Supervisor Feb 2022 - Dec 2022), restored by
+# the same audit from the applicant's own CV. No current employer, current
+# role, or unsupported responsibility is implied by either entry, and no
+# dated precision beyond the supplied month is invented for them.
 work_history:
   - title: "TFU Medical Doctor & Safeguarding Focal Point"
     organization: "ACF-International"
     location: "Sang-e-Takht TFU, Daikundi, Afghanistan"
-    start: ""
-    end: ""
+    start: "2023-05"
+    end: "2025-07"
     responsibilities:
-      - text: "Medical doctor role at the Sang-e-Takht TFU, Daikundi, Afghanistan, with site appointment as Safeguarding Focal Point"
+      - text: "Delivered clinical assessment, diagnosis, treatment, and follow-up care for children with SAM applying WHO, IMAM/CMAM, and national clinical protocols"
         verified: true
-        basis: "supplied role title and supplied work location"
+        basis: "applicant-supplied CV (source-CV excerpt): TFU role duty"
+      - text: "Maintained accurate HMIS records and served as Safeguarding Focal Point supporting PSEA and child protection"
+        verified: true
+        basis: "applicant-supplied CV (source-CV excerpt): TFU role duty"
     needs_verification:
-      - text: "Provided clinical assessment, diagnosis, and treatment for patients admitted to the Therapeutic Feeding Unit with severe acute malnutrition, in line with inpatient SAM and IMAM/CMAM protocols"
-        verified: false
-        status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
       - text: "Monitored clinical progress, documented inpatient care, and prepared patients for continued outpatient follow-up through OTP services"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states follow-up care for children with SAM but no inpatient monitoring, documentation, or OTP follow-up duty for this position (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "follow-up care for children with SAM (restored in the verified responsibility above)"
       - text: "Applied infection prevention and control measures within the inpatient therapeutic feeding unit"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV records IPC as training only, never as a duty performed (evidence-recovery audit: NOT_SUPPORTED)"
       - text: "Acted as site Safeguarding and PSEA Focal Point, supporting safeguarding, child-protection, and protection-from-sexual-exploitation-and-abuse awareness, reporting channels, and compliance with organizational policy"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states the Focal Point appointment and PSEA/child-protection support, but no awareness activity, reporting channels, or policy-compliance duty (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "served as Safeguarding Focal Point supporting PSEA and child protection (restored in the verified responsibility above)"
       - text: "Maintained HMIS and nutrition data on TFU activity and supported periodic health reporting to project and health-authority counterparts"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states HMIS records, not nutrition-data maintenance or reporting to project and health-authority counterparts (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "maintained accurate HMIS records (restored in the verified responsibility above)"
       - text: "Took part in clinical audit, case review, and quality-improvement activity to support quality of care in the therapeutic feeding unit"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states no such duty for this position (evidence-recovery audit: NOT_SUPPORTED)"
       - text: "Liaised with health facility and provincial health counterparts on service-delivery coordination, medical supply needs, and reporting"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states no such duty for this position (evidence-recovery audit: NOT_SUPPORTED)"
     verified: true
   - title: "Health & Nutrition Supervisor"
     organization: "ACF-International"
     location: "Gizab & Sang-e-Takht, Daikundi, Afghanistan"
-    start: ""
-    end: ""
+    start: "2022-02"
+    end: "2022-12"
     responsibilities:
-      - text: "Health and nutrition supervisory role in the ACF-International programme areas of Gizab and Sang-e-Takht, Daikundi, Afghanistan"
+      - text: "Supervised mobile health and nutrition teams delivering community-based BPHS/EPHS-related services and IMAM/CMAM services"
         verified: true
-        basis: "supplied role title, supplied employer and supplied work location"
+        basis: "applicant-supplied CV (source-CV excerpt): supervisor role duty and professional profile"
     needs_verification:
-      - text: "Supervised health and nutrition service delivery across ACF-supported coverage areas in Gizab and Sang-e-Takht districts, Daikundi"
-        verified: false
-        status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
       - text: "Supported IMAM/CMAM implementation, including SAM/MAM case identification, OTP service linkage, and adherence to national nutrition treatment protocols"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states IMAM/CMAM service delivery but no case identification, OTP linkage, or protocol-adherence duty (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "delivering IMAM/CMAM services (restored in the verified responsibility above)"
       - text: "Supervised and built the capacity of health and nutrition staff through work planning, on-the-job coaching, and training follow-up"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states supervision of mobile teams but no work planning, coaching, or training follow-up duty (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "supervising mobile health and nutrition teams (restored in the verified responsibility above)"
       - text: "Conducted field monitoring visits and reviewed service records, registers, and reports to support data quality and timely HMIS reporting"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states HMIS/DHIS2 reporting and data quality but no monitoring visits or register reviews (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "HMIS/DHIS2 reporting and data quality (held as a verified competency; not attested as a duty of this position)"
       - text: "Coordinated with MoPH and provincial health-authority counterparts, community stakeholders, and partner teams to support BPHS/EPHS-aligned service delivery"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV attributes MoPH and provincial coordination to the COVID-19 response role, not to this position (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "community-based BPHS/EPHS-related service delivery (restored in the verified responsibility above)"
       - text: "Supported quality-of-care activities, including review of clinical and nutrition documentation and follow-up of corrective actions with service providers"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states no such duty for this position (evidence-recovery audit: NOT_SUPPORTED)"
       - text: "Monitored nutrition and medical supply availability at supported sites and supported forecasting, stock follow-up, and logistics coordination with the project team"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states medical supply forecasting and logistics generally, not site-level supply monitoring for this position (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "medical supply forecasting and logistics (held as a verified competency; not attested as a duty of this position)"
     verified: true
   - title: "Medical Doctor / COVID-19 Rapid Response Team Leader"
     organization: "Daikundi Provincial Public Health Directorate"
@@ -192,34 +248,33 @@ work_history:
     start: "2020-10"
     end: "2020-12"
     responsibilities:
-      - text: "Medical doctor leading the COVID-19 Rapid Response Team within the Daikundi Provincial Public Health Directorate"
+      - text: "Coordinated with Ministry of Public Health representatives, provincial health authorities, and partner organizations"
         verified: true
-        basis: "supplied role title, supplied employer and supplied work location"
+        basis: "applicant-supplied CV (source-CV excerpt): COVID-19 response role duty"
     needs_verification:
-      - text: "Led the provincial COVID-19 rapid response team and coordinated rapid-response activity with the Provincial Public Health Directorate"
-        verified: false
-        status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
       - text: "Provided clinical assessment, medical guidance, and case-management support for COVID-19 patients, in line with national protocols and infection prevention and control measures"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states clinical care for the TFU role, not for this position (evidence-recovery audit: NOT_SUPPORTED)"
       - text: "Supported outbreak response coordination and follow-up with health facilities and provincial health authorities"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states coordination with Ministry of Public Health representatives, provincial health authorities, and partner organizations - not health-facility follow-up (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "coordination with Ministry of Public Health representatives, provincial health authorities, and partner organizations (restored in the verified responsibility above)"
       - text: "Collected and reported response data through HMIS and provincial reporting channels, supporting situation reporting for the provincial response"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states HMIS/DHIS2 reporting for the ACF roles, not for this position (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "HMIS/DHIS2 reporting (held as a verified competency for the ACF roles; not attested for this position)"
       - text: "Supported infection prevention and control and public-health measures within the provincial response, in line with BPHS/EPHS service structures"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states no such duty for this position (evidence-recovery audit: NOT_SUPPORTED)"
       - text: "Participated in coordination meetings with health-sector stakeholders, partners, and provincial authorities"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states coordination with named counterparties but no meetings (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "coordination with Ministry of Public Health representatives, provincial health authorities, and partner organizations (restored in the verified responsibility above)"
     verified: true
   - title: "Public Relations & Communications Advisor"
     organization: "Daikundi Governor’s Office"
@@ -227,52 +282,52 @@ work_history:
     start: "2020-12"
     end: "2021-08"
     responsibilities:
-      - text: "Public relations and communications advisory role within the Daikundi Governor’s Office, Daikundi, Afghanistan"
+      - text: "Supported communication and coordination between provincial government departments, NGOs, communities, and development partners"
         verified: true
-        basis: "supplied role title, supplied employer and supplied work location"
+        basis: "applicant-supplied CV (source-CV excerpt): Governor’s Office role duty"
     needs_verification:
       - text: "Advised the Governor’s Office on public relations and communications and prepared official communications and public information materials"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
-      - text: "Coordinated public information activities with provincial departments and partner organizations"
-        verified: false
-        status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states communication and coordination support but not preparation of official communications or public information materials (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "public relations and communications advisory role, and communication/coordination support (restored in the verified responsibility above)"
       - text: "Supported stakeholder engagement and information-sharing between the provincial office, community representatives, and health-sector partners"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV names provincial government departments, NGOs, communities, and development partners - not health-sector partners or information-sharing (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "communication and coordination between provincial government departments, NGOs, communities, and development partners (restored in the verified responsibility above)"
       - text: "Maintained reporting and documentation of public relations and communication activities for the office"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states no such duty for this position (evidence-recovery audit: NOT_SUPPORTED)"
     verified: true
   - title: "Administrative and Finance Officer"
     organization: "Trend for a Better Tomorrow (TBT)"
     start: "2019-05"
     end: "2019-09"
     responsibilities:
-      - text: "Administrative and finance officer role with Trend for a Better Tomorrow (TBT)"
+      - text: "Supported administrative operations, procurement processes, financial documentation, and program logistics"
         verified: true
-        basis: "supplied role title and supplied employer"
+        basis: "applicant-supplied CV (source-CV excerpt): TBT role duty"
     needs_verification:
       - text: "Supported day-to-day administrative operations, office documentation, and filing for programme activities"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states administrative operations but no office documentation or filing (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "administrative operations (restored in the verified responsibility above)"
       - text: "Supported finance and procurement documentation, including payment records and expenditure paperwork, in line with internal procedures"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states procurement processes and financial documentation but no payment records, expenditure paperwork, or internal procedures (evidence-recovery audit: PARTIALLY_SUPPORTED)"
+        restored_portion: "procurement processes and financial documentation (restored in the verified responsibility above)"
       - text: "Maintained supply and stock records and supported follow-up of administrative issues with the responsible officer"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states program logistics but no supply or stock records for this position (evidence-recovery audit: NOT_SUPPORTED)"
       - text: "Coordinated with programme colleagues and external counterparts on administrative follow-up and reporting"
         verified: false
         status: "NEEDS_VERIFICATION"
-        basis: "system-authored scope draft; the applicant supplied no duties for this position"
+        basis: "system-authored scope draft; the applicant's supplied CV states no such duty for this position (evidence-recovery audit: NOT_SUPPORTED)"
     verified: true
 
 skills:
@@ -281,9 +336,9 @@ skills:
       verified: true
     - name: "IMAM/CMAM"
       verified: true
-    - name: "SAM/MAM"
+    - name: "SAM"
       verified: true
-    - name: "TFU/OTP"
+    - name: "TFU"
       verified: true
     - name: "IMNCI"
       verified: true
@@ -294,18 +349,29 @@ skills:
   public_health:
     - name: "BPHS/EPHS"
       verified: true
-    - name: "HMIS/DHIS2"
+    - name: "HMIS/DHIS2 Reporting & Data Quality"
       verified: true
-    - name: "MoPH liaison/coordination"
+    # Restored to the applicant's own core-competency wording ("Provincial &
+    # Ministry of Public Health Stakeholder Coordination"); the ministry is
+    # spelled out because that is how the applicant writes it.
+    - name: "Provincial & Ministry of Public Health Stakeholder Coordination"
       verified: true
+    # Held: "clinical audit" and "quality improvement" appear nowhere in the
+    # applicant-supplied CV, its competencies, or its certificates; the wording
+    # originated in the system-authored draft vocabulary. Kept out of every
+    # generated document until the applicant supplies it.
     - name: "Clinical audit/quality improvement"
-      verified: true
+      verified: false
     - name: "Emergency/outbreak/COVID response"
       verified: true
+    # Held: the applicant supplied HMIS/DHIS2 reporting and data quality, and
+    # three years of combined field experience, but no monitoring duty. Held
+    # rather than inferred from the profession.
     - name: "Field monitoring/reporting"
-      verified: true
-    - name: "Stakeholder coordination"
-      verified: true
+      verified: false
+    # Consolidated: the standalone "Stakeholder coordination" entry duplicated
+    # the applicant's own "Provincial & Ministry of Public Health Stakeholder
+    # Coordination", so it is not listed as a separate competency.
     - name: "Safeguarding/PSEA"
       verified: true
     - name: "Child Protection"

@@ -306,6 +306,18 @@ def parse_cover_letter_text(text: str, metadata: dict[str, Any] | None = None) -
     }
 
 
+def _reference_shown_in_heading(model: dict[str, Any]) -> bool:
+    """Show the vacancy reference in the letter heading only if the subject lacks it.
+
+    The subject line carries the reference whenever the posting asks for it, so
+    printing it again in the heading would only repeat the same value.
+    """
+    reference = str(model.get("reference") or "").strip()
+    if not reference:
+        return False
+    return reference not in str(model.get("subject") or "")
+
+
 def _full_name_from_package(package: dict[str, Any]) -> str:
     for item in package.get("form_fields_checklist", []) or []:
         if str(item).startswith("Full name:"):
@@ -403,6 +415,21 @@ def _register_fonts() -> tuple[str, str, str, str]:
                 break
         if name not in resolved:
             resolved[name] = builtin_fallbacks[name]
+    # ReportLab silently drops markup emphasis unless the family is registered:
+    # a bare ``<b>`` in a Paragraph is otherwise rendered in the regular weight.
+    # There is no bundled italic face, so italic maps to the regular face rather
+    # than to a slanted substitute -- emphasis in these documents is bold.
+    for family, (regular, bold) in {
+        "JFSerif": ("JFSerif", "JFSerifBold"),
+        "JFSans": ("JFSans", "JFSansBold"),
+    }.items():
+        pdfmetrics.registerFontFamily(
+            family,
+            normal=resolved[regular],
+            bold=resolved[bold],
+            italic=resolved[regular],
+            boldItalic=resolved[bold],
+        )
     return resolved["JFSerif"], resolved["JFSerifBold"], resolved["JFSans"], resolved["JFSansBold"]
 
 
@@ -547,7 +574,7 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import Paragraph, SimpleDocTemplate
+    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate
 
     serif, serif_bold, sans, sans_bold = _register_fonts()
     doc = SimpleDocTemplate(
@@ -609,7 +636,10 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
         for group in groups:
             items = " · ".join(esc(item) for item in group.get("items") or [])
             label = esc(group.get("group") or "")
-            story.append(Paragraph(f"<b>{label}:</b> {items}" if label else items, group_style))
+            paragraph = Paragraph(f"<b>{label}:</b> {items}" if label else items, group_style)
+            # A group label must never be left stranded at the foot of a page
+            # with its competencies continuing overleaf.
+            story.append(KeepTogether(paragraph))
 
     experience = list(model.get("experience") or [])
     if experience:
@@ -630,8 +660,14 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
     ]:
         if values:
             story.append(Paragraph(title, section_style))
+            # A single statement is set as a line; only a real list is bulleted,
+            # matching how LANGUAGES and REFERENCES are set.
+            single = len(values) == 1
             for value in values:
-                story.append(Paragraph(esc(value), bullet_style, bulletText="\u2022"))
+                if single:
+                    story.append(Paragraph(esc(value), body_style))
+                else:
+                    story.append(Paragraph(esc(value), bullet_style, bulletText="\u2022"))
     if model.get("languages"):
         story.append(Paragraph("LANGUAGES", section_style))
         language_line = "  |  ".join(f"{name}{(' — ' + level) if level else ''}" for name, level in model.get("languages") or [])
@@ -808,8 +844,14 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
     ]:
         if values:
             add_section(title)
+            # Mirrors the PDF: a single statement is set as a line, and only a
+            # real list is bulleted.
+            single = len(values) == 1
             for value in values:
-                add_bullet(value)
+                if single:
+                    doc.add_paragraph(str(value), style="CV Body")
+                else:
+                    add_bullet(value)
     if model.get("languages"):
         add_section("LANGUAGES")
         language_line = "  |  ".join(f"{name}{(' — ' + level) if level else ''}" for name, level in model.get("languages") or [])
@@ -902,7 +944,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
     if target_line:
         story.append(Paragraph(esc(target_line), target_style))
     recipient = f"To: Hiring Committee, {model.get('target_org')}" if model.get("target_org") else "To: Hiring Committee"
-    if model.get("reference"):
+    if _reference_shown_in_heading(model):
         recipient += f" | Reference: {model.get('reference')}"
     story.append(Paragraph(esc(recipient), recipient_style))
     story.append(Paragraph("SUBJECT", section_style))
@@ -966,7 +1008,7 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
     doc.add_paragraph(" | ".join([x for x in [contact.get("location"), contact.get("phone"), contact.get("email")] if x]), style="JF Contact")
     doc.add_paragraph(f"APPLICATION LETTER — {model.get('target_role')} — {model.get('target_org')}", style="JF Label")
     recipient = f"To: Hiring Committee, {model.get('target_org')}"
-    if model.get("reference"):
+    if _reference_shown_in_heading(model):
         recipient += f" | Reference: {model.get('reference')}"
     doc.add_paragraph(recipient, style="JF Contact")
     doc.add_paragraph("SUBJECT", style="JF Section")

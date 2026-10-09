@@ -1346,20 +1346,82 @@ def is_valid_application_url(url: str | None) -> bool:
     return is_valid_http_url(url)
 
 
-# "vacancy number in the subject line", "job title in the subject". The posting
-# names the item that goes in the email subject; the vacancy number is then the
-# subject itself, so no title or other wording is added.
+# The posting names the item that goes in the email subject. A vacancy
+# *identifier* and a role *title* are different things and must never be
+# substituted for one another: "vacancy number in the subject line" asks for a
+# reference code, while "job title in the subject line" asks for the role name.
+# ``title`` is therefore deliberately absent from the identifier alternation.
 _VACANCY_NUMBER_IN_SUBJECT = (
-    r"\b(?:vacancy|job|position|reference|announcement)\s*(?:number|no\.?|code|reference|title|id)\b"
-    r"[^.\n]{0,40}\b(?:in|on)\s+the\s+subject(?:\s+line)?\b"
+    r"\b(?:vacancy|job|position|reference|announcement)\s*(?:number|no\.?|code|reference|id)\b"
+    r"[^.\n]{0,40}\b(?:in|on|as)\s+the\s+(?:e-?mail\s+)?subject(?:\s+line)?\b"
 )
+_JOB_TITLE_IN_SUBJECT = (
+    r"\b(?:job|position|post|role|vacancy)\s+title\b"
+    r"[^.\n]{0,40}\b(?:in|on|as)\s+the\s+(?:e-?mail\s+)?subject(?:\s+line)?\b"
+)
+# The same instruction is often written the other way round, for example
+# "the subject line must include the vacancy number". Only the compound
+# "subject line" is accepted in that direction, so ordinary prose such as
+# "the appointment is subject to the position title" is not an instruction.
+_SUBJECT_FIELD_PATTERNS: dict[str, tuple[str, ...]] = {
+    "vacancy_number": (
+        _VACANCY_NUMBER_IN_SUBJECT,
+        r"\bsubject\s+line\b[^.\n]{0,60}\b(?:vacancy|job|position|reference|announcement)\s*(?:number|no\.?|code|reference|id)\b",
+    ),
+    "job_title": (
+        _JOB_TITLE_IN_SUBJECT,
+        r"\bsubject\s+line\b[^.\n]{0,60}\b(?:job|position|post|role|vacancy)\s+title\b",
+    ),
+}
+
+VACANCY_NUMBER_SUBJECT = "vacancy_number"
+JOB_TITLE_SUBJECT = "job_title"
+BOTH_SUBJECT_FIELDS = "both"
+
+
+def _subject_field_named(text: str, field: str) -> bool:
+    return any(
+        re.search(pattern, text, flags=re.IGNORECASE)
+        for pattern in _SUBJECT_FIELD_PATTERNS[field]
+    )
+
+
+def classify_application_subject_requirement(text: str) -> str | None:
+    """Return which named field a posting requires inside the email subject.
+
+    ``"vacancy_number"`` is a vacancy/reference/announcement *identifier*,
+    ``"job_title"`` is the role/post *title*, ``"both"`` means the posting
+    explicitly names the two of them, and ``None`` means it names neither. The
+    two are deliberately kept apart so a posting that asks for the job title is
+    never answered with a vacancy code, and a posting that asks for a vacancy
+    code is never answered with the title.
+    """
+    body = text or ""
+    wants_number = _subject_field_named(body, VACANCY_NUMBER_SUBJECT)
+    wants_title = _subject_field_named(body, JOB_TITLE_SUBJECT)
+    if wants_number and wants_title:
+        return BOTH_SUBJECT_FIELDS
+    if wants_number:
+        return VACANCY_NUMBER_SUBJECT
+    if wants_title:
+        return JOB_TITLE_SUBJECT
+    return None
 
 
 def extract_application_subject(text: str, title: str = "") -> str | None:
-    if re.search(_VACANCY_NUMBER_IN_SUBJECT, text or "", flags=re.IGNORECASE):
-        reference = extract_reference_number(text or "")
+    body = text or ""
+    requirement = classify_application_subject_requirement(body)
+    role_title = str(title or "").strip()
+    if requirement in {VACANCY_NUMBER_SUBJECT, BOTH_SUBJECT_FIELDS}:
+        reference = extract_reference_number(body)
         if reference:
+            # Both fields named explicitly: keep both, identifier first, so
+            # neither required field is silently dropped for the other.
+            if requirement == BOTH_SUBJECT_FIELDS and role_title:
+                return f"{reference} – {role_title}"
             return reference
+    if role_title and requirement in {JOB_TITLE_SUBJECT, BOTH_SUBJECT_FIELDS}:
+        return role_title
     if title and (
         re.search(r"\b(?:mention|write|include|indicat(?:e|ing))\b[^\n\r]{0,120}\b(?:job\s+title|position(?:\s+title)?|title)\b[^\n\r]{0,120}\bsubject\b", text or "", flags=re.IGNORECASE)
         or re.search(r"\bmention\b[^\n\r]{0,80}\bposition\b[^\n\r]{0,120}\bsubject\b", text or "", flags=re.IGNORECASE)
@@ -1396,7 +1458,10 @@ def application_subject_required(text: str) -> bool:
     text = text or ""
     english_patterns = [
         # "Send CV with vacancy number in the subject line" (ACBAR wording).
-        _VACANCY_NUMBER_IN_SUBJECT,
+        *_SUBJECT_FIELD_PATTERNS[VACANCY_NUMBER_SUBJECT],
+        # "Send CV with job title in the subject line": a role title, which is
+        # not a vacancy identifier and is filled from the role title.
+        *_SUBJECT_FIELD_PATTERNS[JOB_TITLE_SUBJECT],
         # "Email subject: ...", "Subject line must include vacancy code".
         r"\b(?:email|e-mail)\s+subject(?:\s+line)?\b[^.\n]{0,160}\b(?:must|should|include|write|mention|indicate|state|use|required|as)\b",
         r"\bsubject\s+line\b[^.\n]{0,160}\b(?:must|should|include|write|mention|indicate|state|use|required|as)\b",

@@ -306,6 +306,18 @@ def parse_cover_letter_text(text: str, metadata: dict[str, Any] | None = None) -
     }
 
 
+def _reference_shown_in_heading(model: dict[str, Any]) -> bool:
+    """Show the vacancy reference in the letter heading only if the subject lacks it.
+
+    The subject line carries the reference whenever the posting asks for it, so
+    printing it again in the heading would only repeat the same value.
+    """
+    reference = str(model.get("reference") or "").strip()
+    if not reference:
+        return False
+    return reference not in str(model.get("subject") or "")
+
+
 def _full_name_from_package(package: dict[str, Any]) -> str:
     for item in package.get("form_fields_checklist", []) or []:
         if str(item).startswith("Full name:"):
@@ -932,7 +944,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
     if target_line:
         story.append(Paragraph(esc(target_line), target_style))
     recipient = f"To: Hiring Committee, {model.get('target_org')}" if model.get("target_org") else "To: Hiring Committee"
-    if model.get("reference"):
+    if _reference_shown_in_heading(model):
         recipient += f" | Reference: {model.get('reference')}"
     story.append(Paragraph(esc(recipient), recipient_style))
     story.append(Paragraph("SUBJECT", section_style))
@@ -996,7 +1008,7 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
     doc.add_paragraph(" | ".join([x for x in [contact.get("location"), contact.get("phone"), contact.get("email")] if x]), style="JF Contact")
     doc.add_paragraph(f"APPLICATION LETTER — {model.get('target_role')} — {model.get('target_org')}", style="JF Label")
     recipient = f"To: Hiring Committee, {model.get('target_org')}"
-    if model.get("reference"):
+    if _reference_shown_in_heading(model):
         recipient += f" | Reference: {model.get('reference')}"
     doc.add_paragraph(recipient, style="JF Contact")
     doc.add_paragraph("SUBJECT", style="JF Section")

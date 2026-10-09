@@ -1125,25 +1125,44 @@ def _experience_coverage_clauses(evidence, rank_key=None) -> list[str]:
     return clauses
 
 
-def _cover_letter_subject(*, requested: str | None, reference: str | None, title: str) -> str:
-    """Return the cover-letter subject line.
-
-    A subject the posting itself asks for is used verbatim. Otherwise the vacancy
-    reference alone is the subject: the letter heading already states the role,
-    so repeating the title in the subject adds nothing. The title is used only
-    when the vacancy has no reference at all.
-    """
-    if requested:
-        return str(requested)
-    if reference:
-        return str(reference)
-    return str(title)
-
-
 def _is_health_supervisory_role(job: dict[str, Any]) -> bool:
     """True for a supervisory health or nutrition vacancy, judged by its title."""
     title = str(job.get("title") or "").lower()
     return "supervisor" in title and ("health" in title or "nutrition" in title)
+
+
+# Priority tiers for a supervisory health/nutrition letter, strongest first.
+# Clinical, safeguarding, and other lines fall after every tier.
+_SUPERVISORY_TIER_TERMS = (
+    ("supervis", "nutrition", "bphs", "ephs"),
+    ("logistic", "supply", "procure"),
+    ("coordinat", "ministry of public health", "moph", "stakeholder", "health authorit"),
+    ("hmis", "dhis2"),
+)
+
+
+def _supervisory_tier(text: str) -> int:
+    lower = text.lower()
+    for tier, terms in enumerate(_SUPERVISORY_TIER_TERMS):
+        if any(term in lower for term in terms):
+            return tier
+    return len(_SUPERVISORY_TIER_TERMS)
+
+
+def _supervisory_letter_highlights(items: list[str], *, limit: int) -> list[str]:
+    """Order verified evidence for a supervisory letter; select, never add.
+
+    Role-attributed experience lines come before bare competency lines (a line
+    with a ``|`` in its attribution is a role). Within that, the priority tier
+    decides, and the vacancy ranking order breaks ties.
+    """
+
+    def key(pair: tuple[int, str]) -> tuple[bool, int, int]:
+        index, text = pair
+        is_experience = "|" in text
+        return (not is_experience, _supervisory_tier(text), index)
+
+    return [text for _, text in sorted(enumerate(items), key=key)][:limit]
 
 
 # Experience dimensions in the order a supervisory health/nutrition letter leads with.
@@ -1503,7 +1522,14 @@ def generate_tailored_documents(
 
     focus_labels = _focus_labels(match_report)
     focus_phrases = _job_focus_phrases(job, match_report)
-    vacancy_highlights = _vacancy_fit_highlights(profile, job, match_report, limit=6)
+    if _is_health_supervisory_role(job):
+        # Every verified evidence line is a candidate; the supervisory priority
+        # orders them. The vacancy-overlap filter is not used here, because it
+        # would drop verified logistics evidence that shares no keyword with
+        # the vacancy text.
+        vacancy_highlights = _supervisory_letter_highlights(_profile_evidence_lines(profile), limit=6)
+    else:
+        vacancy_highlights = _vacancy_fit_highlights(profile, job, match_report, limit=6)
 
     # DOCUMENT EVIDENCE GATE: every factual section below is restricted to
     # explicitly verified items. Credential-style facts (education, license,
@@ -1609,10 +1635,11 @@ def generate_tailored_documents(
     facts = match_report.get("facts", {})
     metadata = job.get("metadata", {}) if isinstance(job.get("metadata", {}), dict) else {}
     reference = facts.get("reference_number") or metadata.get("reference_number")
-    suggested_subject = _cover_letter_subject(
-        requested=facts.get("application_subject") or metadata.get("application_subject"),
-        reference=reference,
-        title=title,
+    # One subject rule for the letter and the email draft, so they cannot drift.
+    suggested_subject = _email_subject(
+        str(job.get("title") or ""),
+        requested_subject=str(facts.get("application_subject") or metadata.get("application_subject") or ""),
+        reference=str(reference or ""),
     )
 
     cover_lines = [

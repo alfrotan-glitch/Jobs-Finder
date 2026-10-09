@@ -162,3 +162,107 @@ def test_evidence_bullets_carry_no_parentheses_pipes_or_dates():
             assert "(" not in bullet and ")" not in bullet, bullet
             assert "|" not in bullet, bullet
             assert not re.search(r"\b(?:19|20)\d{2}\b", bullet), bullet
+
+
+# 4. Email-subject requirement, subject consistency, and heading duplication.
+
+
+def _prepared_bundle(job: dict, tmp_path) -> dict:
+    from utils.documents import prepare_application_bundle
+
+    profile = load_canonical_profile(required=True)
+    report = match_job_against_profile(job, profile).to_dict()
+    return prepare_application_bundle(job, profile, report, out_dir=tmp_path)
+
+
+def test_posting_asking_for_vacancy_number_in_subject_is_a_subject_requirement():
+    from utils.medical_requirements import (
+        application_subject_required,
+        extract_application_subject,
+    )
+
+    text = "Send CV with vacancy number in the subject line to recruitment@example.org."
+    assert application_subject_required(text) is True
+    assert extract_application_subject(f"Vacancy Number: HNTPO-MD-1012026. {text}") == "HNTPO-MD-1012026"
+
+
+def test_plain_application_route_is_not_a_subject_requirement():
+    from utils.medical_requirements import application_subject_required
+
+    assert application_subject_required("Send your CV to recruitment@example.org by 2026-10-10.") is False
+
+
+def test_medical_doctor_email_subject_is_the_vacancy_number(tmp_path):
+    draft = _prepared_bundle(_acbar_medical_doctor(), tmp_path)["application_package"]["email_draft"]
+    assert draft["subject"] == "HNTPO-MD-1012026"
+
+
+def test_letter_subject_and_email_subject_are_identical(tmp_path):
+    for job in (_acbar_medical_doctor(), _constructed_health_nutrition()):
+        bundle = _prepared_bundle(job, tmp_path)
+        letter_subject = _letter_lines(job)[0].removeprefix("Subject: ")
+        assert bundle["application_package"]["email_draft"]["subject"] == letter_subject, job["title"]
+
+
+def test_health_nutrition_subject_is_the_standard_role_subject_without_a_reference():
+    assert _letter_lines(_constructed_health_nutrition())[0] == "Subject: Application – Health & Nutrition Supervisor"
+
+
+def test_heading_reference_is_omitted_when_the_subject_already_carries_it():
+    from utils.document_design import _reference_shown_in_heading
+
+    assert _reference_shown_in_heading({"reference": "HNTPO-MD-1012026", "subject": "HNTPO-MD-1012026"}) is False
+    assert _reference_shown_in_heading({"reference": "HNTPO-MD-1012026", "subject": "Application – X"}) is True
+    assert _reference_shown_in_heading({"reference": "", "subject": "Application"}) is False
+
+
+def _docx_text(path) -> str:
+    import zipfile
+
+    xml = zipfile.ZipFile(path).read("word/document.xml").decode("utf8")
+    return re.sub(r"<[^>]+>", " ", xml)
+
+
+def test_medical_doctor_cover_letter_docx_states_the_reference_once(tmp_path):
+    paths = _prepared_bundle(_acbar_medical_doctor(), tmp_path)["generated_paths"]
+    docx = paths["cover_letter"]["docx"]
+    assert _docx_text(docx).count("HNTPO-MD-1012026") == 1
+
+
+# 5. Role-specific evidence selection for the supervisory health/nutrition letter.
+
+
+def test_health_nutrition_bullets_lead_with_supervision_logistics_and_coordination():
+    from utils.documents import _supervisory_tier
+
+    bullets = _bullets(_letter_lines(_constructed_health_nutrition()))
+    assert bullets[0].startswith("Supervised mobile health and nutrition teams"), bullets
+    assert any("logistics" in bullet.lower() for bullet in bullets), bullets
+    assert all(_supervisory_tier(bullet) <= 2 for bullet in bullets), bullets
+
+
+def test_health_nutrition_bullets_drop_clinical_and_safeguarding_when_stronger_evidence_exists():
+    bullets = _bullets(_letter_lines(_constructed_health_nutrition()))
+    assert not any("SAM" in bullet or "Safeguarding" in bullet for bullet in bullets), bullets
+
+
+def test_supervisory_ordering_prefers_experience_then_tier_and_selects_only_existing_lines():
+    from utils.documents import _supervisory_letter_highlights
+
+    items = [
+        "Team supervision/capacity building",
+        "Delivered clinical assessment, diagnosis, treatment, and follow-up care for children with SAM (Medical Doctor | ACF | Sang-e-Takht)",
+        "Maintained accurate HMIS records and served as Safeguarding Focal Point (TFU Medical Doctor | ACF | Sang-e-Takht)",
+        "Supported administrative operations, procurement processes, and program logistics (Administrative and Finance Officer | TBT)",
+        "Supervised mobile health and nutrition teams delivering community-based BPHS/EPHS-related services (Health & Nutrition Supervisor | ACF)",
+    ]
+    selected = _supervisory_letter_highlights(items, limit=3)
+    assert selected[0].startswith("Supervised mobile"), selected
+    assert selected[1].startswith("Supported administrative"), selected
+    assert "Team supervision/capacity building" not in selected
+    assert set(selected) <= set(items)
+
+
+def test_medical_doctor_bullets_keep_their_established_order():
+    bullets = _bullets(_letter_lines(_acbar_medical_doctor()))
+    assert bullets[0].startswith("Coordinated with Ministry of Public Health"), bullets

@@ -574,7 +574,12 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate
+    from reportlab.platypus import (
+        HRFlowable,
+        KeepTogether,
+        Paragraph,
+        SimpleDocTemplate,
+    )
 
     serif, serif_bold, sans, sans_bold = _register_fonts()
     doc = SimpleDocTemplate(
@@ -627,6 +632,9 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
     contact_line = _cv_contact_line(model)
     if contact_line:
         story.append(Paragraph(esc(contact_line), contact_style))
+    # The same gold hairline that anchors the cover-letter letterhead closes
+    # the CV masthead, so both documents share one visual identity.
+    story.append(HRFlowable(width="100%", thickness=0.9, color=colors.HexColor(Theme.gold), spaceBefore=1, spaceAfter=9))
     if model.get("profile"):
         story.append(Paragraph("PROFESSIONAL SUMMARY", section_style))
         story.append(Paragraph(esc(model.get("profile")), body_style))
@@ -818,6 +826,20 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
     contact_line = _cv_contact_line(model)
     if contact_line:
         doc.add_paragraph(contact_line, style="CV Contact")
+
+    # The same gold hairline that closes the cover-letter letterhead closes the
+    # CV masthead, so both Word documents share one visual identity.
+    rule = doc.add_paragraph()
+    rule.paragraph_format.space_before = Pt(1)
+    rule.paragraph_format.space_after = Pt(8)
+    pPr = rule._p.get_or_add_pPr()
+    borders = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "6")
+    bottom.set(qn("w:color"), "A88449")
+    borders.append(bottom)
+    pPr.append(borders)
 
     if model.get("profile"):
         add_section("PROFESSIONAL SUMMARY")

@@ -1154,11 +1154,13 @@ def _parse_reliefweb_detail(html: str, job: Job) -> Job:
         if title and title.lower() not in {"jobs", "reliefweb"}:
             job.title = title
     job.description = normalize_space(text)  # Preserve complete official detail text, including late application instructions.
-    company = _labeled_value(text, r"Organization") or _labeled_value(text, r"Source")
+    company = _clean_reliefweb_employer(_labeled_value(text, r"Organization")) or _clean_reliefweb_employer(
+        _labeled_value(text, r"Source")
+    )
     if company:
         job.company = company
         job.metadata["organization"] = company
-    country = _labeled_value(text, r"Country")
+    country = _clean_reliefweb_field(_labeled_value(text, r"Country"))
     if country:
         job.location = country
         job.metadata["location"] = country
@@ -1221,12 +1223,51 @@ def _guess_location(text: str) -> str:
     return ", ".join(dict.fromkeys(found[:4]))
 
 
+# Labels that begin the next ReliefWeb field. A value ends at the first one.
+_RELIEFWEB_FIELD_LABELS = (
+    r"Organi[sz]ation|Source|Country|Location|Closing date|Closing|Deadline|Posted|"
+    r"How to apply|Apply|Career type|Job type|Theme|Type|Experience|Language|"
+    r"Reference|Vacancy"
+)
+
+
+def _clean_reliefweb_field(value: str) -> str:
+    """Return a single field value, cut at the next label, date or separator.
+
+    ReliefWeb card and detail text run fields together ("Organization: WHO
+    Closing date: 2026-10-15"). A value that still contains a date, a closing or
+    deadline word, or a URL is not a name, so it is rejected rather than stored.
+    """
+    text = normalize_space(value or "")
+    text = re.split(rf"\s+(?:{_RELIEFWEB_FIELD_LABELS})\s*:", text, maxsplit=1, flags=re.IGNORECASE)[0]
+    text = re.split(rf"\s+(?:{_RELIEFWEB_FIELD_LABELS})\s+(?=\d)", text, maxsplit=1, flags=re.IGNORECASE)[0]
+    text = re.split(r"\s+(?:closing|deadline|posted)\b", text, maxsplit=1, flags=re.IGNORECASE)[0]
+    text = re.split(r"\s+\d{4}[-/]\d{1,2}[-/]\d{1,2}\b|\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}\b", text, maxsplit=1)[0]
+    text = re.split(r"[|\u2022;]", text, maxsplit=1)[0]
+    text = normalize_space(text).strip(" .,-:")
+    if not text or len(text) > 100:
+        return ""
+    if re.search(r"\d{4}[-/]\d{1,2}|\b(?:closing|deadline)\b|https?://", text, flags=re.IGNORECASE):
+        return ""
+    return text
+
+
+def _clean_reliefweb_employer(value: str) -> str:
+    """An employer must be a name: a cleaned field that is not a bare place or placeholder."""
+    company = _clean_reliefweb_field(value)
+    if company.lower() in {"afghanistan", "kabul", "n/a", "none", "unknown"}:
+        return ""
+    return company
+
+
 def _guess_reliefweb_company(context: str) -> str:
-    patterns = [r"Organization\s*[:\-]\s*([^|]+)", r"Source\s*[:\-]\s*([^|]+)"]
+    patterns = [r"Organi[sz]ation\s*[:\-]\s*(.+)", r"Source\s*[:\-]\s*(.+)"]
     for pattern in patterns:
         match = re.search(pattern, context, flags=re.IGNORECASE)
         if match:
-            return normalize_space(match.group(1))[:100]
+            company = _clean_reliefweb_employer(match.group(1))
+            if company:
+                return company
     return ""
 
 

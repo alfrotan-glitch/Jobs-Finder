@@ -43,6 +43,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from utils.medical_matcher import MET, NEEDS_VERIFICATION, NOT_ELIGIBLE_STATUS, NOT_MET
+from utils.paths import project_path
 from utils.profile import (
     build_profile_evidence,
     is_unresolved_value,
@@ -1404,7 +1405,7 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
 def write_master_cv(
     profile: dict[str, Any],
     *,
-    out_dir: str | Path = "documents/master_cv",
+    out_dir: str | Path = project_path("documents/master_cv"),
 ) -> dict[str, Any]:
     """Write TXT/DOCX/PDF position-neutral master-CV artifacts locally.
 
@@ -2225,7 +2226,7 @@ def write_application_bundle_files(
     tailored_documents: dict[str, Any],
     package: dict[str, Any],
     *,
-    out_dir: str | Path = "documents/applications",
+    out_dir: str | Path = project_path("documents/applications"),
 ) -> dict[str, Any]:
     """Persist a complete review package for one vacancy.
 
@@ -2285,7 +2286,7 @@ def prepare_application_bundle(
     profile: dict[str, Any],
     match_report: dict[str, Any],
     *,
-    out_dir: str | Path = "documents/applications",
+    out_dir: str | Path = project_path("documents/applications"),
 ) -> dict[str, Any]:
     """Generate documents, application package, and file exports for one job.
 

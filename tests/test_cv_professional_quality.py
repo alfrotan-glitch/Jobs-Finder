@@ -614,6 +614,7 @@ def test_safeguarding_vacancy_surfaces_verified_safeguarding_evidence():
     # that appointment (awareness, reporting channels, policy compliance) are
     # unsupported drafts and must stay out.
     assert "served as Safeguarding Focal Point supporting PSEA and child protection" in cv
+    assert "Acted as site Safeguarding and PSEA Focal Point" not in cv
     assert "reporting channels" not in cv
     assert "compliance with organizational policy" not in cv
 

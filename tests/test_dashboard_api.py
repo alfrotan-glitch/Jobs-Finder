@@ -353,6 +353,49 @@ def test_master_cv_endpoint_writes_all_artifacts_without_mutating_or_submitting(
     assert profile_repository.canonical_profile_path().read_bytes() == before
 
 
+def _repository_documents_snapshot() -> dict[str, tuple[int, int]]:
+    """Size and mtime of every file under the repository's ignored documents/ folder."""
+    from utils.paths import PROJECT_ROOT
+
+    root = PROJECT_ROOT / "documents"
+    if not root.exists():
+        return {}
+    return {
+        path.relative_to(root).as_posix(): (path.stat().st_size, path.stat().st_mtime_ns)
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+def test_dashboard_master_cv_never_writes_to_the_repository_documents_folder(tmp_path, monkeypatch):
+    """Regression: the endpoint once wrote to the repo's documents/ despite the test's ROOT patch."""
+    monkeypatch.setattr(profile_repository, "CANONICAL_PROFILE_PATH", tmp_path / "profile.yaml")
+    monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
+    monkeypatch.setattr(server, "ROOT", tmp_path)
+    profile_repository.save_canonical_profile(CANONICAL_DASHBOARD_PROFILE)
+    before = _repository_documents_snapshot()
+
+    response = TestClient(server.app).post("/api/master-cv")
+
+    assert response.status_code == 200
+    written = Path(response.json()["documents"]["pdf"]).resolve()
+    assert tmp_path.resolve() in written.parents
+    assert _repository_documents_snapshot() == before
+
+
+def test_generation_output_directories_do_not_depend_on_the_working_directory():
+    """Defaults are anchored to the project root, never the process CWD (see utils/paths.py)."""
+    import inspect
+
+    from utils.documents import prepare_application_bundle, write_master_cv
+    from utils.paths import PROJECT_ROOT
+
+    for function in (write_master_cv, prepare_application_bundle):
+        default = Path(inspect.signature(function).parameters["out_dir"].default)
+        assert default.is_absolute(), function.__name__
+        assert PROJECT_ROOT in default.parents, function.__name__
+
+
 def test_profile_view_separates_confirmed_scope_from_unconfirmed_drafts(tmp_path, monkeypatch):
     """The owner-facing view must never pass a draft off as confirmed experience.
 

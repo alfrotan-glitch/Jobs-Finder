@@ -682,7 +682,7 @@ def api_master_cv():
     never mutates ``profile.yaml``.
     """
     profile = _runtime_profile(True)
-    master = write_master_cv(profile)
+    master = write_master_cv(profile, out_dir=ROOT / "documents" / "master_cv")
     return {
         "ok": True,
         "position_neutral": bool(master.get("position_neutral")),
@@ -710,7 +710,7 @@ def api_prepare(job_id: str):
     log_medical_match(job_id, report)
     if report.get("readiness_status") == NOT_ELIGIBLE_STATUS:
         raise HTTPException(status_code=409, detail="This vacancy is NOT_ELIGIBLE; no application package was generated.")
-    docs = prepare_application_bundle(job, profile, report)
+    docs = prepare_application_bundle(job, profile, report, out_dir=ROOT / "documents" / "applications")
     update_tailored_resume(job_id, docs)
     return {"job_id": job_id, "documents": docs.get("generated_paths", {}), "package": docs.get("application_package", {})}
 

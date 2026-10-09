@@ -507,12 +507,26 @@ def canonical_profile_completeness_report(profile: dict[str, Any] | None = None)
     ]
     work_ok = all(any(isinstance(item, dict) and is_verified_flag(item.get("verified")) and item.get("title") == title and item.get("organization") == org for item in work) for title, org in required_work)
     checks.append(_release_check("verified_work_history", work_ok, "All owner-supplied work-history entries are present and individually verified."))
-    acf_entries = [item for item in work if isinstance(item, dict) and item.get("organization") == "ACF-International"]
-    checks.append(_release_check("acf_dates_non_precise", len(acf_entries) == 2 and all(not item.get("start") and not item.get("end") for item in acf_entries), "ACF role dates were not supplied and remain intentionally blank.", non_precise=True))
+    acf_dates = {
+        "TFU Medical Doctor & Safeguarding Focal Point": ("2023-05", "2025-07"),
+        "Health & Nutrition Supervisor": ("2022-02", "2022-12"),
+    }
+    acf_entries = {item.get("title"): item for item in work if isinstance(item, dict) and item.get("organization") == "ACF-International"}
+    checks.append(_release_check(
+        "acf_dates_supplied",
+        set(acf_entries) == set(acf_dates) and all(
+            str(acf_entries[title].get("start")) == start and str(acf_entries[title].get("end")) == end
+            for title, (start, end) in acf_dates.items()
+        ),
+        "Both ACF-International roles carry the dates the applicant supplied.",
+    ))
 
     skill_claims = {claim.casefold() for claim in _normalised_claims(skills)}
-    medical_skill_claims = ["health & nutrition program implementation", "imam/cmAM", "sam/mam", "tfu/otp", "imnci", "iycf", "infection prevention and control (ipc)"]
-    public_skill_claims = ["bphs/ephs", "hmis/dhis2", "moph liaison/coordination", "clinical audit/quality improvement", "emergency/outbreak/covid response", "safeguarding/psea"]
+    # Expected claims are the applicant-supplied competency set. Vocabulary that
+    # only ever came from system-authored drafts (OTP, MAM, clinical audit,
+    # quality improvement) is deliberately absent: it is held, not verified.
+    medical_skill_claims = ["health & nutrition program implementation", "imam/cmam", "sam", "tfu", "imnci", "iycf", "infection prevention and control (ipc)"]
+    public_skill_claims = ["bphs/ephs", "hmis/dhis2 reporting & data quality", "provincial & ministry of public health stakeholder coordination", "emergency/outbreak/covid response", "safeguarding/psea"]
     management_skill_claims = ["team supervision/capacity building", "medical supply forecasting/logistics", "procurement/admin/finance support"]
     def all_claims(expected: list[str]) -> bool:
         return all(value.casefold() in skill_claims for value in expected)
@@ -881,7 +895,16 @@ def _add_verified_profile_terms(evidence: ProfileEvidence, profile: dict[str, An
     if isinstance(work, list):
         for entry in work:
             if isinstance(entry, dict) and is_verified_flag(entry.get("verified")):
-                text = "\n".join(_iter_strings({k: v for k, v in entry.items() if k != "verified"}))
+                # Held drafts are NOT confirmed facts. Promoting their wording to
+                # verified evidence would let an unsupported suggestion satisfy a
+                # vacancy requirement, so only the role's own facts and its
+                # verified responsibilities count.
+                confirmed = {
+                    key: value
+                    for key, value in entry.items()
+                    if key not in {"verified", "needs_verification"}
+                }
+                text = "\n".join(_iter_strings(confirmed))
                 _add_term_matches(evidence, text, "profile.work_history", verified=True)
     for key in ["skills", "certificates"]:
         for item in _iter_dicts(profile.get(key)):

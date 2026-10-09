@@ -70,7 +70,7 @@ def test_real_canonical_profile_is_complete_without_forcing_unsupported_precisio
     assert report["release_ready"] is True
     assert statuses["identity"] == VERIFIED
     assert statuses["clinical_experience_lower_bound"] == KNOWN_BUT_NON_PRECISE
-    assert statuses["acf_dates_non_precise"] == KNOWN_BUT_NON_PRECISE
+    assert statuses["acf_dates_supplied"] == VERIFIED
     for key in ["license_number", "license_issue_date", "license_expiry_date", "license_document_path"]:
         assert statuses[key] == NOT_PROVIDED
 

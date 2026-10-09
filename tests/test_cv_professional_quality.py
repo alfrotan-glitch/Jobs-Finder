@@ -418,9 +418,11 @@ def test_master_cv_never_prints_unverified_or_private_facts():
     assert registration["number"] == ""
     assert registration["document_path"] == ""
     assert not re.search(r"\b(?:license|registration)\s*(?:no\.?|number)\b", text, flags=re.IGNORECASE)
-    # The two ACF roles keep deliberately unpresise (blank) dates.
+    # The two ACF roles print the dates the applicant supplied.
     acf_lines = [line for line in text.splitlines() if line.startswith("ACF-International")]
-    assert acf_lines and all("|" in line and len(line.split("|")) == 2 for line in acf_lines)
+    assert len(acf_lines) == 2, acf_lines
+    assert any("May 2023 – Jul 2025" in line for line in acf_lines), acf_lines
+    assert any("Feb 2022 – Dec 2022" in line for line in acf_lines), acf_lines
 
 
 def test_master_cv_never_invents_dates_numbers_or_achievements():
@@ -428,12 +430,14 @@ def test_master_cv_never_invents_dates_numbers_or_achievements():
     text = generate_master_cv(profile)["master_cv_text"]
 
     # The only years in the CV are the verified education years, certificate
-    # years, and the dated DPPHD/Governor's Office/TBT roles.
-    verified_years = {"2013", "2020", "2022", "2023", "2024", "2019", "2021"}
+    # years, and the roles' supplied dates (including the recovered ACF dates).
+    verified_years = {"2013", "2019", "2020", "2021", "2022", "2023", "2024", "2025"}
     for year in set(re.findall(r"\b(?:19|20)\d{2}\b", text)):
         assert year in verified_years, year
     # The DPPHD and Governor's Office and TBT dated ranges are month-formatted
     # from the supplied values, so an unsupplied month is never invented.
+    assert "May 2023 – Jul 2025" in text
+    assert "Feb 2022 – Dec 2022" in text
     assert "Oct 2020 – Dec 2020" in text
     assert "Dec 2020 – Aug 2021" in text
     assert "May 2019 – Sep 2019" in text
@@ -605,11 +609,13 @@ def test_safeguarding_vacancy_surfaces_verified_safeguarding_evidence():
     assert "Safeguarding/PSEA" in cv
     assert "Child Protection" in cv
     assert "Safeguarding & PSEA — ACF — 2024" in cv
-    # The verified scope line is what carries the safeguarding appointment: the
-    # role title itself records the Focal Point appointment. The system-authored
-    # duty clauses for that appointment are drafts and must stay out.
-    assert "site appointment as Safeguarding Focal Point" in cv
-    assert "Acted as site Safeguarding and PSEA Focal Point" not in cv
+    # The applicant-supplied CV duty carries the Focal Point appointment and the
+    # PSEA/child-protection support. The system-authored activity clauses for
+    # that appointment (awareness, reporting channels, policy compliance) are
+    # unsupported drafts and must stay out.
+    assert "served as Safeguarding Focal Point supporting PSEA and child protection" in cv
+    assert "reporting channels" not in cv
+    assert "compliance with organizational policy" not in cv
 
 
 def test_tailored_cv_artifacts_render_and_stay_private(tmp_path):
@@ -751,14 +757,17 @@ def test_duty_clause_guard_detects_a_reenabled_draft():
     applicant_facts = _applicant_supplied_facts(profile)
     flagged = _unanchored_duty_terms(draft, applicant_facts)
     assert flagged, draft
-    assert {"patients", "assessment", "diagnosis", "treatment"} <= flagged, sorted(flagged)
+    # The reinstated draft's own duty vocabulary is exactly what the guard flags.
+    assert {"inpatient", "otp", "outpatient", "monitored"} <= flagged, sorted(flagged)
 
 
 def test_unverified_responsibility_drafts_never_reach_a_document(tmp_path):
     """A draft is preserved and reported, never printed as verified experience."""
     profile = _profile()
     pending = _pending_responsibilities(profile)
-    assert len(pending) == 28, len(pending)
+    # Every draft that no applicant evidence supports is still held: nothing was
+    # deleted when the supported responsibilities were restored.
+    assert len(pending) == 24, len(pending)
     assert len({role for role, _ in pending}) == 5
 
     master = write_master_cv(profile, out_dir=tmp_path / "master")
@@ -783,7 +792,7 @@ def test_unverified_responsibility_drafts_never_reach_a_document(tmp_path):
     # The owner is told, in plain terms, that the drafts are not published.
     for warnings in (master["review_warnings"], docs["review_warnings"]):
         joined = " ".join(warnings)
-        assert "28 detailed responsibility draft(s)" in joined
+        assert "24 detailed responsibility draft(s)" in joined
         assert "NOT presented as verified experience" in joined
 
 
@@ -817,9 +826,9 @@ def test_tracked_profile_has_no_private_or_invented_precision_after_cv_work():
     data = yaml.safe_load(raw)
     work = data["work_history"]
     assert len(work) == 5
-    # ACF dates stay blank (never invented).
-    assert work[0]["start"] == "" and work[0]["end"] == ""
-    assert work[1]["start"] == "" and work[1]["end"] == ""
+    # ACF dates are exactly the values the applicant supplied (never invented).
+    assert (work[0]["start"], work[0]["end"]) == ("2023-05", "2025-07")
+    assert (work[1]["start"], work[1]["end"]) == ("2022-02", "2022-12")
     # Every other role keeps exactly the supplied dates.
     assert [(item["start"], item["end"]) for item in work[2:]] == [
         ("2020-10", "2020-12"),
@@ -979,3 +988,150 @@ def test_common_vacancy_wording_maps_to_verified_competency_terms():
     groups = [group["group"] for group in model["expertise"]]
     assert groups[0] == "Clinical & Medical Practice", groups
     assert "Infection Prevention and Control (IPC)" in " ".join(model["strengths"])
+
+
+# ---------------------------------------------------------------------------
+# Typography: the rendered PDF must carry the hierarchy the source requests
+# ---------------------------------------------------------------------------
+
+
+def test_pdf_typography_renders_emphasis_and_keeps_hierarchy(tmp_path):
+    """The rendered PDF must actually show the hierarchy the model encodes.
+
+    Regression guard: the fonts were once registered without a font family, so
+    ReportLab silently dropped every ``<b>`` in Paragraph markup and the
+    competency group labels printed in the same weight as their items, leaving
+    seven indistinguishable lines. Assert against real glyphs, not markup.
+    """
+    profile = _profile()
+    master = write_master_cv(profile, out_dir=tmp_path)
+    with pdfplumber.open(master["generated_paths"]["pdf"]) as pdf:
+        chars = [char for page in pdf.pages for char in page.chars]
+
+    bold_chars = [char for char in chars if "Bold" in str(char.get("fontname") or "")]
+    assert bold_chars, "no bold glyphs at all: emphasis markup is being dropped"
+
+    label = "Public Health Systems & Quality"
+    label_chars = []
+    for start in range(len(chars) - len(label)):
+        window = chars[start:start + len(label)]
+        if "".join(str(char.get("text") or "") for char in window) != label:
+            continue
+        tops = {round(float(char["top"]), 1) for char in window}
+        if len(tops) == 1:
+            label_chars = window
+            break
+    assert label_chars, f"competency group label {label!r} not found on one rendered line"
+    assert all("Bold" in str(char.get("fontname") or "") for char in label_chars), (
+        "competency group labels must render bold so the groups are scannable"
+    )
+
+    # Section headings carry the same emphasis channel.
+    heading = "PROFESSIONAL EXPERIENCE"
+    heading_chars = []
+    for start in range(len(chars) - len(heading)):
+        window = chars[start:start + len(heading)]
+        if "".join(str(char.get("text") or "") for char in window) != heading:
+            continue
+        if len({round(float(char["top"]), 1) for char in window}) == 1:
+            heading_chars = window
+            break
+    assert heading_chars, "section heading not found on one rendered line"
+    assert all("Bold" in str(char.get("fontname") or "") for char in heading_chars)
+
+
+def test_single_statement_sections_are_not_bulleted_and_competency_groups_stay_whole(tmp_path):
+    """A one-line statement is set as a line; only real lists carry bullets.
+
+    The plain-text mirror keeps its ``- `` list markers so it stays readable and
+    ATS-parseable; the *visual* artifact is what must show a single statement as
+    a statement, and a competency group as one unbroken block.
+    """
+    profile = _profile()
+    master = write_master_cv(profile, out_dir=tmp_path)
+    pdf_path = master["generated_paths"]["pdf"]
+
+    with pdfplumber.open(pdf_path) as pdf:
+        pages = [page.extract_text() or "" for page in pdf.pages]
+        lines = [
+            (line.get("text") or "").strip()
+            for page in pdf.pages
+            for line in page.extract_text_lines()
+            if (line.get("text") or "").strip()
+        ]
+    flat = " ".join(" ".join(page.split()) for page in pages)
+
+    def rendered_line(statement: str) -> str:
+        matches = [line for line in lines if statement in line]
+        assert matches, statement
+        return matches[0]
+
+    for statement in ("Valid medical professional registration/license", "Completed"):
+        assert statement in flat
+        # A single statement is set as a statement: no bullet glyph in front.
+        assert not rendered_line(statement).startswith("\u2022"), statement
+
+    # A real list keeps its bullets.
+    certifications = [item["name"] for item in profile["certificates"]]
+    assert len(certifications) > 1
+    for name in certifications:
+        assert name in flat
+        assert rendered_line(name).startswith("\u2022"), name
+
+    # The Word artifact keeps exactly the real lists bulleted: the experience
+    # bullets and the certificate list, and nothing else.
+    docx_xml = _docx_xml(master["generated_paths"]["docx"])
+    bulleted = [
+        "".join(re.findall(r"<w:t[^>]*>(.*?)</w:t>", match.group(0), flags=re.DOTALL))
+        for match in re.finditer(r"<w:p\b.*?</w:p>", docx_xml, flags=re.DOTALL)
+    ]
+    bulleted = [text for text in bulleted if text.startswith("\u2022")]
+    responsibilities = sum(len(_verified_responsibilities(entry)) for entry in profile["work_history"])
+    assert len(bulleted) == responsibilities + len(certifications), (
+        len(bulleted),
+        responsibilities,
+        len(certifications),
+    )
+    assert all("registration/license" not in text and text != "\u2022 Completed" for text in bulleted)
+
+    # Every competency group renders as an unbroken block: its label and at
+    # least one of its items are set on the same page.
+    for group in build_expertise_groups([item["name"] for item in _verified_skill_items(profile)]):
+        head = str(group["group"])
+        assert any(head in page for page in pages), head
+        page_with_head = next(page for page in pages if head in page)
+        assert any(item in page_with_head for item in group["items"]), head
+
+
+def test_master_cv_never_claims_field_monitoring(tmp_path):
+    """The held "Field monitoring/reporting" skill must not reappear as prose.
+
+    The coverage sentence is generated from verified evidence, and an earlier
+    clause pair turned the verified HMIS skill into "field monitoring and
+    reporting" -- a duty this profile explicitly holds as unsupported. Where the
+    coordination evidence is printed, it must carry the applicant's own wording.
+    """
+    profile = _profile()
+    master = write_master_cv(profile, out_dir=tmp_path)
+    master_text = Path(master["generated_paths"]["txt"]).read_text(encoding="utf-8")
+    assert not re.search(r"\bmonitoring\b", master_text, flags=re.IGNORECASE)
+
+    job = {
+        "id": "monitoring-check",
+        "title": "Medical Doctor",
+        "company": "Health Organization",
+        "location": "Kabul",
+        "url": "https://jobs.example.org/monitoring-check",
+        "apply_url": "hr@example.org",
+        "description": (
+            "Medical Doctor required. HMIS reporting and data quality, patient assessment, diagnosis, "
+            "treatment, and health data management required. Apply to hr@example.org by 2026-12-31."
+        ),
+        "metadata": {"closing_date": "2026-12-31"},
+    }
+    report = match_job_against_profile(job, profile, today=TODAY).to_dict()
+    docs = generate_tailored_documents(job, profile, report)
+    summary = docs["tailored_cv_text"].split("PROFESSIONAL SUMMARY", 1)[1].split("\n\n", 1)[0]
+    assert "HMIS/DHIS2 reporting and data quality" in summary
+    assert not re.search(r"field monitoring", summary, flags=re.IGNORECASE)
+    assert not re.search(r"\bmonitoring\b", docs["tailored_cv_text"], flags=re.IGNORECASE)

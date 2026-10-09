@@ -158,7 +158,7 @@ Detailed duties that were suggested rather than supplied are held in `needs_veri
 * reported to the owner as a review warning, and displayed in the dashboard under *"Awaiting your confirmation — not used in any generated CV"*;
 * published only when the owner moves the line to `responsibilities` with `verified: true`.
 
-This is why the shipped canonical profile prints one confirmed scope line per role: the applicant supplied no duties for any of the five roles, and the system does not invent them. The CV stays comprehensive through the evidence that *is* verified — grouped competency inventory, all seven certifications, education, registration status, exit exam, languages, and every role.
+The shipped canonical profile therefore prints the duties the applicant's own CV documents for each role, and nothing else: where the applied duties cover only part of a held draft, only that part is printed, and the rest stays held. The CV stays comprehensive through the evidence that *is* verified — the applicant-supported responsibilities, the grouped competency inventory, all seven certifications, education, registration status, exit exam, languages, and every role.
 
 #### Tailoring (downstream of the Master CV)
 

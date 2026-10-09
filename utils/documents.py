@@ -275,10 +275,12 @@ def _verified_responsibility_texts(value: Any) -> list[str]:
 def _pending_responsibility_items(profile: dict[str, Any]) -> list[dict[str, str]]:
     """Drafts held back from employer-facing documents, for owner review only.
 
-    These are the detailed duties a CV would normally carry. They were written
-    by the system from verified profile evidence (role title, competency
-    inventory, certificates) rather than supplied by the applicant, so they are
-    reported to the owner instead of being printed as fact.
+    These are duty suggestions that no applicant evidence covers. Each one was
+    written by the system from verified profile evidence (role title, competency
+    inventory, certificates) rather than supplied by the applicant, so it is
+    reported to the owner instead of being printed as fact. Where the
+    applicant's own supplied CV did document a duty, that duty now lives in
+    ``responsibilities`` with ``verified: true`` and is printed normally.
     """
     pending: list[dict[str, str]] = []
     for entry in _profile_list(profile, "work_history"):
@@ -305,7 +307,7 @@ def _pending_responsibility_warning(profile: dict[str, Any]) -> str:
     roles = sorted({item["role"] for item in pending if item["role"]})
     return (
         f"{len(pending)} detailed responsibility draft(s) for {len(roles)} role(s) are NOT presented as verified "
-        "experience: no duties were supplied for these positions, so the wording is system-authored. "
+        "experience: the applicant supplied no duties covering them, so the wording is system-authored. "
         "Confirm each line against your own record and move it to `responsibilities` with `verified: true` to publish "
         "it. Roles affected: " + "; ".join(roles)
     )
@@ -900,6 +902,11 @@ EXPERTISE_GROUP_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("Clinical & Medical Practice", ("clinical care", "clinical practice", "clinical assessment", "diagnosis", "treatment", "patient", "curative", "medical doctor", "infection prevention", "ipc")),
     ("Health & Nutrition Programming", ("nutrition", "imam", "cmam", "sam", "mam", "tfu", "otp", "iycf", "imnci", "malnutrition")),
     ("Public Health Systems & Quality", ("bphs", "ephs", "hmis", "dhis2", "moph", "liaison", "quality", "audit")),
+    # "Provincial & Ministry of Public Health Stakeholder Coordination" is the
+    # applicant's own wording for a coordination competency, so it belongs with
+    # the other coordination evidence rather than in the public-health group:
+    # a hit-rich label in the wrong group can outvote the group the vacancy
+    # itself names.
     ("Programme Coordination & Field Operations", ("coordination", "stakeholder", "monitoring", "reporting", "emergency", "outbreak", "covid", "program implementation", "programme implementation")),
     ("Supervision & Capacity Building", ("supervision", "supervisory", "capacity", "team")),
     ("Safeguarding, Protection & Compliance", ("safeguarding", "psea", "child protection", "protection")),
@@ -1092,8 +1099,15 @@ def _experience_coverage_clauses(evidence, rank_key=None) -> list[str]:
     add("public-health service delivery", "public_health_experience")
     add("team supervision and capacity building", "supervision_management")
     add("programme coordination", "program_coordination")
-    add("field monitoring and reporting", "reporting")
-    add("HMIS/DHIS2 health information management", "hmis")
+    # The applicant supplied "HMIS/DHIS2 reporting and data quality" as one
+    # competency. The earlier clause pair split it into a reporting clause that
+    # added "field monitoring" -- a duty this profile explicitly holds as
+    # unsupported -- and a rephrased HMIS clause. The reporting evidence now
+    # carries the applicant's own wording, and nothing more, exactly once.
+    if evidence.has_verified("hmis"):
+        clauses.append("HMIS/DHIS2 reporting and data quality")
+    elif evidence.has_verified("reporting"):
+        clauses.append("health-data reporting")
     add("clinical audit and quality improvement", "quality_improvement")
     add("MoPH and health-authority coordination", "moph_coordination")
     add("emergency and outbreak response", "emergency_response")
@@ -1171,9 +1185,13 @@ def _professional_profile_paragraph(
         dimensions = [
             label
             for key, label in [
-                ("clinical_experience_years", "clinical practice"),
+                ("clinical_experience_years", "clinical"),
                 ("health_nutrition_experience_years", "health and nutrition"),
-                ("frontline_experience_years", "frontline"),
+                # The applicant's own profile claims "combined field and
+                # supervisory experience", so supervision is named whenever the
+                # canonical record carries supervision evidence.
+                ("supervision_management", "supervisory"),
+                ("frontline_experience_years", "field"),
             ]
             if evidence.has_verified(key)
         ]

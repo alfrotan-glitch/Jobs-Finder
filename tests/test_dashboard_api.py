@@ -385,8 +385,8 @@ def test_profile_view_separates_confirmed_scope_from_unconfirmed_drafts(tmp_path
             assert "NEEDS_VERIFICATION" not in bullet, bullet
         for draft in role["pending_bullets"]:
             assert "{" not in draft and "NEEDS_VERIFICATION" not in draft, draft
-    assert confirmed_total == 5  # one applicant-supported scope line per role
-    assert draft_total == 28  # every held-back draft is still visible to the owner
+    assert confirmed_total == 6  # the applicant-supplied duties restored to the roles
+    assert draft_total == 24  # every held-back draft is still visible to the owner
 
 
 def test_profile_view_drafts_are_never_listed_as_confirmed_experience(tmp_path, monkeypatch):
@@ -404,11 +404,33 @@ def test_profile_view_drafts_are_never_listed_as_confirmed_experience(tmp_path, 
         for item in role["needs_verification"]:
             assert item["text"] not in confirmed
             assert item["text"] in drafts
-    # Confirmed scope restates supplied facts only: each line is about its own
-    # role, so it shares the role title's own wording.
-    def significant_tokens(text: str) -> set[str]:
-        return {token for token in re.split(r"[^a-z]+", str(text).lower()) if len(token) > 3}
+    # Confirmed responsibilities restate the applicant's own supplied CV
+    # evidence for that role -- never a held draft and never a new claim.
+    supplied = real_profile["applicant_supplied_source"]["supplied_role_notes"]
 
-    for role, entry in zip(payload["experience"], real_profile["work_history"]):
-        shared = significant_tokens(entry["title"]) & significant_tokens(role["bullets"][0])
-        assert len(shared) >= 2, (entry["title"], role["bullets"][0], sorted(shared))
+    def role_key(text: str) -> str:
+        return re.sub(r"[^a-z]+", "", str(text).lower())
+
+    # The applicant's own role labels differ slightly from the normalized
+    # titles ("Health and Nutrition Supervisor" vs "Health & Nutrition
+    # Supervisor"), so match on the role identity, not on exact spelling.
+    supplied_by_role = {
+        role_key(note["role"]): note["supplied"] for note in supplied
+    }
+    supplied_sequence = [note["supplied"] for note in supplied]
+
+    def normalise(text: str) -> str:
+        return " ".join(str(text).replace(".", " ").split()).lower()
+
+    for index, (role, entry) in enumerate(zip(payload["experience"], real_profile["work_history"])):
+        assert role["bullets"], entry["title"]
+        notes = supplied_by_role.get(role_key(entry["title"])) or supplied_sequence[index]
+        supplied_text = normalise(" ".join(notes))
+        for bullet in role["bullets"]:
+            assert supplied_text, (entry["title"], bullet)
+            shared = {
+                token
+                for token in re.split(r"[^a-z]+", normalise(bullet))
+                if len(token) > 4 and token in supplied_text
+            }
+            assert len(shared) >= 3, (entry["title"], bullet, sorted(shared))

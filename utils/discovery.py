@@ -1253,4 +1253,9 @@ def _extract_subject(text: str) -> str:
     if not match:
         return ""
     subject = normalize_space(match.group(1))
+    # "...in the subject line to recruitment@example.org" names the contact
+    # route, not a subject. Never store a route (email address or "to ..."
+    # phrase) as the application subject.
+    if "@" in subject or re.match(r"(?i)(to|at|via)\b", subject):
+        return ""
     return subject.rstrip(".")

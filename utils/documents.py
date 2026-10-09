@@ -1015,7 +1015,13 @@ def _without_attribution(text: str) -> str:
     Used only where the surrounding sentence already states the role, so a
     letter bullet stays readable. The wording itself is never changed.
     """
-    cleaned = re.sub(r"\s*\([^()]*\|[^()]*\)\s*$", "", str(text or "").strip())
+    # One nested group is allowed so a parenthesised date range inside the
+    # attribution, e.g. "(Role | Org | Place (2020-10 – 2020-12))", is removed.
+    cleaned = re.sub(
+        r"\s*\((?:[^()]|\([^()]*\))*\|(?:[^()]|\([^()]*\))*\)\s*$",
+        "",
+        str(text or "").strip(),
+    )
     return cleaned.rstrip(".").strip() or str(text or "").strip().rstrip(".")
 
 

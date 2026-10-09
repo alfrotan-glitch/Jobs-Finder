@@ -278,3 +278,17 @@ def test_real_sparse_page_is_removed_by_spacing_only_and_word_uses_same_scale(tm
     assert doc.styles["CV Body"].font.size.pt == 10.5
     assert doc.styles["CV Bullet"].paragraph_format.line_spacing.pt == pytest.approx(13.6)
     assert doc.styles["CV Bullet"].paragraph_format.space_after.pt == 2
+
+
+def test_fontless_fallback_preserves_bullets_and_searchable_text(tmp_path, monkeypatch):
+    monkeypatch.setattr(design, "_register_fonts", lambda: ("Times-Roman", "Times-Bold", "Helvetica", "Helvetica-Bold"))
+    master = write_master_cv(load_canonical_profile(required=True), out_dir=tmp_path)
+    paths = master["generated_paths"]
+    with pdfplumber.open(paths["pdf"]) as pdf:
+        text = "\n".join(p.extract_text() for p in pdf.pages)
+        assert "(cid:" not in text
+        assert_model_preserved(master["master_cv_model"], text)
+        assert_geometry(pdf)
+        assert "- Safeguarding & PSEA" in text
+    doc = Document(paths["docx"])
+    assert any(p.text.startswith("-\tSafeguarding & PSEA") for p in doc.paragraphs)

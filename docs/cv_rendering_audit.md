@@ -72,7 +72,7 @@ The authoritative separate owner-review list remains [`held_responsibility_revie
 
 Environment: Linux, Python 3.11.2 virtual environment; dependencies installed from the project's `requirements.txt` and `requirements-dev.txt`; ReportLab 5.0.1, python-docx 1.2.0, pdfplumber 0.11.10, PDFium rasterization, installed DejaVu fonts. Node 22.22.3.
 
-* `python -m pytest -q`: **412 passed**, one upstream Starlette/httpx deprecation warning.
+* `python -m pytest -q`: **413 passed**, one upstream Starlette/httpx deprecation warning.
 * `python -m ruff check .`: passed.
 * `python -m compileall -q main.py dashboard utils tests`: passed.
 * `node --check dashboard/static/app.js`: passed.
@@ -80,6 +80,12 @@ Environment: Linux, Python 3.11.2 virtual environment; dependencies installed fr
 * Held-responsibility review freshness check: passed.
 
 Added real-output regressions for all-format evidence preservation, chronological order, PDF glyph bounds/line separation, real section rules, heading and role continuity, page density, numbering, Word structure and shared typography, safe compaction/restoration, long multi-page role headers/history, dashboard routes, and canonical/Master artifact immutability across all four vacancy families. Existing verification, privacy, literal-Boolean gating, subject, reference-boundary and long-document tests also pass. The old tests requiring a 90-word summary/source-list chronology were updated to the requested concise/reverse-chronological contract—not used to justify retaining repetition or incorrect dates.
+
+### Cross-platform follow-up
+
+The initial Windows jobs exposed a font-dependent stress-test assumption: twelve synthetic long roles fit on two pages with the narrower Windows font, whereas the test demanded three. Expanded the synthetic history to eighteen roles instead of padding the renderer or weakening content/geometry assertions. All four Linux/Windows Python 3.11/3.12 jobs then passed in [run 37933906708](https://github.com/alfrotan-glitch/Jobs-Finder/actions/runs/37933906708). The workflow now writes ignored JUnit results and surfaces failure details as GitHub check annotations; this makes failures reviewable even when the external log-download host is inaccessible.
+
+An additional forced-Type-1-font probe found that ReportLab's WinAnsi round bullet can extract as undefined CID 127. CVs on machines without a supported TrueType font now use an ordinary searchable dash in both PDF and DOCX. A new regression asserts complete evidence extraction, no undefined CIDs and valid geometry in that fallback. Normal installed-font output is unchanged. The final PR checks cover this follow-up as well.
 
 ## Reproduce the inspection
 
@@ -120,6 +126,6 @@ Inspect every resulting image and extracted document, not only the test exit sta
 ## Remaining limitations
 
 * No Microsoft Word or LibreOffice layout engine was available in this sandbox. DOCX structure/text were inspected, but its **rendered pagination was not visually certified**. Font substitution and different Word engines can change line breaks; check the DOCX in the recipient's editor. PDF is the visually inspected print artifact.
-* Local checks ran on Linux/Python 3.11. The repository's existing CI covers Linux/Windows with Python 3.11/3.12; local results do not establish those remote results in advance.
+* Local checks ran on Linux/Python 3.11. The repository's existing CI covers Linux/Windows with Python 3.11/3.12; remote checks are linked above and do not substitute for a Word-engine visual inspection.
 * Text geometry checks are useful guards, not a proof of visual quality for every possible future profile, script, font or unusually long unbroken string. No claim of universal ATS certification or guaranteed recruitment competitiveness is made.
 * Stronger achievement-oriented content requires new applicant evidence. The design deliberately does not fill the 24 held-duty gaps with plausible-sounding claims.

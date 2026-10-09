@@ -593,6 +593,18 @@ def _cv_word_font() -> str:
     return family.decode("utf-8") if isinstance(family, bytes) else str(family)
 
 
+def _cv_bullet_glyph() -> str:
+    """Type 1 WinAnsi bullets can extract as undefined CID 127 in PDF readers.
+
+    On fontless machines use an ordinary searchable dash in both CV formats;
+    installed TrueType fonts retain the round bullet and Unicode mapping.
+    """
+    from reportlab.pdfbase import pdfmetrics
+
+    font = pdfmetrics.getFont(_register_fonts()[2])
+    return "•" if getattr(font, "_dynamicFont", False) else "-"
+
+
 def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, float]) -> int:
     """Build one CV PDF with the given typographic scale; return its page count."""
     from reportlab.lib import colors
@@ -701,7 +713,7 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
             if item.get("loc"):
                 story.append(Paragraph(esc(item["loc"]), meta_style))
             for bullet in item.get("bullets") or []:
-                story.append(Paragraph(esc(bullet), bullet_style, bulletText="\u2022"))
+                story.append(Paragraph(esc(bullet), bullet_style, bulletText=_cv_bullet_glyph()))
 
     for title, values in [
         ("EDUCATION", model.get("education") or []),
@@ -718,7 +730,7 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
                 if single:
                     story.append(Paragraph(esc(value), body_style))
                 else:
-                    story.append(Paragraph(esc(value), bullet_style, bulletText="\u2022"))
+                    story.append(Paragraph(esc(value), bullet_style, bulletText=_cv_bullet_glyph()))
     if model.get("languages"):
         add_section("LANGUAGES")
         language_line = "  |  ".join(f"{name}{(' — ' + level) if level else ''}" for name, level in model.get("languages") or [])
@@ -847,7 +859,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
         p.paragraph_format.left_indent = Pt(11)
         p.paragraph_format.first_line_indent = Pt(-11)
         p.paragraph_format.tab_stops.add_tab_stop(Pt(11))
-        p.add_run("•\t").font.color.rgb = RGBColor.from_string(Theme.teal[1:])
+        p.add_run(_cv_bullet_glyph() + "\t").font.color.rgb = RGBColor.from_string(Theme.teal[1:])
         p.add_run(str(text))
 
     doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="CV Name")

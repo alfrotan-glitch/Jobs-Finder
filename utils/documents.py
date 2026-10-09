@@ -1125,6 +1125,56 @@ def _experience_coverage_clauses(evidence, rank_key=None) -> list[str]:
     return clauses
 
 
+def _cover_letter_subject(*, requested: str | None, reference: str | None, title: str) -> str:
+    """Return the cover-letter subject line.
+
+    A subject the posting itself asks for is used verbatim. Otherwise the vacancy
+    reference alone is the subject: the letter heading already states the role,
+    so repeating the title in the subject adds nothing. The title is used only
+    when the vacancy has no reference at all.
+    """
+    if requested:
+        return str(requested)
+    if reference:
+        return str(reference)
+    return str(title)
+
+
+def _is_health_supervisory_role(job: dict[str, Any]) -> bool:
+    """True for a supervisory health or nutrition vacancy, judged by its title."""
+    title = str(job.get("title") or "").lower()
+    return "supervisor" in title and ("health" in title or "nutrition" in title)
+
+
+# Experience dimensions in the order a supervisory health/nutrition letter leads with.
+_SUPERVISORY_DIMENSION_ORDER = (
+    "supervision_management",
+    "health_nutrition_experience_years",
+    "frontline_experience_years",
+    "clinical_experience_years",
+)
+
+
+def _supervisory_lead_clauses(evidence) -> list[str]:
+    """Coverage clauses for a supervisory health/nutrition letter, verified only.
+
+    Each clause is gated on the same verified evidence key that the general
+    coverage clauses use. Clauses without verified evidence are omitted.
+    """
+    clauses: list[str] = []
+
+    def add(clause: str, *keys: str) -> None:
+        if any(evidence.has_verified(key) for key in keys):
+            clauses.append(clause)
+
+    add("team supervision and capacity building", "supervision_management")
+    add("health and nutrition service delivery", "health_nutrition_experience")
+    add("BPHS/EPHS-related service delivery", "bphs", "ephs")
+    add("medical supply forecasting and logistics", "supply_logistics")
+    add("MoPH and health-authority coordination", "moph_coordination")
+    return clauses
+
+
 def _professional_profile_paragraph(
     profile: dict[str, Any],
     evidence,
@@ -1185,23 +1235,27 @@ def _professional_profile_paragraph(
     if evidence.has_verified("license_registration"):
         credentials.append("a valid medical professional registration/license")
     lead = f"I am a {identity}" if first_person else identity
-    sentences.append(lead + (f", with {_join_and(credentials)}" if credentials else "") + ".")
+    identity_sentence = lead + (f", with {_join_and(credentials)}" if credentials else "") + "."
+    # A cover letter for a supervisory health/nutrition vacancy leads with the
+    # verified supervision and field experience; the medical identity follows.
+    supervisory = first_person and _is_health_supervisory_role(job)
+    if not supervisory:
+        sentences.append(identity_sentence)
 
     duration = _verified_duration_phrase(evidence)
     if duration:
-        dimensions = [
-            label
-            for key, label in [
-                ("clinical_experience_years", "clinical"),
-                ("health_nutrition_experience_years", "health and nutrition"),
-                # The applicant's own profile claims "combined field and
-                # supervisory experience", so supervision is named whenever the
-                # canonical record carries supervision evidence.
-                ("supervision_management", "supervisory"),
-                ("frontline_experience_years", "field"),
-            ]
-            if evidence.has_verified(key)
+        dimension_pairs = [
+            ("clinical_experience_years", "clinical"),
+            ("health_nutrition_experience_years", "health and nutrition"),
+            # The applicant's own profile claims "combined field and
+            # supervisory experience", so supervision is named whenever the
+            # canonical record carries supervision evidence.
+            ("supervision_management", "supervisory"),
+            ("frontline_experience_years", "field"),
         ]
+        if supervisory:
+            dimension_pairs.sort(key=lambda pair: _SUPERVISORY_DIMENSION_ORDER.index(pair[0]))
+        dimensions = [label for key, label in dimension_pairs if evidence.has_verified(key)]
         if dimensions:
             joined = _join_and(dimensions) if len(dimensions) > 1 else dimensions[0]
             amount = f"{duration} of combined {joined} experience" if len(dimensions) > 1 else f"{duration} of {joined} experience"
@@ -1211,10 +1265,12 @@ def _professional_profile_paragraph(
             else:
                 sentences.append(f"Brings {amount}" + (f" in {context}" if context else "") + ".")
 
-    clauses = _experience_coverage_clauses(evidence, rank_key)
+    clauses = _supervisory_lead_clauses(evidence) if supervisory else _experience_coverage_clauses(evidence, rank_key)
     if clauses:
         lead_in = "My professional experience covers" if first_person else "Professional experience covers"
         sentences.append(f"{lead_in} {_join_and(clauses[:6])}.")
+    if supervisory:
+        sentences.append(identity_sentence)
 
     organizations = _verified_organizations(profile)
     if organizations and organization_order:
@@ -1553,11 +1609,11 @@ def generate_tailored_documents(
     facts = match_report.get("facts", {})
     metadata = job.get("metadata", {}) if isinstance(job.get("metadata", {}), dict) else {}
     reference = facts.get("reference_number") or metadata.get("reference_number")
-    subject_parts = []
-    if reference:
-        subject_parts.append(str(reference))
-    subject_parts.append(str(title))
-    suggested_subject = facts.get("application_subject") or metadata.get("application_subject") or " — ".join(subject_parts)
+    suggested_subject = _cover_letter_subject(
+        requested=facts.get("application_subject") or metadata.get("application_subject"),
+        reference=reference,
+        title=title,
+    )
 
     cover_lines = [
         f"Subject: {suggested_subject}",

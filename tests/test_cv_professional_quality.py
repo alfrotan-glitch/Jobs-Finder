@@ -17,7 +17,7 @@ nutrition application:
   the applicant never supplied;
 * no private reference contact data, license number, or invented date reaches
   any artifact;
-* the ACF roles keep their intentionally unpresise (blank) dates;
+* the ACF roles keep their applicant-supplied month-level dates;
 * tailoring only reorders/re-groups evidence, never mutates the canonical
   profile or the position-neutral Master CV.
 
@@ -38,6 +38,7 @@ import yaml
 
 from tests.test_canonical_profile_architecture import SAMPLE_EMAIL, SAMPLE_NAME
 from utils.documents import (
+    _reverse_chronological_entries,
     build_expertise_groups,
     generate_master_cv,
     generate_tailored_documents,
@@ -314,8 +315,10 @@ def test_master_cv_model_is_comprehensive_for_the_real_profile():
     assert model["name"] == "Dr. Allah Yar Frotan"
     assert model["headline"] == "Medical Doctor / Health & Nutrition Specialist"
 
-    # A substantive professional profile, not a one-line summary.
-    assert len(model["profile"].split()) >= 90
+    # A concise scope introduction; detailed evidence belongs in its sections.
+    assert 35 <= len(model["profile"].split()) <= 85
+    assert "Core technical competencies include" not in model["profile"]
+    assert "Employment history includes" not in model["profile"]
 
     # Complete professional skills architecture with every verified competency.
     evidence = build_profile_evidence(profile)
@@ -327,18 +330,18 @@ def test_master_cv_model_is_comprehensive_for_the_real_profile():
         "Health & Nutrition Programming",
     ]
 
-    # Every verified role, in canonical order, with a real description.
+    # Every verified role, newest first, with its supported description.
     assert len(model["experience"]) == len(profile["work_history"]) == 5
     assert [item["org"] for item in model["experience"]] == [
         "ACF-International",
         "ACF-International",
-        "Daikundi Provincial Public Health Directorate",
         "Daikundi Governor’s Office",
+        "Daikundi Provincial Public Health Directorate",
         "Trend for a Better Tomorrow (TBT)",
     ]
     # Every role keeps an applicant-supported professional scope line. Nothing
-    # more is claimed, because the applicant supplied no duties for any role.
-    for item, entry in zip(model["experience"], profile["work_history"]):
+    # more is claimed than the applicant-supported responsibilities.
+    for item, entry in zip(model["experience"], _reverse_chronological_entries(profile["work_history"])):
         verified = _verified_responsibilities(entry)
         assert item["bullets"] == [b for b in verified], item["role"]
         assert len(item["bullets"]) >= 1, item["role"]
@@ -397,7 +400,7 @@ def test_master_cv_text_contains_every_verified_fact():
     # The professional profile must not be a thin one-liner, and the document
     # must stay a substantial CV even though only applicant-supported scope is
     # printed for each role.
-    assert len(text.split("PROFESSIONAL SUMMARY", 1)[1].split("\n\n", 1)[0].split()) >= 90
+    assert 35 <= len(text.split("PROFESSIONAL SUMMARY", 1)[1].split("\n\n", 1)[0].split()) <= 85
     assert len(text.split()) >= 400
 
 
@@ -1081,12 +1084,9 @@ def test_single_statement_sections_are_not_bulleted_and_competency_groups_stay_w
 
     # The Word artifact keeps exactly the real lists bulleted: the experience
     # bullets and the certificate list, and nothing else.
-    docx_xml = _docx_xml(master["generated_paths"]["docx"])
-    bulleted = [
-        "".join(re.findall(r"<w:t[^>]*>(.*?)</w:t>", match.group(0), flags=re.DOTALL))
-        for match in re.finditer(r"<w:p\b.*?</w:p>", docx_xml, flags=re.DOTALL)
-    ]
-    bulleted = [text for text in bulleted if text.startswith("\u2022")]
+    from docx import Document
+
+    bulleted = [p.text for p in Document(master["generated_paths"]["docx"]).paragraphs if p.text.startswith("\u2022")]
     responsibilities = sum(len(_verified_responsibilities(entry)) for entry in profile["work_history"])
     assert len(bulleted) == responsibilities + len(certifications), (
         len(bulleted),

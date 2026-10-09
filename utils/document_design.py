@@ -52,8 +52,8 @@ def render_professional_document_artifacts(
         # prevents a text re-parser from dropping/reinterpreting experience
         # lines between the canonical CV and its PDF/DOCX views.
         model = canonical_cv_model if isinstance(canonical_cv_model, dict) else parse_cv_text(text or "", metadata)
-        render_cv_pdf(model, pdf)
-        render_cv_docx(model, docx)
+        scale = render_cv_pdf(model, pdf)
+        render_cv_docx(model, docx, scale=scale)
     return {"txt": str(txt), "docx": str(docx), "pdf": str(pdf)}
 
 
@@ -559,13 +559,38 @@ def _pdf_last_page_fill_ratio(path: str | Path) -> float:
         return 1.0
 
 
-#: Two typographic settings of the same design system. ``compact`` is used
-#: only when it removes a sparse trailing page; otherwise the comfortable
-#: setting is kept so text never becomes cramped without a reason.
+# Shared CV typography (points). Compact only trims whitespace: body text
+# never shrinks to squeeze a comprehensive CV onto one page.
 CV_PDF_LAYOUTS: dict[str, dict[str, float]] = {
-    "comfortable": {"name": 21, "title": 10.6, "contact": 8.4, "section": 10.1, "role": 10.4, "meta": 8.1, "body": 9.05, "leading": 14.2, "bullets": 8.2, "bullet_leading": 14.0, "section_before": 20.0, "section_after": 3.2, "role_before": 11.5, "meta_after": 4.2, "group_after": 1.6, "bullet_after": 4.0},
-    "compact": {"name": 19.5, "title": 10.1, "contact": 8.0, "section": 9.6, "role": 9.9, "meta": 7.8, "body": 8.35, "leading": 10.5, "bullets": 7.8, "bullet_leading": 10.3, "section_before": 4.6, "section_after": 2.4, "role_before": 3.2, "meta_after": 1.6, "group_after": 1.2, "bullet_after": 0.7},
+    "comfortable": {
+        "name": 25, "title": 11, "contact": 9, "section": 9.5,
+        "role": 11, "meta": 9.5, "body": 10.5, "leading": 14.4,
+        "bullets": 9, "bullet_leading": 14.4, "section_before": 14,
+        "section_after": 6, "role_before": 10, "meta_after": 4,
+        "group_after": 3, "bullet_after": 4,
+    },
 }
+CV_PDF_LAYOUTS["compact"] = {
+    **CV_PDF_LAYOUTS["comfortable"], "leading": 13.6,
+    "bullet_leading": 13.6, "section_before": 9, "section_after": 5,
+    "role_before": 7, "meta_after": 3, "group_after": 2, "bullet_after": 2,
+}
+CV_MARGIN_MM = 18
+CV_TOP_MM = 16
+CV_BOTTOM_MM = 17
+
+
+def _cv_word_font() -> str:
+    """Use the PDF's installed sans family in Word on the generating system.
+
+    Word may substitute on another machine; embedding fonts or promising
+    identical pagination across Word engines would be misleading.
+    """
+    from reportlab.pdfbase import pdfmetrics
+
+    sans = _register_fonts()[2]
+    family = getattr(pdfmetrics.getFont(sans).face, "familyName", "Arial")
+    return family.decode("utf-8") if isinstance(family, bytes) else str(family)
 
 
 def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, float]) -> int:
@@ -574,32 +599,41 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate
+    from reportlab.platypus import (
+        BaseDocTemplate,
+        Frame,
+        HRFlowable,
+        KeepTogether,
+        PageTemplate,
+        Paragraph,
+    )
 
     serif, serif_bold, sans, sans_bold = _register_fonts()
-    doc = SimpleDocTemplate(
-        str(path), pagesize=A4, rightMargin=17 * mm, leftMargin=17 * mm,
-        topMargin=13 * mm, bottomMargin=14 * mm,
+    doc = BaseDocTemplate(
+        str(path), pagesize=A4, rightMargin=CV_MARGIN_MM * mm, leftMargin=CV_MARGIN_MM * mm,
+        topMargin=CV_TOP_MM * mm, bottomMargin=CV_BOTTOM_MM * mm,
         title=f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Curriculum Vitae",
         author=model.get("name") or "CONFIRM BEFORE SUBMISSION",
         subject="Curriculum Vitae",
     )
+    # SimpleDocTemplate otherwise adds hidden 6pt padding on all four sides.
+    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height,
+                  leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
     styles = getSampleStyleSheet()
-    name_style = ParagraphStyle("CVName", parent=styles["Title"], fontName=serif_bold, fontSize=scale["name"], leading=scale["name"] * 1.15, textColor=colors.HexColor(Theme.deep), spaceAfter=1, alignment=0)
+    name_style = ParagraphStyle("CVName", parent=styles["Title"], fontName=sans_bold, fontSize=scale["name"], leading=scale["name"] * 1.15, textColor=colors.HexColor(Theme.deep), spaceAfter=1, alignment=0)
     title_style = ParagraphStyle("CVTitle", parent=styles["Normal"], fontName=sans, fontSize=scale["title"], leading=scale["title"] * 1.22, textColor=colors.HexColor(Theme.teal), spaceAfter=3)
     contact_style = ParagraphStyle("CVContact", parent=styles["Normal"], fontName=sans, fontSize=scale["contact"], leading=scale["contact"] * 1.3, textColor=colors.HexColor(Theme.muted), spaceAfter=8)
     section_style = ParagraphStyle(
         "CVSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=scale["section"], leading=scale["section"] * 1.2, textColor=colors.HexColor(Theme.deep),
-        spaceBefore=scale["section_before"], spaceAfter=scale["section_after"],
-        borderColor=colors.HexColor(Theme.rule), borderWidth=0, borderBottomWidth=.7, borderPadding=(0, 0, 2.6, 0),
+        spaceBefore=scale["section_before"], spaceAfter=3,
         keepWithNext=True,
     )
-    group_style = ParagraphStyle("CVGroup", parent=styles["Normal"], fontName=sans, fontSize=scale["body"], leading=scale["leading"] * 0.99, textColor=colors.HexColor(Theme.ink), spaceAfter=scale["group_after"])
-    role_style = ParagraphStyle("CVRole", parent=styles["Heading3"], fontName=serif_bold, fontSize=scale["role"], leading=scale["role"] * 1.19, textColor=colors.HexColor(Theme.deep), spaceBefore=scale["role_before"], spaceAfter=.8, keepWithNext=True)
+    group_style = ParagraphStyle("CVGroup", parent=styles["Normal"], fontName=sans, fontSize=scale["body"], leading=scale["leading"], textColor=colors.HexColor(Theme.ink), spaceAfter=scale["group_after"])
+    role_style = ParagraphStyle("CVRole", parent=styles["Heading3"], fontName=sans_bold, fontSize=scale["role"], leading=scale["role"] * 1.19, textColor=colors.HexColor(Theme.deep), spaceBefore=scale["role_before"], spaceAfter=.8, keepWithNext=True)
     meta_style = ParagraphStyle("CVMeta", parent=styles["Normal"], fontName=sans, fontSize=scale["meta"], leading=scale["meta"] * 1.22, textColor=colors.HexColor(Theme.muted), spaceAfter=scale["meta_after"], keepWithNext=True)
-    body_style = ParagraphStyle("CVBody", parent=styles["BodyText"], fontName=sans, fontSize=scale["body"], leading=scale["leading"], textColor=colors.HexColor(Theme.ink), spaceAfter=3.2)
+    body_style = ParagraphStyle("CVBody", parent=styles["BodyText"], fontName=sans, fontSize=scale["body"], leading=scale["leading"], textColor=colors.HexColor(Theme.ink), spaceBefore=0, spaceAfter=3.2)
     bullet_style = ParagraphStyle(
-        "CVBullet", parent=body_style, leftIndent=10.5, firstLineIndent=-7.5, bulletIndent=0,
+        "CVBullet", parent=body_style, leftIndent=11, firstLineIndent=0, bulletIndent=0,
         spaceAfter=scale["bullet_after"], leading=scale["bullet_leading"],
         bulletFontName=sans, bulletFontSize=scale["bullets"], bulletColor=colors.HexColor(Theme.teal),
     )
@@ -612,12 +646,21 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
         canvas.saveState()
         canvas.setStrokeColor(colors.HexColor(Theme.rule))
         canvas.setLineWidth(0.5)
-        canvas.line(17 * mm, 11.5 * mm, A4[0] - 17 * mm, 11.5 * mm)
+        canvas.line(CV_MARGIN_MM * mm, 11.5 * mm, A4[0] - CV_MARGIN_MM * mm, 11.5 * mm)
         canvas.setFont(sans, 7)
         canvas.setFillColor(colors.HexColor(Theme.muted))
-        canvas.drawString(17 * mm, 7.5 * mm, str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
-        canvas.drawRightString(A4[0] - 17 * mm, 7.5 * mm, f"Page {document.page}")
+        canvas.drawString(CV_MARGIN_MM * mm, 7.5 * mm, str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
+        canvas.drawRightString(A4[0] - CV_MARGIN_MM * mm, 7.5 * mm, f"Page {document.page}")
         canvas.restoreState()
+
+    def add_section(title):
+        story.append(Paragraph(title, section_style))
+        # borderBottomWidth is not implemented by ReportLab Paragraph. Use a
+        # real flowable, chained to the heading and its first content block.
+        rule = HRFlowable(width="100%", thickness=.6, color=colors.HexColor(Theme.rule),
+                          spaceAfter=scale["section_after"])
+        rule.keepWithNext = True
+        story.append(rule)
 
     story: list[Any] = [
         Paragraph(esc(model.get("name") or "CONFIRM BEFORE SUBMISSION"), name_style),
@@ -626,15 +669,18 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
     contact_line = _cv_contact_line(model)
     if contact_line:
         story.append(Paragraph(esc(contact_line), contact_style))
+    header_rule = HRFlowable(width="100%", thickness=1.5, color=colors.HexColor(Theme.teal))
+    header_rule.keepWithNext = True
+    story.append(header_rule)
     if model.get("profile"):
-        story.append(Paragraph("PROFESSIONAL SUMMARY", section_style))
+        add_section("PROFESSIONAL SUMMARY")
         story.append(Paragraph(esc(model.get("profile")), body_style))
 
     groups = _cv_expertise_groups(model)
     if groups:
-        story.append(Paragraph("CORE PROFESSIONAL COMPETENCIES", section_style))
+        add_section("CORE PROFESSIONAL COMPETENCIES")
         for group in groups:
-            items = " · ".join(esc(item) for item in group.get("items") or [])
+            items = "&nbsp;· ".join(esc(item) for item in group.get("items") or [])
             label = esc(group.get("group") or "")
             paragraph = Paragraph(f"<b>{label}:</b> {items}" if label else items, group_style)
             # A group label must never be left stranded at the foot of a page
@@ -643,12 +689,17 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
 
     experience = list(model.get("experience") or [])
     if experience:
-        story.append(Paragraph("PROFESSIONAL EXPERIENCE", section_style))
+        add_section("PROFESSIONAL EXPERIENCE")
         for item in experience:
             story.append(Paragraph(esc(item.get("role") or ""), role_style))
-            meta = " | ".join(esc(value) for value in [item.get("org"), item.get("loc"), item.get("dates")] if value)
+            meta = " | ".join(value for value in [
+                f"<b>{esc(item['org'])}</b>" if item.get("org") else "",
+                esc(item.get("dates")),
+            ] if value)
             if meta:
                 story.append(Paragraph(meta, meta_style))
+            if item.get("loc"):
+                story.append(Paragraph(esc(item["loc"]), meta_style))
             for bullet in item.get("bullets") or []:
                 story.append(Paragraph(esc(bullet), bullet_style, bulletText="\u2022"))
 
@@ -659,7 +710,7 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
         ("PROFESSIONAL TRAINING & CERTIFICATIONS", model.get("certifications") or []),
     ]:
         if values:
-            story.append(Paragraph(title, section_style))
+            add_section(title)
             # A single statement is set as a line; only a real list is bulleted,
             # matching how LANGUAGES and REFERENCES are set.
             single = len(values) == 1
@@ -669,15 +720,17 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
                 else:
                     story.append(Paragraph(esc(value), bullet_style, bulletText="\u2022"))
     if model.get("languages"):
-        story.append(Paragraph("LANGUAGES", section_style))
+        add_section("LANGUAGES")
         language_line = "  |  ".join(f"{name}{(' — ' + level) if level else ''}" for name, level in model.get("languages") or [])
         story.append(Paragraph(esc(language_line), body_style))
     references = [str(item) for item in (model.get("references") or []) if str(item).strip()]
     if references:
-        story.append(Paragraph("REFERENCES", section_style))
+        add_section("REFERENCES")
         for value in references:
             story.append(Paragraph(esc(value), body_style))
-    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    # BaseDocTemplate respects our zero-padding frame on every page.
+    doc.addPageTemplates(PageTemplate(id="CV", frames=frame, onPage=footer))
+    doc.build(story)
     return int(getattr(doc, "page", 1)) if isinstance(getattr(doc, "page", None), int) else _pdf_page_count(path)
 
 
@@ -691,28 +744,22 @@ def _pdf_page_count(path: str | Path) -> int:
         return 1
 
 
-def render_cv_pdf(model: dict[str, Any], path: str | Path) -> None:
-    """Render a readable, content-driven CV with automatic pagination.
+def render_cv_pdf(model: dict[str, Any], path: str | Path) -> dict[str, float]:
+    """Render complete, automatically paginated content; return shared scale.
 
-    The layout is a single ATS-readable column with a restrained medical/NGO
-    editorial identity: one serif face for the name and role titles, one sans
-    face for body text, one accent colour, and a single rule under each
-    section heading. Nothing decorative is drawn between text blocks, and long
-    verified content flows across as many pages as it needs without an
-    artificial page break or content cut-off.
-
-    A CV whose verified content would leave a final page that is almost empty
-    is re-rendered once with the compact setting of the same design system, but
-    only when that actually removes the sparse page. Typography changes; no
-    text is ever added, removed, or reordered by this step.
+    Retry a sparse final page with whitespace-only compaction. Keep it only if
+    it removes a page; otherwise restore the comfortable original. The caller
+    applies the same chosen scale to DOCX. No facts, font sizes or ordering
+    change, and no fixed page count is imposed.
     """
-    pages = _build_cv_pdf(model, path, CV_PDF_LAYOUTS["comfortable"])
+    scale = CV_PDF_LAYOUTS["comfortable"]
+    pages = _build_cv_pdf(model, path, scale)
     if pages > 1 and _pdf_last_page_fill_ratio(path) < 0.4:
         compact_pages = _build_cv_pdf(model, path, CV_PDF_LAYOUTS["compact"])
-        if compact_pages >= pages:
-            # Compaction did not help; restore the comfortable rendering so the
-            # document never becomes cramped for no benefit.
-            _build_cv_pdf(model, path, CV_PDF_LAYOUTS["comfortable"])
+        if compact_pages < pages:
+            return CV_PDF_LAYOUTS["compact"]
+        _build_cv_pdf(model, path, scale)
+    return scale
 
 
 def _docx_page_field(paragraph) -> None:
@@ -733,74 +780,74 @@ def _docx_page_field(paragraph) -> None:
     run._r.append(end)
 
 
-def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
+def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, float] | None = None) -> None:
     """Render the complete CV in a single-column, auto-paginating layout."""
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
-    from docx.shared import Inches, Pt, RGBColor
+    from docx.shared import Mm, Pt, RGBColor
 
+    scale = scale or CV_PDF_LAYOUTS["comfortable"]
+    font = _cv_word_font()
     doc = Document()
+    doc.core_properties.title = f"{model.get('name') or 'CV'} — Curriculum Vitae"
+    doc.core_properties.author = str(model.get("name") or "")
     section = doc.sections[0]
-    section.top_margin = Inches(0.52)
-    section.bottom_margin = Inches(0.55)
-    section.left_margin = Inches(0.62)
-    section.right_margin = Inches(0.62)
+    section.page_width, section.page_height = Mm(210), Mm(297)
+    section.top_margin, section.bottom_margin = Mm(CV_TOP_MM), Mm(CV_BOTTOM_MM)
+    section.left_margin = section.right_margin = Mm(CV_MARGIN_MM)
+    section.footer_distance = Mm(8)
     styles = doc.styles
-    styles["Normal"].font.name = "Aptos"
-    styles["Normal"]._element.rPr.rFonts.set(qn("w:eastAsia"), "Aptos")
-    styles["Normal"].font.size = Pt(9)
+    styles["Normal"].font.name = font
+    styles["Normal"].font.size = Pt(scale["body"])
+    styles["Normal"].paragraph_format.space_after = Pt(0)
 
-    def style(name: str, size: float, bold: bool = False, color=(23, 42, 53), font="Aptos", italic: bool = False):
-        st = styles.add_style(name, 1) if name not in styles else styles[name]
+    def style(name, size, *, bold=False, color=Theme.ink, leading=None, before=0, after=0, keep=False, heading=None):
+        st = styles.add_style(name, 1)
+        st.base_style = styles[heading or "Normal"]
         st.font.name = font
-        st._element.rPr.rFonts.set(qn("w:eastAsia"), font)
+        st._element.get_or_add_rPr().rFonts.set(qn("w:eastAsia"), font)
         st.font.size = Pt(size)
         st.font.bold = bold
-        st.font.italic = italic
-        st.font.color.rgb = RGBColor(*color)
+        st.font.color.rgb = RGBColor.from_string(color.lstrip("#"))
+        fmt = st.paragraph_format
+        fmt.line_spacing = Pt(leading or size * 1.22)
+        fmt.space_before, fmt.space_after = Pt(before), Pt(after)
+        fmt.keep_with_next = keep
+        fmt.keep_together = True
+        fmt.widow_control = True
         return st
 
-    name_style = style("CV Name", 21, True, (12, 52, 66), "Georgia")
-    name_style.paragraph_format.space_after = Pt(0)
-    title_style = style("CV Professional Title", 10.6, False, (21, 124, 120))
-    title_style.paragraph_format.space_after = Pt(2)
-    contact_style = style("CV Contact", 8.4, False, (102, 115, 122))
-    contact_style.paragraph_format.space_after = Pt(8)
-    section_style = style("CV Section", 10.1, True, (12, 52, 66))
-    section_style.paragraph_format.space_before = Pt(7)
-    section_style.paragraph_format.space_after = Pt(2.5)
-    group_style = style("CV Competency Group", 8.9, False, (23, 42, 53))
-    group_style.paragraph_format.space_after = Pt(1.5)
-    role_style = style("CV Role", 10.4, True, (12, 52, 66), "Georgia")
-    role_style.paragraph_format.space_before = Pt(5)
-    role_style.paragraph_format.space_after = Pt(0)
-    role_style.paragraph_format.keep_with_next = True
-    meta_style = style("CV Meta", 8.1, False, (102, 115, 122), italic=True)
-    meta_style.paragraph_format.space_after = Pt(1.5)
-    meta_style.paragraph_format.keep_with_next = True
-    body_style = style("CV Body", 8.9, False, (23, 42, 53))
-    body_style.paragraph_format.space_after = Pt(2)
+    style("CV Name", scale["name"], bold=True, color=Theme.deep, leading=scale["name"] * 1.15, after=1, keep=True)
+    style("CV Professional Title", scale["title"], color=Theme.teal, after=3, keep=True)
+    style("CV Contact", scale["contact"], color=Theme.muted, leading=scale["contact"] * 1.3, after=8, keep=True)
+    style("CV Section", scale["section"], bold=True, color=Theme.deep, before=scale["section_before"], after=scale["section_after"] + 3, keep=True, heading="Heading 1")
+    style("CV Competency Group", scale["body"], leading=scale["leading"], after=scale["group_after"])
+    style("CV Role", scale["role"], bold=True, color=Theme.deep, leading=scale["role"] * 1.19, before=scale["role_before"], after=.8, keep=True, heading="Heading 2")
+    style("CV Meta", scale["meta"], color=Theme.muted, after=scale["meta_after"], keep=True)
+    style("CV Body", scale["body"], leading=scale["leading"], after=3.2)
+    style("CV Bullet", scale["body"], leading=scale["bullet_leading"], after=scale["bullet_after"])
+
+    def border(p, color, size):
+        borders = OxmlElement("w:pBdr")
+        bottom = OxmlElement("w:bottom")
+        for key, value in {"val": "single", "sz": str(size), "color": color.lstrip("#"), "space": "3"}.items():
+            bottom.set(qn("w:" + key), value)
+        borders.append(bottom)
+        p._p.get_or_add_pPr().append(borders)
 
     def add_section(title: str) -> None:
         p = doc.add_paragraph(title, style="CV Section")
         p.paragraph_format.keep_with_next = True
-        pPr = p._p.get_or_add_pPr()
-        borders = OxmlElement("w:pBdr")
-        bottom = OxmlElement("w:bottom")
-        bottom.set(qn("w:val"), "single")
-        bottom.set(qn("w:sz"), "4")
-        bottom.set(qn("w:color"), "D7E0E2")
-        borders.append(bottom)
-        pPr.append(borders)
+        border(p, Theme.rule, 4)
 
     def add_bullet(text: str) -> None:
-        p = doc.add_paragraph(style="CV Body")
-        p.paragraph_format.left_indent = Inches(0.19)
-        p.paragraph_format.first_line_indent = Inches(-0.13)
-        p.paragraph_format.space_after = Pt(1.5)
-        p.add_run("• ")
+        p = doc.add_paragraph(style="CV Bullet")
+        p.paragraph_format.left_indent = Pt(11)
+        p.paragraph_format.first_line_indent = Pt(-11)
+        p.paragraph_format.tab_stops.add_tab_stop(Pt(11))
+        p.add_run("•\t").font.color.rgb = RGBColor.from_string(Theme.teal[1:])
         p.add_run(str(text))
 
     doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="CV Name")
@@ -808,6 +855,8 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
     contact_line = _cv_contact_line(model)
     if contact_line:
         doc.add_paragraph(contact_line, style="CV Contact")
+
+    border(doc.paragraphs[-1], Theme.teal, 12)
 
     if model.get("profile"):
         add_section("PROFESSIONAL SUMMARY")
@@ -823,16 +872,21 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
                 run = p.add_run(f"{label}: ")
                 run.bold = True
                 run.font.color.rgb = RGBColor(12, 52, 66)
-            p.add_run(" · ".join(str(item) for item in group.get("items") or []))
+            p.add_run("\u00a0· ".join(str(item) for item in group.get("items") or []))
 
     experience = list(model.get("experience") or [])
     if experience:
         add_section("PROFESSIONAL EXPERIENCE")
         for item in experience:
             doc.add_paragraph(item.get("role") or "", style="CV Role")
-            meta = " | ".join(str(value) for value in [item.get("org"), item.get("loc"), item.get("dates")] if value)
-            if meta:
-                doc.add_paragraph(meta, style="CV Meta")
+            if item.get("org") or item.get("dates"):
+                p = doc.add_paragraph(style="CV Meta")
+                if item.get("org"):
+                    p.add_run(str(item["org"])).bold = True
+                if item.get("dates"):
+                    p.add_run((" | " if item.get("org") else "") + str(item["dates"]))
+            if item.get("loc"):
+                doc.add_paragraph(str(item["loc"]), style="CV Meta")
             for bullet in item.get("bullets") or []:
                 add_bullet(bullet)
 
@@ -865,7 +919,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
     # Footer: name on the left, a real page number on the right.
     footer = section.footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    footer.paragraph_format.tab_stops.add_tab_stop(Inches(7.2), WD_TAB_ALIGNMENT.RIGHT)
+    footer.paragraph_format.tab_stops.add_tab_stop(section.page_width - section.left_margin - section.right_margin, WD_TAB_ALIGNMENT.RIGHT)
     run = footer.add_run(str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
     run.font.size = Pt(7)
     run.font.color.rgb = RGBColor(102, 115, 122)
@@ -873,6 +927,14 @@ def render_cv_docx(model: dict[str, Any], path: str | Path) -> None:
     page_run.font.size = Pt(7)
     page_run.font.color.rgb = RGBColor(102, 115, 122)
     _docx_page_field(footer)
+    for run in footer.runs:
+        run.font.name = font
+        run.font.size = Pt(7)
+        run.font.color.rgb = RGBColor.from_string(Theme.muted[1:])
+    border(footer, Theme.rule, 4)
+    update = OxmlElement("w:updateFields")
+    update.set(qn("w:val"), "true")
+    doc.settings.element.append(update)
     doc.save(str(path))
 
 

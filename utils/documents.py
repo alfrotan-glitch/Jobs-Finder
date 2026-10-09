@@ -230,12 +230,15 @@ def _experience_header(entry: dict[str, Any]) -> str:
     return header
 
 
-def _entry_sort_key(entry: dict[str, Any]) -> tuple[date, date, str]:
-    end_raw = entry.get("end") or "present"
-    start_raw = entry.get("start") or "1900-01"
-    end_date = parse_profile_date(end_raw, today=date.today()) or date.today()
-    start_date = parse_profile_date(start_raw, today=date.today()) or date(1900, 1, 1)
-    return (end_date, start_date, _resolved_entry_value(entry, "title"))
+def _entry_sort_key(entry: dict[str, Any]) -> tuple[date, date]:
+    """Sort on supplied dates only; blank/invalid dates never mean Present.
+
+    Partially dated roles use their one known date. Undated roles sort last,
+    stably in source order. Sorting does not add precision to displayed dates.
+    """
+    start = parse_profile_date(_resolved_entry_value(entry, "start"))
+    end = parse_profile_date(_resolved_entry_value(entry, "end"))
+    return (end or start or date.min, start or date.min)
 
 
 def _reverse_chronological_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -692,40 +695,6 @@ def _rank_strings_for_job(items: list[str], job: dict[str, Any], match_report: d
 
 def _vacancy_fit_highlights(profile: dict[str, Any], job: dict[str, Any], match_report: dict[str, Any], *, limit: int = 6) -> list[str]:
     return _rank_strings_for_job(_profile_evidence_lines(profile), job, match_report, limit=limit)
-
-
-def _work_entry_relevance(entry: dict[str, Any], job: dict[str, Any], match_report: dict[str, Any]) -> int:
-    """Deterministically score only textual overlap; never create a new fact."""
-    focus = _tokenize_focus("\n".join([
-        str(job.get("description") or ""),
-        " ".join(_focus_labels(match_report, limit=20)),
-    ]))
-    text = "\n".join([_experience_header(entry), *_entry_text_values(entry)])
-    hits = len(_focus_term_hits(text, focus)) + len(_focus_term_hits(text, _job_title_terms(job)))
-    lower = text.lower()
-    # Direct clinical/health roles should remain prominent for clinical health
-    # vacancies even when a terse vacancy omits detailed keywords.
-    if any(term in lower for term in ["medical doctor", "clinical", "health & nutrition", "health and nutrition", "public health", "rapid response"]):
-        hits += 2
-    return hits
-
-
-def _tailored_work_sections(
-    entries: list[dict[str, Any]], job: dict[str, Any], match_report: dict[str, Any]
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Return (most relevant, remaining) while retaining every verified role."""
-    chronological = _reverse_chronological_entries(entries)
-    scored = [(entry, _work_entry_relevance(entry, job, match_report)) for entry in chronological]
-    relevant = [entry for entry, score in sorted(scored, key=lambda pair: pair[1], reverse=True) if score > 0]
-    relevant_ids = {id(entry) for entry in relevant}
-    remaining = [entry for entry in chronological if id(entry) not in relevant_ids]
-    # A generic vacancy can have no useful overlap. Keep the latest role in the
-    # leading section so the CV still has a natural first-page chronology.
-    if not relevant and remaining:
-        # Keep a natural lead role without imposing a cap: all other verified
-        # employment records remain in the same CV immediately afterwards.
-        relevant.append(remaining.pop(0))
-    return relevant, remaining
 
 
 def _job_focus_phrases(job: dict[str, Any], match_report: dict[str, Any] | None = None, *, limit: int = 6) -> list[str]:
@@ -1215,12 +1184,10 @@ def _professional_profile_paragraph(
     unverified profile item can appear here. ``first_person`` only changes
     sentence voice for a cover letter; it never changes the evidence used.
 
-    ``has_languages_section`` is set when the caller's document prints its own
-    LANGUAGES section, which carries the same verified languages in the same
-    words. The summary then omits its languages sentence so one fact is not
-    printed twice in one document. Every other sentence is unchanged: the
-    narrative, the coverage areas, the employers and the headline competencies
-    all remain in the summary as well as being detailed in their own sections.
+    CV summaries introduce the verified professional scope without repeating
+    the education, credentials, employer list and competency inventory printed
+    below. Cover-letter wording is independent and retains its full context.
+    An explicitly verified owner-written summary is always preserved verbatim.
     """
     owner_summary = _verified_profile_summary(profile)
     if owner_summary:
@@ -1242,11 +1209,12 @@ def _professional_profile_paragraph(
             sentences.append("Languages: " + ", ".join(_lowercase_level(line) for line in languages) + ".")
         return " ".join(sentences)
 
+    concise_cv = has_languages_section and not first_person
     field, institution = _verified_education_parts(profile)
     identity = "Medical Doctor (MD)"
-    if field:
+    if field and not concise_cv:
         identity += f" qualified in {field}"
-    if institution:
+    if institution and not concise_cv:
         identity += f" at {institution}"
     credentials: list[str] = []
     if evidence.has_verified("medical_exit_exam"):
@@ -1254,7 +1222,7 @@ def _professional_profile_paragraph(
     if evidence.has_verified("license_registration"):
         credentials.append("a valid medical professional registration/license")
     lead = f"I am a {identity}" if first_person else identity
-    identity_sentence = lead + (f", with {_join_and(credentials)}" if credentials else "") + "."
+    identity_sentence = lead + (f", with {_join_and(credentials)}" if credentials and not concise_cv else "") + "."
     # A cover letter for a supervisory health/nutrition vacancy leads with the
     # verified supervision and field experience; the medical identity follows.
     supervisory = first_person and _is_health_supervisory_role(job)
@@ -1284,6 +1252,9 @@ def _professional_profile_paragraph(
             else:
                 sentences.append(f"Brings {amount}" + (f" in {context}" if context else "") + ".")
 
+    if concise_cv and len(sentences) == 2 and sentences[1].startswith("Brings "):
+        sentences = [identity + " with " + sentences[1][len("Brings "):]]
+
     clauses = _supervisory_lead_clauses(evidence) if supervisory else _experience_coverage_clauses(evidence, rank_key)
     if clauses:
         lead_in = "My professional experience covers" if first_person else "Professional experience covers"
@@ -1293,19 +1264,19 @@ def _professional_profile_paragraph(
 
     organizations = _verified_organizations(profile)
     if organizations and organization_order:
-        # A tailored CV already ordered its roles by vacancy relevance, and the
-        # cover letter follows the same verified order.
+        # Follow the CV's supplied employer order, de-duplicating employers
+        # with multiple roles without inventing any employment context.
         preferred = [org for org in organization_order if org in organizations]
         preferred = list(dict.fromkeys(preferred))
         remainder = [org for org in organizations if org not in preferred]
         organizations = preferred + remainder
     elif organizations and rank_key is not None and not first_person:
         organizations = sorted(organizations, key=rank_key)
-    if organizations:
+    if organizations and not concise_cv:
         lead_in = "My experience includes work with" if first_person else "Employment history includes assignments with"
         sentences.append(f"{lead_in} {_join_and(organizations[:4])}.")
 
-    if competencies:
+    if competencies and not concise_cv:
         lead_in = "My core technical competencies include" if first_person else "Core technical competencies include"
         sentences.append(f"{lead_in} {_join_and(competencies[:8])}.")
 
@@ -1386,8 +1357,8 @@ def _render_canonical_cv_text(model: dict[str, Any]) -> str:
 def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
     """Build a position-neutral master-CV model from verified canonical facts.
 
-    This is deliberately separate from vacancy tailoring. It preserves the
-    supplied work-history order, the complete verified competency inventory,
+    This is deliberately separate from vacancy tailoring. It presents work
+    history newest first and preserves the complete verified competency inventory,
     every verified certificate, and every verified responsibility; it receives
     no vacancy, match report, employer, or target-title input, so a role's
     wording and priority can never become a new canonical applicant fact.
@@ -1408,9 +1379,8 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
 
     expertise = build_expertise_groups(verified_skills)
 
-    # The canonical profile keeps the owner's source order. In contrast to a
-    # vacancy CV, there is no relevance score and therefore no role-specific
-    # reordering or selection.
+    # Sort a presentation copy, never the owner's canonical source record.
+    # Both master and tailored CVs use the same reverse chronology.
     experience = [
         {
             "role": _resolved_entry_value(entry, "title"),
@@ -1419,7 +1389,7 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
             "dates": _experience_dates(entry),
             "bullets": _split_substantive_bullets(_entry_text_values(entry)),
         }
-        for entry in work_entries
+        for entry in _reverse_chronological_entries(work_entries)
     ]
     model = {
         "name": _full_name(profile),
@@ -1566,11 +1536,9 @@ def generate_tailored_documents(
 
     ordered_work: list[dict[str, Any]] = []
     if work_entries:
-        most_relevant, remaining = _tailored_work_sections(work_entries, job, match_report)
-        # Tailoring is ordering only. Every verified role and every substantive
-        # responsibility is retained, including roles that are less relevant to
-        # the vacancy at hand.
-        for entry in most_relevant + remaining:
+        # Keep a trustworthy chronology. Vacancy emphasis belongs in the
+        # summary, competency groups and bullet ordering, not shuffled dates.
+        for entry in _reverse_chronological_entries(work_entries):
             ordered_work.append(
                 {
                     "role": _resolved_entry_value(entry, "title"),

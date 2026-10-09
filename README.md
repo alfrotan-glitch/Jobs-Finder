@@ -244,7 +244,13 @@ Every vacancy preserves four independent fields: `source_url` (official listing/
 
 ### CV design system
 
-One design system (`utils/document_design.py`, `jobs-finder-editorial-medical`) renders every CV and cover letter: a single ATS-readable column, one serif face for the name and role titles and one sans face for body text, a restrained teal/gold accent used only for the title line and section rules, explicit section headings, and a footer with the applicant name and page number. There are no icons, sidebars, graphics, or decorative shapes, and no hard-coded page breaks or content cut-offs — pagination is entirely driven by the verified content. If a CV would end with an almost-empty final page, it is re-rendered once at the compact setting of the same design system, and only when that actually removes the sparse page.
+The shared renderer (`utils/document_design.py`, `jobs-finder-editorial-medical`) produces CVs in a single ATS-readable column: A4 paper, 18 mm side margins, a strong sans-serif name, navy hierarchy, restrained teal accents, real section dividers, and readable 10.5 pt body text. Employer/date lines are emphasized separately from locations and responsibility bullets. DOCX uses the same installed font family, typography and selected spacing scale as PDF, semantic heading styles, keep-with-next/widow controls, and a real PAGE field aligned within the text area. Word may substitute fonts or paginate differently on another machine; PDF is the inspected print view. TXT remains a complete readable mirror.
+
+Master and tailored CV experience is **newest first**, sorted on supplied dates without changing the canonical source order. Blank dates never imply current employment. Tailoring ranks competency groups and responsibility bullets and emphasizes relevant verified scope in the summary; it does not shuffle chronology or add facts. Generated summaries avoid repeating the detailed education, credentials, employer list and competency inventory below. Verified owner-written summaries are preserved verbatim.
+
+There are no icons, sidebars, text boxes, hard-coded page breaks or content cut-offs. Long verified records can extend beyond two pages. If safe whitespace reduction removes a nearly empty trailing page, both CV formats receive that spacing scale; font sizes never shrink. If it does not help, the comfortable layout is restored. Cover-letter rendering and application-subject rules are unchanged by this CV remediation.
+
+See [the rendering audit](docs/cv_rendering_audit.md) for actual before/after findings, reproduction steps, validation and limitations. Generated applicant files remain local and ignored by Git.
 
 ## Application package output
 

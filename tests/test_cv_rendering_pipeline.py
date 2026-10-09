@@ -199,7 +199,7 @@ def test_long_role_headers_and_multi_page_history_do_not_clip_or_orphan(tmp_path
              "loc": "A deliberately long location description for wrapping checks",
              "dates": "2020 – 2021",
              "bullets": [f"Unique responsibility {i:02d}: " + "Verified fixture content for pagination testing. " * 6]}
-            for i in range(12)
+            for i in range(18)
         ],
     }
     path = tmp_path / "long.pdf"

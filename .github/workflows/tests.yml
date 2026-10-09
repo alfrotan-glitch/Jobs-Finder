@@ -26,4 +26,17 @@ jobs:
       - run: python -m ruff check .
       - run: python -m compileall -q main.py dashboard utils tests
       - run: node --check dashboard/static/app.js
-      - run: python -m pytest -q
+      - run: python -m pytest -q --junitxml=.pytest_cache/results.xml
+      - name: Annotate test failures
+        if: failure()
+        shell: python
+        run: |
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          report = Path(".pytest_cache/results.xml")
+          if report.exists():
+              for case in ET.parse(report).iter("testcase"):
+                  for failure in case.findall("failure") + case.findall("error"):
+                      message = (failure.text or failure.get("message", ""))[:6000]
+                      message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                      print(f"::error title={case.get('name', 'Test failure')}::{message}")

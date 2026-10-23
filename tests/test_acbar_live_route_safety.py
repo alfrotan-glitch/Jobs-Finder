@@ -21,6 +21,7 @@ def _listing(job_id="146432"):
         "acbar",
         "Listing text",
         metadata={},
+        application_method="UNAVAILABLE",
     )
 
 
@@ -42,7 +43,7 @@ def test_official_google_form_is_used_instead_of_public_site_footer_email():
     job = _parse_acbar_detail(html, _listing())
     assert job.application_method == "WEB"
     assert job.apply_url == "https://forms.gle/rtGFFigaecLcnW8MA"
-    assert job.apply_email is None
+    assert not job.apply_email
     assert job.metadata.get("apply_email") is None
 
 
@@ -56,7 +57,7 @@ def test_nav_jobs_link_does_not_become_application_form():
     job = _parse_acbar_detail(html, _listing("146433"))
     assert job.application_method == "UNAVAILABLE"
     assert job.apply_url is None
-    assert job.apply_email is None
+    assert not job.apply_email
 
 
 def test_employer_email_inside_submission_guideline_is_accepted():

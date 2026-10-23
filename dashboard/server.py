@@ -25,6 +25,7 @@ from utils.discovery import (
     ACBAR_DEFAULT_TIMEOUT_SECONDS,
     RELIEFWEB_DEFAULT_LIMIT,
     RELIEFWEB_DEFAULT_TIMEOUT_SECONDS,
+    is_expired,
     run_discovery_scan,
 )
 from utils.documents import prepare_application_bundle, write_master_cv
@@ -656,13 +657,11 @@ def _scan_context(scan: dict[str, Any]) -> dict[str, str] | None:
 
 @app.get("/api/recommended")
 def api_recommended(limit: int = 200):
-    """Serve the authoritative recommendation collection with its provenance.
+    """Serve saved-scan recommendations, updating real-time display safety.
 
-    The collection is persisted within its scan run and returned verbatim
-    (except current package/progress overlays). ``data_origin`` and ``scan``
-    explicitly identify saved scan data; this endpoint never represents a
-    historical result as a fresh live-source result. If no scan collection
-    exists, the stored-history view uses the same recommendation gate.
+    Scan membership/order remain authoritative. A later request may exclude
+    deadlines that have since passed, and overlays the live stored package
+    and progress. Original historical scan counts are never rewritten.
     """
     latest = get_latest_scan() or {}
     entries = latest.get("recommendations")
@@ -670,9 +669,25 @@ def api_recommended(limit: int = 200):
         fresh = {str(job.get("id")): job for job in list_actionable_jobs(limit=500)}
         merged = []
         for entry in entries:
+            if not isinstance(entry, dict):
+                continue
             row = fresh.get(str(entry.get("id") or ""))
             if row:
-                entry = {**entry, "status": row.get("status") or entry.get("status"), "package_status": row.get("package_status") or entry.get("package_status")}
+                # The saved scan decides *which* role was recommended, but the
+                # stored row is the actual state of this user's documents and
+                # application. Otherwise "Review package" loses its files
+                # every time the browser loads the Recommended page.
+                entry = {
+                    **entry,
+                    **{
+                        key: row[key]
+                        for key in ("status", "package_status", "package", "documents", "readiness")
+                        if key in row
+                    },
+                    "metadata": row.get("metadata") or entry.get("metadata") or {},
+                }
+            if is_expired(entry):
+                continue
             merged.append(entry)
         return {"jobs": merged[:limit], "data_origin": "latest_saved_scan", "scan": _scan_context(latest)}
     return {"jobs": get_recommended_jobs(limit=limit), "data_origin": "stored_history", "scan": None}
@@ -748,11 +763,15 @@ def api_prepare(job_id: str):
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+    if is_expired(job):
+        raise HTTPException(status_code=409, detail="This vacancy has passed its stated deadline. Review the official posting for a reopened vacancy instead.")
     report = match_job_against_profile(job, profile).to_dict()
-    log_medical_match(job_id, report)
     if report.get("readiness_status") == NOT_ELIGIBLE_STATUS:
         raise HTTPException(status_code=409, detail="This vacancy is NOT_ELIGIBLE; no application package was generated.")
+    # Do not change a previously prepared/applicant-tracked record before
+    # the replacement files have actually been generated successfully.
     docs = prepare_application_bundle(job, profile, report, out_dir=ROOT / "documents" / "applications")
+    log_medical_match(job_id, report)
     update_tailored_resume(job_id, docs)
     return {"job_id": job_id, "documents": docs.get("generated_paths", {}), "package": docs.get("application_package", {})}
 

@@ -102,8 +102,11 @@ After you have opened `run_jobs_finder.bat` at least once, select
 a standard Task Scheduler task for **09:00 local Windows time**, using your
 own logged-in account. The dashboard does not need to be open. The computer
 must be on and your Windows account signed in; checks cannot run while it is
-shut down or disconnected from the internet. When you reopen Jobs-Finder,
-the locally saved alerts will appear in the inbox. No application is sent.
+shut down or disconnected from the internet. When Windows allows it, a
+best-effort desktop popup announces new alerts; Focus Assist or Windows
+notification settings may suppress the popup. The **stored alerts inbox is
+the reliable record**, and an already-open dashboard checks it every two
+minutes. No application is sent.
 
 Use the same Settings button to disable the task. These commands are also
 available for advanced users:

@@ -468,7 +468,7 @@ def api_profile_details():
 
 
 @app.get("/api/generated-file")
-def api_generated_file(path: str):
+def api_generated_file(path: str, download: bool = False):
     """Open a generated package artifact for user review.
 
     Only files under the local ignored documents/ directory are served. This is
@@ -484,7 +484,11 @@ def api_generated_file(path: str):
         raise HTTPException(status_code=404, detail="Generated file not found.")
     if resolved.suffix.lower() not in {".txt", ".pdf", ".docx"}:
         raise HTTPException(status_code=400, detail="Unsupported generated file type.")
-    return FileResponse(str(resolved), filename=resolved.name)
+    # A PDF or text document opens directly for an accessible in-browser
+    # review. Word documents are downloaded (they cannot be rendered safely
+    # by browsers); a user may explicitly download any of the three formats.
+    disposition = "attachment" if download or resolved.suffix.lower() == ".docx" else "inline"
+    return FileResponse(str(resolved), filename=resolved.name, content_disposition_type=disposition)
 
 
 @app.get("/api/profile/review")

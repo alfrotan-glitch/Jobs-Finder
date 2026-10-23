@@ -74,8 +74,7 @@ if not exist "%VENV_PYTHON%" (
     )
 
     echo First-run setup: installing dependencies from requirements.txt...
-    "%VENV_PYTHON%" -m pip install --upgrade pip
-    if errorlevel 1 goto dependency_failed
+    rem Do not make a pip self-upgrade an unrelated startup prerequisite.
     "%VENV_PYTHON%" -m pip install -r "%REQUIREMENTS%"
     if errorlevel 1 goto dependency_failed
     echo First-run setup: complete.
@@ -92,14 +91,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
-"%VENV_PYTHON%" -c "import fastapi, uvicorn, yaml, bs4, docx, reportlab" >nul 2>&1
+"%VENV_PYTHON%" -c "import fastapi, uvicorn, yaml, bs4, docx, reportlab, httpx, pdfplumber" >nul 2>&1
 if errorlevel 1 (
-    echo Startup status: FAILED
-    echo Required dependencies are missing from .venv.
-    echo Run: .venv\Scripts\python.exe -m pip install -r requirements.txt
-    popd >nul 2>&1
-    pause
-    exit /b 1
+    echo Python/venv: repairing missing project dependencies...
+    if not exist "%REQUIREMENTS%" goto dependency_failed
+    "%VENV_PYTHON%" -m pip install -r "%REQUIREMENTS%"
+    if errorlevel 1 goto dependency_failed
+    "%VENV_PYTHON%" -c "import fastapi, uvicorn, yaml, bs4, docx, reportlab, httpx, pdfplumber" >nul 2>&1
+    if errorlevel 1 goto dependency_failed
+    echo Python/venv: dependencies repaired successfully.
 )
 
 netstat -ano -p tcp 2>nul | findstr /R /C:":%PORT% .*LISTENING" >nul 2>&1
@@ -143,7 +143,8 @@ exit /b %EXIT_CODE%
 
 :dependency_failed
 echo Startup status: FAILED
-echo Dependency installation failed. Install Python 3.12 or 3.11, delete .venv, and run this file again.
+echo Automatic dependency setup/repair failed. Check your internet access and Python 3.11/3.12 installation.
+echo Your saved profile, documents, and application database have not been deleted.
 popd >nul 2>&1
 pause
 exit /b 1

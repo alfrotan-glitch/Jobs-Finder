@@ -6,9 +6,9 @@ editable body text, and an unsplit signature for long applications.
 
 from __future__ import annotations
 
-from docx import Document
 import pdfplumber
 import pytest
+from docx import Document
 
 from utils.document_design import render_cover_letter_docx, render_cover_letter_pdf
 

@@ -328,14 +328,16 @@ def deduplicate_jobs_with_stats(jobs: list[Job], *, today: date | None = None) -
 
     for job in jobs:
         source_id = str((job.metadata or {}).get("_scan_source_id") or job.platform or "").lower()
-        if is_expired(job, today=today):
-            inc(source_id, "expired_stale_excluded")
-            continue
         key = _canonical(job.url or job.apply_url or "") or _canonical(f"{job.title} {job.company} {job.location}")
         if not key or key in seen:
             inc(source_id, "duplicates_removed")
             continue
+        # Deduplicate before expiry: an undated duplicate must not resurrect
+        # a posting whose first authoritative card carries a passed deadline.
         seen.add(key)
+        if is_expired(job, today=today):
+            inc(source_id, "expired_stale_excluded")
+            continue
         out.append(job)
     return out, stats
 

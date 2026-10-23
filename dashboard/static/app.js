@@ -174,8 +174,9 @@ function generatedPaths(job) {
   return job.documents?.generated_paths || job.generated_paths || {};
 }
 
-function openFileUrl(path) {
-  return `/api/generated-file?path=${encodeURIComponent(path)}`;
+function openFileUrl(path, download = false) {
+  const query = `path=${encodeURIComponent(path)}`;
+  return `/api/generated-file?${query}${download ? "&download=1" : ""}`;
 }
 
 function jobCard(job, {compact = false} = {}) {
@@ -557,6 +558,21 @@ function documentCard(label, path) {
   return `<div class="documentCard"><div><strong>${escapeHtml(label)}</strong><span>READY FOR REVIEW</span></div><a class="button secondary" href="${escapeAttr(openFileUrl(path))}" target="_blank" rel="noopener">Open</a></div>`;
 }
 
+// Keep every usable format visible. PDF is best for visual review and
+// submission; the editable Word document is for refinements; text is a
+// portable, accessible copy. No generated document is ever sent by the app.
+function documentBundleCard(label, formats) {
+  const files = formats && typeof formats === "object" ? formats : {};
+  const links = [];
+  if (files.pdf) {
+    links.push(`<a class="button secondary smallButton" href="${escapeAttr(openFileUrl(files.pdf))}" target="_blank" rel="noopener">Preview PDF</a>`);
+    links.push(`<a class="button secondary smallButton" href="${escapeAttr(openFileUrl(files.pdf, true))}">Download PDF</a>`);
+  }
+  if (files.docx) links.push(`<a class="button secondary smallButton" href="${escapeAttr(openFileUrl(files.docx, true))}">Download Word</a>`);
+  if (files.txt) links.push(`<a class="button secondary smallButton" href="${escapeAttr(openFileUrl(files.txt))}" target="_blank" rel="noopener">View text</a>`);
+  return `<div class="documentCard documentBundle"><div><strong>${escapeHtml(label)}</strong><span>${links.length ? "Ready for your review · no application sent" : "NOT CREATED"}</span></div><div class="documentActions">${links.join("")}</div></div>`;
+}
+
 function artifactStatusLabel(path) {
   return path ? "READY FOR REVIEW" : "NOT CREATED";
 }
@@ -564,10 +580,13 @@ function artifactStatusLabel(path) {
 function renderPackage(job) {
   const pkg = job.package || {};
   const paths = generatedPaths(job);
-  const cvPath = paths.tailored_cv?.pdf || paths.tailored_cv?.txt;
-  const coverPath = paths.cover_letter?.pdf || paths.cover_letter?.txt;
+  const cvFormats = paths.tailored_cv || {};
+  const coverFormats = paths.cover_letter || {};
+  const cvPath = cvFormats.pdf || cvFormats.docx || cvFormats.txt;
+  const coverPath = coverFormats.pdf || coverFormats.docx || coverFormats.txt;
   const packagePath = paths.application_package_txt;
   const email = pkg.email_draft;
+  const reviewNotes = [...new Set([...(pkg.review_warnings || []), ...(job.documents?.review_warnings || [])])];
   if (!pkg.package_status && !paths.tailored_cv) {
     return `<section class="detailSection"><h3>Your application package</h3><p class="sectionHelp">NOT CREATED — no package has been prepared yet.</p></section>`;
   }
@@ -577,11 +596,13 @@ function renderPackage(job) {
     <p class="sectionHelp"><strong>Package state: ${escapeHtml(packageState)}</strong> — ${escapeHtml(stateNote)}</p>
     <div class="packageStatus"><span>${escapeHtml(artifactStatusLabel(cvPath))}: Tailored CV</span><span>${escapeHtml(artifactStatusLabel(coverPath))}: Cover letter</span>${email ? `<span>READY FOR REVIEW: Email draft</span>` : ""}</div>
     <div class="documentGrid">
-      ${documentCard("Tailored CV", cvPath)}
-      ${documentCard("Cover letter", coverPath)}
+      ${documentBundleCard("Tailored CV", cvFormats)}
+      ${documentBundleCard("Cover letter", coverFormats)}
       ${email ? `<div class="documentCard"><div><strong>Email draft</strong><span>READY FOR REVIEW — manual sending only</span></div><button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Open</button></div>` : ""}
       ${packagePath ? documentCard("Application instructions", packagePath) : ""}
+      ${paths.application_data_checklist ? documentCard("Application checklist", paths.application_data_checklist) : ""}
     </div>
+    ${reviewNotes.length ? `<div class="applicationReviewNotes" role="note"><strong>Review before applying</strong><ul>${reviewNotes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul></div>` : ""}
   </section>`;
 }
 
@@ -781,10 +802,7 @@ async function generateMasterCv() {
   try {
     const data = await apiJson("/api/master-cv", { method: "POST" });
     const paths = data.documents || {};
-    const cards = ["pdf", "docx", "txt"]
-      .filter((kind) => paths[kind])
-      .map((kind) => documentCard(`Master CV (${kind.toUpperCase()})`, paths[kind]))
-      .join("");
+    const cards = documentBundleCard("Position-neutral Master CV", paths);
     const warnings = (data.review_warnings || []).length
       ? `<p class="sectionHelp">Review notes: ${escapeHtml((data.review_warnings || []).join(" "))}</p>`
       : "";

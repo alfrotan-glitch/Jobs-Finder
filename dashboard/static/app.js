@@ -653,8 +653,8 @@ function showEmailDraft(job) {
       <p><strong>To:</strong> ${escapeHtml(email.to || "")}</p>
       <p><strong>Subject:</strong> ${escapeHtml(email.subject || "")}</p>
       <pre>${escapeHtml(email.body || "")}</pre>
-      <div class="cardActions"><a class="button primary subtle" href="mailto:${escapeAttr(email.to || "")}">Open email</a><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email.to || "")}">Copy email</button></div>
-      <p class="sectionHelp">Prepared for review only. The system has not sent this email.</p>
+      <div class="cardActions"><a class="button primary subtle" href="${escapeAttr(`mailto:${encodeURIComponent(email.to || "")}?subject=${encodeURIComponent(email.subject || "")}`)}">Open email with subject</a><button class="secondary" data-action="copy-email-draft" data-job-id="${escapeAttr(job.id)}">Copy full draft</button><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email.to || "")}">Copy address</button></div>
+      <p class="sectionHelp">This is a draft only. Paste the text into your email client, attach the reviewed documents, and send manually. The system has not contacted the employer.</p>
     </section>`;
   $("drawerTitle").textContent = "Email draft";
   $("drawerKicker").textContent = job.title || "Application package";
@@ -755,6 +755,21 @@ async function copyEmail(email) {
   }
 }
 
+async function copyEmailDraft(jobId) {
+  const email = jobById(jobId)?.package?.email_draft;
+  if (!email) {
+    setStatus("The application email draft is not available.", "warn");
+    return;
+  }
+  const text = `To: ${email.to || ""}\nSubject: ${email.subject || ""}\n\n${email.body || ""}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("Full email draft copied. Check attachments before sending.", "ok");
+  } catch (error) {
+    window.prompt("Copy the full draft and check attachments before sending:", text);
+  }
+}
+
 async function confirmField(field) {
   const body = {field};
   if (field.startsWith("language:")) {
@@ -852,6 +867,7 @@ function handleAction(event) {
     if (job) showEmailDraft(job);
   }
   if (action === "copy-email") copyEmail(target.dataset.email || "");
+  if (action === "copy-email-draft") copyEmailDraft(id);
   if (action === "mark-applied") markApplied(id);
   if (action === "confirm-field") confirmField(target.dataset.field || "");
 }

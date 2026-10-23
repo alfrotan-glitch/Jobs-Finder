@@ -686,7 +686,7 @@ def api_recommended(limit: int = 200):
                     },
                     "metadata": row.get("metadata") or entry.get("metadata") or {},
                 }
-            if is_expired(entry):
+            if is_expired(entry) or entry.get("status") == "APPLIED_MANUALLY":
                 continue
             merged.append(entry)
         return {"jobs": merged[:limit], "data_origin": "latest_saved_scan", "scan": _scan_context(latest)}
@@ -763,6 +763,8 @@ def api_prepare(job_id: str):
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+    if job.get("status") == "APPLIED_MANUALLY":
+        raise HTTPException(status_code=409, detail="This application was already marked as submitted manually. The saved application record has been preserved.")
     if is_expired(job):
         raise HTTPException(status_code=409, detail="This vacancy has passed its stated deadline. Review the official posting for a reopened vacancy instead.")
     report = match_job_against_profile(job, profile).to_dict()

@@ -759,6 +759,8 @@ def delete_all() -> int:
         _trace_database("delete_all", "before_delete", conn)
         conn.execute("DELETE FROM vacancies")
         conn.execute("DELETE FROM scan_runs")
+        conn.execute("DELETE FROM job_alerts")
+        conn.execute("DELETE FROM seen_recommendations")
         _trace_database("delete_all", "after_delete", conn)
         _trace_database("delete_all", "before_commit", conn)
         conn.commit()

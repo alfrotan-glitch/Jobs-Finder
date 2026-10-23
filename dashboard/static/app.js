@@ -384,7 +384,7 @@ function renderNextStep() {
     return;
   }
   const dated = available
-    .filter((job) => /^\\d{4}-\\d{2}-\\d{2}$/.test(deadline(job)))
+    .filter((job) => /^\d{4}-\d{2}-\d{2}$/.test(deadline(job)))
     .sort((a, b) => deadline(a).localeCompare(deadline(b)));
   if (dated.length) {
     const soonest = dated[0];
@@ -424,7 +424,9 @@ function renderNextStep() {
     <div class="nextStepIcon" aria-hidden="true">↻</div>
     <h4>${state.jobs.length ? "Review available jobs" : "Run a vacancy scan"}</h4>
     <p>${state.jobs.length ? "No current recommended vacancy is available. Review all discovered opportunities." : "Start with a scan to find suitable opportunities from the configured sources."}</p>
-    <button class="primary subtle" data-tab-target="${state.jobs.length ? "jobs" : "recommended"}">${state.jobs.length ? "All jobs" : "Recommended"}</button>`;
+    ${state.jobs.length
+      ? '<button class="primary subtle" data-tab-target="jobs">All jobs</button>'
+      : '<button class="primary subtle" data-action="find-jobs">Find Jobs</button>'}`;`;
 }
 
 function recommendationProvenanceNotice() {

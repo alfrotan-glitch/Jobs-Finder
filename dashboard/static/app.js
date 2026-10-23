@@ -1011,3 +1011,19 @@ document.addEventListener("keydown", (event) => {
 
 setStatus("Ready. Run a scan when you want to look for new vacancies.");
 refresh().catch((error) => setStatus(humanizeError(error.message), "error"));
+
+// Keep the inbox current if Windows Task Scheduler finishes a daily scan
+// while the local dashboard is already open. This is a lightweight local
+// read; it never initiates discovery or creates a browser-side background job.
+window.setInterval(async () => {
+  try {
+    const previous = Number(state.alerts?.unread_count || 0);
+    state.alerts = await apiJson("/api/alerts");
+    renderAlerts();
+    if (Number(state.alerts.unread_count || 0) > previous) {
+      setStatus("New job-search alerts are available in your inbox.", "ok");
+    }
+  } catch (_) {
+    // Startup/offline errors are surfaced by the normal refresh path.
+  }
+}, 120000);

@@ -61,7 +61,10 @@ function sourceName(job) {
 }
 
 function applicationMethod(job) {
-  return (job.package?.application_method || job.metadata?.application_method || job.match?.facts?.application_method || job.application_method || "UNAVAILABLE").toUpperCase();
+  // Officially refreshed application forms outrank older saved package drafts.
+  // This prevents an obsolete email draft from hiding a verified WEB route.
+  if (job.metadata?.application_method === "WEB" && job.metadata?.apply_url) return "WEB";
+  return (job.metadata?.application_method || job.application_method || job.match?.facts?.application_method || job.package?.application_method || "UNAVAILABLE").toUpperCase();
 }
 
 function applyEmail(job) {
@@ -69,7 +72,7 @@ function applyEmail(job) {
 }
 
 function webApplyUrl(job) {
-  return job.package?.apply_url || job.metadata?.apply_url || job.match?.facts?.apply_url || job.match?.facts?.application_url || job.apply_url || "";
+  return job.metadata?.apply_url || job.apply_url || job.match?.facts?.apply_url || job.match?.facts?.application_url || job.package?.apply_url || "";
 }
 
 function vacancyPage(job) {
@@ -366,37 +369,64 @@ function renderScanSummary() {
 
 function renderNextStep() {
   const box = $("nextStepBox");
-  if (state.lastScan?.status === "SOURCES_UNAVAILABLE" || state.lastScan?.status === "PARTIAL_SCAN") {
-    box.innerHTML = `
-      <div class="nextStepIcon warn" aria-hidden="true">!</div>
-      <h4>Job sources could not be reached</h4>
-      <p>One or more configured job sources could not be contacted during the last scan. This does not mean there are no jobs.</p>
-      <button class="secondary" data-tab-target="advanced">View details</button>`;
-    return;
-  }
-  if (!state.jobs.length) {
-    box.innerHTML = `
-      <div class="nextStepIcon" aria-hidden="true">↻</div>
-      <h4>Run a vacancy scan</h4>
-      <p>Start with a scan to find suitable opportunities from the configured sources.</p>
-      <button class="primary subtle" data-action="find-jobs">Find Jobs</button>`;
-    return;
-  }
-  const ready = state.recommended.find((job) => readinessValue(job) === "READY_TO_APPLY" && !job.is_expired && job.status !== "APPLIED_MANUALLY");
+  const scanStatus = state.lastScan?.status;
+  const available = state.recommended.filter((job) => !job.is_expired && job.status !== "APPLIED_MANUALLY");
+  // A PARTIAL_SCAN may still contain dozens of useful vacancies. It must
+  // never hide a deadline or tell the user that *all* sources failed.
+  const ready = available.find((job) => readinessValue(job) === "READY_TO_APPLY");
   if (ready) {
     const hasPackage = packageExists(ready);
     box.innerHTML = `
       <div class="nextStepIcon ok" aria-hidden="true">✓</div>
       <h4>${hasPackage ? "Review your prepared application" : "Prepare the strongest application"}</h4>
-      <p>${escapeHtml(ready.title)} is ready for your next review step.</p>
+      <p>${escapeHtml(ready.title)} · Deadline: ${escapeHtml(deadline(ready))}. Check the official posting before submitting.</p>
       <button class="primary subtle" data-action="${hasPackage ? "review-package" : "prepare-job"}" data-job-id="${escapeAttr(ready.id)}">${hasPackage ? "Review package" : "Prepare application"}</button>`;
     return;
   }
+  const dated = available
+    .filter((job) => /^\d{4}-\d{2}-\d{2}$/.test(deadline(job)))
+    .sort((a, b) => deadline(a).localeCompare(deadline(b)));
+  if (dated.length) {
+    const soonest = dated[0];
+    box.innerHTML = `
+      <div class="nextStepIcon warn" aria-hidden="true">!</div>
+      <h4>Check requirements before the deadline</h4>
+      <p>${escapeHtml(soonest.title)} closes on ${escapeHtml(deadline(soonest))}. Your match still requires verification; review the official application route.</p>
+      <button class="primary subtle" data-action="view-job" data-job-id="${escapeAttr(soonest.id)}">Review vacancy</button>
+      ${scanStatus === "PARTIAL_SCAN" ? '<p class="sectionHelp">Some source details were incomplete. Other discovered jobs remain available.</p>' : ""}`;
+    return;
+  }
+  if (available.length) {
+    box.innerHTML = `
+      <div class="nextStepIcon" aria-hidden="true">◦</div>
+      <h4>Review open requirements</h4>
+      <p>Recommended jobs need verification before applying. Confirm requirements and check the official deadlines.</p>
+      <button class="secondary" data-tab-target="recommended">Review recommendations</button>`;
+    return;
+  }
+  if (scanStatus === "SOURCES_UNAVAILABLE") {
+    box.innerHTML = `
+      <div class="nextStepIcon warn" aria-hidden="true">!</div>
+      <h4>Job sources unavailable</h4>
+      <p>None of the configured sources could be checked. Saved applications are preserved; retry the scan.</p>
+      <button class="secondary" data-tab-target="advanced">View source details</button>`;
+    return;
+  }
+  if (scanStatus === "PARTIAL_SCAN") {
+    box.innerHTML = `
+      <div class="nextStepIcon warn" aria-hidden="true">!</div>
+      <h4>Some sources were partially checked</h4>
+      <p>Results may be incomplete because one or more sources could not provide all vacancy details.</p>
+      <button class="secondary" data-tab-target="advanced">Review scan details</button>`;
+    return;
+  }
   box.innerHTML = `
-    <div class="nextStepIcon" aria-hidden="true">◦</div>
-    <h4>Review open requirements</h4>
-    <p>Some recommended jobs need verification before applying.</p>
-    <button class="secondary" data-tab-target="recommended">Review recommendations</button>`;
+    <div class="nextStepIcon" aria-hidden="true">↻</div>
+    <h4>${state.jobs.length ? "Review available jobs" : "Run a vacancy scan"}</h4>
+    <p>${state.jobs.length ? "No current recommended vacancy is available. Review all discovered opportunities." : "Start with a scan to find suitable opportunities from the configured sources."}</p>
+    ${state.jobs.length
+      ? '<button class="primary subtle" data-tab-target="jobs">All jobs</button>'
+      : '<button class="primary subtle" data-action="find-jobs">Find Jobs</button>'}`;
 }
 
 function recommendationProvenanceNotice() {

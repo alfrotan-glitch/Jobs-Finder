@@ -44,6 +44,60 @@ def test_acbar_detail_email_route_and_provenance():
     assert job.metadata["source_provenance"][-1]["source"] == "ACBAR detail"
 
 
+def test_acbar_employer_is_not_derived_from_organizational_context_heading():
+    # Real CTG postings include "Organizational context:" but no field
+    # literally called "Organization". Previous substring matching returned
+    # the fabricated employer "al context:" and overwrote CTG.
+    listing = (
+        '<article class="job-card">'
+        '<a href="/en/jobs/details/146110/district-polio-officer-dpo">'
+        'District Polio Officer (DPO)</a>'
+        '<p>CTG • Full Time</p><p>Kandahar 2026-10-24</p></article>'
+    )
+    job = discovery._parse_acbar_listing(listing, "https://www.acbar.org/en/jobs")[0]
+    assert job.company == "CTG"
+    detail = (
+        '<h1>District Polio Officer (DPO)</h1>'
+        '<h2>Job Summary</h2>'
+        '<p>Organizational context:</p>'
+        '<p>The incumbent will support Polio eradication.</p>'
+        '<h2>Job Requirements</h2><p>Medical Doctor preferred.</p>'
+        '<h2>Submission Guideline</h2>'
+        '<p>Click Register and Apply on Tayo.</p>'
+        '<p>Email / Application Form: '
+        'https://app.tayohr.io/jobs/detail/vac-75835-district-polio-officer-dpo-74521</p>'
+        '<h2>Contact Us</h2><p>webinfo@acbar.org</p>'
+    )
+    parsed = discovery._parse_acbar_detail(detail, job)
+    assert parsed.company == "CTG"
+    assert "organization" not in parsed.metadata
+    assert parsed.application_method == "WEB"
+    assert parsed.apply_url == (
+        "https://app.tayohr.io/jobs/detail/vac-75835-district-polio-officer-dpo-74521"
+    )
+    assert not parsed.apply_email
+    assert discovery._labeled_value("Organizational context:\nThe incumbent", r"Organization") == ""
+
+
+def test_acbar_company_exact_label_and_other_label_whitespace_still_work():
+    assert discovery._labeled_value("Organization: HealthNet TPO\nLocation: Kabul", r"Organization") == "HealthNet TPO"
+    assert discovery._labeled_value("Organization\nCTG\nLocation: Kabul", r"Organization") == "CTG"
+    assert discovery._labeled_value("Job Location: Helmand", r"(?:Job )?Location") == "Helmand"
+    assert discovery._labeled_value("Organizational context:\nMisleading", r"Organization") == ""
+
+
+def test_partial_scan_dashboard_does_not_hide_recommended_deadlines():
+    js = (Path(__file__).parents[1] / "dashboard" / "static" / "app.js").read_text(encoding="utf-8")
+    step = js[js.index("function renderNextStep() {"):js.index("function recommendationProvenanceNotice()")]
+    assert 'scanStatus === "PARTIAL_SCAN"' in step
+    assert "Check requirements before the deadline" in step
+    assert 'data-action="view-job"' in step
+    assert "Some sources were partially checked" in step
+    # A partial scan may retain actionable jobs, so source issues are not
+    # allowed to override all of the recommended results.
+    assert step.index("const available = state.recommended.filter") < step.index('if (scanStatus === "PARTIAL_SCAN")')
+
+
 def test_acbar_detail_web_application_route():
     summary = discovery._parse_acbar_listing(fixture("acbar_listing.html"), "https://www.acbar.org/en/jobs?page=2")[0]
     job = discovery._parse_acbar_detail(fixture("acbar_detail_web.html"), summary)

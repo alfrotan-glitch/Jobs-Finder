@@ -58,7 +58,7 @@ Python support is intentionally conservative: Python 3.11 and 3.12. The full tes
 
 ## Manual setup
 
-The dashboard binds to `127.0.0.1` by default and is not exposed to the LAN. Choose a different host explicitly only when you understand the privacy implications.
+The dashboard binds to `127.0.0.1` by default and is not exposed to the LAN. Because it contains applicant information and has no user authentication, it also rejects untrusted HTTP `Host` headers (including domains pointing to localhost). Supported browser addresses are `localhost`, `127.0.0.1`, and `[::1]`; the in-process test suite additionally uses `testserver`. **Do not bind or publish this dashboard on a LAN or the public internet.** Use a separately designed authenticated deployment if remote access is required.
 
 
 ```bash
@@ -71,7 +71,7 @@ python main.py server --host 127.0.0.1 --port 8080
 
 Open <http://localhost:8080>.
 
-## Running the tests
+The **Find jobs** action accepts only one active scan per dashboard process. A simultaneous scan request returns HTTP `409` instead of starting a second scan that could race with the latest saved results. Once the first scan finishes (or fails), a new scan can be started. This is an in-process guard, not a cross-process scheduler; do not run multiple dashboard workers against the same local profile and database.\n\n## Running the tests
 
 ```bash
 python3 -m venv .venv

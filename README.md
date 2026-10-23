@@ -34,7 +34,7 @@ It does **not**:
 - submit applications automatically
 - bypass CAPTCHA, login, MFA, or employer security controls
 - invent experience, license numbers, documents, dates, achievements, references, or skills
-- silently run continuous scans when the dashboard starts
+- silently run continuous scans when the dashboard starts (automatic daily checks require explicit opt-in)
 - monitor email or perform post-submission automation
 
 ## Windows one-click start
@@ -73,6 +73,58 @@ python main.py server --host 127.0.0.1 --port 8080
 Open <http://localhost:8080>.
 
 The **Find jobs** action accepts only one active scan per dashboard process. A simultaneous scan request returns HTTP `409` instead of starting a second scan that could race with the latest saved results. Once the first scan finishes (or fails), a new scan can be started. This is an in-process guard, not a cross-process scheduler; do not run multiple dashboard workers against the same local profile and database.
+
+## Your personal job-alert inbox and optional daily checks
+
+The dashboard now contains **Alerts**, with an unread counter and an on-device
+notification inbox. Alerts are generated from the **same verified-profile
+matching decisions** used by Recommended, not a second set of AI guesses:
+
+- **New match:** the first time Jobs-Finder discovers a suitable vacancy.
+  This means new *to your system*, not proof that it was posted today.
+- **Deadline reminder:** the first time a relevant unsubmitted vacancy falls
+  within **7, 3 or 1 day** of its confirmed closing date. Each stage is sent
+  once; passed deadlines and previously applied jobs are skipped.
+- **Source issue:** once per calendar day when all active sources are unreachable.
+  The system does not imply that the jobs market is empty.
+
+Notifications and first-seen markers live in the **existing ignored local
+`applications.db`**; no additional user profile, account, cloud inbox, or
+external email service is created. You can mark one or all alerts read, and
+open matching vacancies from the inbox. Repeated scans do not repeat old
+messages. Existing installations upgrade in place without deleting application
+history.
+
+### Optional automatic daily Windows checks
+
+After you have opened `run_jobs_finder.bat` at least once, select
+**Settings → Automatic daily checks → Enable daily checks**. Windows registers
+a standard Task Scheduler task for **09:00 local Windows time**, using your
+own logged-in account. The dashboard does not need to be open. The computer
+must be on and your Windows account signed in; checks cannot run while it is
+shut down or disconnected from the internet. When you reopen Jobs-Finder,
+the locally saved alerts will appear in the inbox. No application is sent.
+
+Use the same Settings button to disable the task. These commands are also
+available for advanced users:
+
+```powershell
+.\.venv\Scripts\python.exe main.py monitor-once
+.\.venv\Scripts\python.exe main.py schedule-status
+.\.venv\Scripts\python.exe main.py schedule-enable
+.\.venv\Scripts\python.exe main.py schedule-disable
+.\.venv\Scripts\python.exe main.py alerts
+```
+
+The scanner and dashboard share a cross-process lock, so a scheduled scan
+cannot overlap with a manual one or corrupt the saved results. Windows task
+registration depends on local account privileges; if Windows rejects it, the
+app reports the problem rather than claiming the check was enabled.
+
+**Delivery boundary:** these are in-app, persisted alerts, **not push messages
+to a phone, SMS, email, or an always-on cloud service**. Only the person using
+this Windows account can enable the scheduled task; this GitHub update cannot
+silently activate it on your computer.
 
 ## Running the tests
 

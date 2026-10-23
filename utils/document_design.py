@@ -1186,5 +1186,7 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
         run.font.name = font
         run.font.size = Pt(7)
         run.font.color.rgb = RGBColor(102, 115, 122)
-    doc.settings.element.append(OxmlElement("w:updateFields"))
+    update = OxmlElement("w:updateFields")
+    update.set(qn("w:val"), "true")
+    doc.settings.element.append(update)
     doc.save(str(path))

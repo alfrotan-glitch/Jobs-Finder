@@ -20,7 +20,13 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from utils.alerts import list_alerts, mark_alert_read, mark_all_alerts_read, record_deadline_alerts, record_scan_alerts
+from utils.alerts import (
+    list_alerts,
+    mark_alert_read,
+    mark_all_alerts_read,
+    record_deadline_alerts,
+    record_scan_alerts,
+)
 from utils.discovery import (
     ACBAR_DEFAULT_DETAIL_CONCURRENCY,
     ACBAR_DEFAULT_TIMEOUT_SECONDS,
@@ -44,7 +50,6 @@ from utils.profile_builder import build_profile_from_cv_file
 from utils.recommendations import evaluate_scan_jobs
 from utils.scan_guard import ScanAlreadyRunning, exclusive_scan
 from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
-from utils.windows_schedule import ScheduleError, schedule_status, set_schedule
 from utils.tracker import (
     get_job_by_id,
     get_latest_scan,
@@ -57,6 +62,7 @@ from utils.tracker import (
     stats,
     update_tailored_resume,
 )
+from utils.windows_schedule import ScheduleError, schedule_status, set_schedule
 
 # The dashboard and CLI intentionally expose the same canonical locations.
 ROOT = PROJECT_ROOT

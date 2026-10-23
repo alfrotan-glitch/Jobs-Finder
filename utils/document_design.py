@@ -996,7 +996,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer
+    from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer
 
     serif, serif_bold, sans, sans_bold = _register_fonts()
     doc = SimpleDocTemplate(
@@ -1060,84 +1060,125 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
         else:
             story.append(Paragraph(esc(line), body_style))
     signature = model.get("signature") or {}
-    story.append(Spacer(1, 4))
-    story.append(Paragraph("Sincerely,", body_style))
-    story.append(Paragraph(esc(model.get("name") or signature.get("name") or "CONFIRM BEFORE SUBMISSION"), signature_style))
+    # The final name and sign-off must never become orphaned at a page break.
+    signoff = [
+        Spacer(1, 4),
+        Paragraph("Sincerely,", body_style),
+        Paragraph(esc(model.get("name") or signature.get("name") or "CONFIRM BEFORE SUBMISSION"), signature_style),
+    ]
     if signature.get("title"):
-        story.append(Paragraph(esc(signature["title"]), signature_meta_style))
+        signoff.append(Paragraph(esc(signature["title"]), signature_meta_style))
     if signature.get("email"):
-        story.append(Paragraph(esc(f"Email: {signature['email']}"), signature_meta_style))
+        signoff.append(Paragraph(esc(f"Email: {signature['email']}"), signature_meta_style))
     if signature.get("phone"):
-        story.append(Paragraph(esc(f"Phone: {signature['phone']}"), signature_meta_style))
+        signoff.append(Paragraph(esc(f"Phone: {signature['phone']}"), signature_meta_style))
+    story.append(KeepTogether(signoff))
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
 
 
 def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
     from docx import Document
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+    from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
-    from docx.shared import Inches, Pt, RGBColor
+    from docx.shared import Mm, Pt, RGBColor
 
     doc = Document()
+    doc.core_properties.title = f"{model.get('name') or 'Applicant'} — Cover Letter"
+    doc.core_properties.author = str(model.get("name") or "")
     sec = doc.sections[0]
-    sec.top_margin = Inches(0.62)
-    sec.bottom_margin = Inches(0.62)
-    sec.left_margin = Inches(0.72)
-    sec.right_margin = Inches(0.72)
+    sec.page_width, sec.page_height = Mm(210), Mm(297)
+    sec.top_margin, sec.bottom_margin = Mm(14), Mm(15)
+    sec.left_margin = sec.right_margin = Mm(20)
+    sec.footer_distance = Mm(8)
     styles = doc.styles
-    styles["Normal"].font.name = "Aptos"
-    styles["Normal"]._element.rPr.rFonts.set(qn("w:eastAsia"), "Aptos")
-    styles["Normal"].font.size = Pt(9)
+    font = _cv_word_font()
+    styles["Normal"].font.name = font
+    styles["Normal"]._element.rPr.rFonts.set(qn("w:eastAsia"), font)
+    styles["Normal"].font.size = Pt(9.1)
 
     def style(name: str, size: float, bold: bool = False, color: tuple[int, int, int] = (23, 42, 53), font: str = "Aptos"):
         st = styles.add_style(name, 1) if name not in styles else styles[name]
         st.font.name = font
-        st._element.rPr.rFonts.set(qn("w:eastAsia"), font)
+        st._element.get_or_add_rPr().rFonts.set(qn("w:eastAsia"), font)
         st.font.size = Pt(size)
         st.font.bold = bold
         st.font.color.rgb = RGBColor(*color)
-        st.paragraph_format.space_after = Pt(2)
+        st.paragraph_format.space_after = Pt(4 if name == "JF Body" else 2)
+        st.paragraph_format.line_spacing = Pt(12.4 if name == "JF Body" else size * 1.3)
+        st.paragraph_format.widow_control = True
+        st.paragraph_format.keep_together = True
         return st
 
-    style("JF Name", 22, True, (12, 52, 66), "Georgia")
-    style("JF Title", 10.3, False, (21, 124, 120))
-    style("JF Contact", 8.0, False, (102, 115, 122))
-    style("JF Label", 7.0, True, (168, 132, 73))
-    style("JF Section", 10, True, (12, 52, 66))
-    style("JF Body", 9.0, False, (23, 42, 53))
-    style("JF Signature", 12, True, (12, 52, 66), "Georgia")
+    style("JF Name", 20, True, (12, 52, 66), font)
+    style("JF Title", 10.2, False, (21, 124, 120), font)
+    style("JF Contact", 8.3, False, (102, 115, 122), font)
+    style("JF Label", 8.5, True, (168, 132, 73), font)
+    style("JF Section", 9.6, True, (12, 52, 66), font)
+    style("JF Body", 9.1, False, (23, 42, 53), font)
+    style("JF Signature", 12, True, (12, 52, 66), font)
+    style("JF Footer", 7, False, (102, 115, 122), font)
 
-    doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="JF Name")
-    doc.add_paragraph(model.get("headline") or "Medical Professional", style="JF Title")
+    name_line = doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="JF Name")
+    name_line.paragraph_format.keep_with_next = True
+    title_line = doc.add_paragraph(model.get("headline") or "Application Letter", style="JF Title")
+    title_line.paragraph_format.keep_with_next = True
     contact = model.get("contact") or {}
-    doc.add_paragraph(" | ".join([x for x in [contact.get("location"), contact.get("phone"), contact.get("email")] if x]), style="JF Contact")
-    doc.add_paragraph(f"APPLICATION LETTER — {model.get('target_role')} — {model.get('target_org')}", style="JF Label")
+    contact_text = " | ".join(str(x) for x in [contact.get("location"), contact.get("phone"), contact.get("email")] if x)
+    if contact_text:
+        doc.add_paragraph(contact_text, style="JF Contact")
+    rule = OxmlElement("w:pBdr")
+    edge = OxmlElement("w:bottom")
+    for key, value in {"val": "single", "sz": "10", "color": Theme.gold[1:], "space": "5"}.items():
+        edge.set(qn("w:" + key), value)
+    rule.append(edge)
+    doc.paragraphs[-1]._p.get_or_add_pPr().append(rule)
+    target = " — ".join(str(x) for x in [model.get("target_role"), model.get("target_org")] if x)
+    if target:
+        p = doc.add_paragraph(target, style="JF Label")
+        p.paragraph_format.keep_with_next = True
     recipient = f"To: Hiring Committee, {model.get('target_org')}"
     if _reference_shown_in_heading(model):
         recipient += f" | Reference: {model.get('reference')}"
     doc.add_paragraph(recipient, style="JF Contact")
-    doc.add_paragraph("SUBJECT", style="JF Section")
+    label = doc.add_paragraph("SUBJECT", style="JF Label")
+    label.paragraph_format.keep_with_next = True
     doc.add_paragraph(model.get("subject") or model.get("target_role") or "Application", style="JF Section")
     for line in model.get("body_lines", []):
         if line.lower().startswith("subject:"):
             continue
         if line.startswith("-"):
             p = doc.add_paragraph(style="JF Body")
-            p.paragraph_format.left_indent = Inches(0.22)
-            p.paragraph_format.first_line_indent = Inches(-0.12)
+            p.paragraph_format.left_indent = Pt(12)
+            p.paragraph_format.first_line_indent = Pt(-10)
             p.add_run("• " + _clean_bullet(line))
         else:
             doc.add_paragraph(line, style="JF Body")
-    doc.add_paragraph("Sincerely,", style="JF Body")
-    doc.add_paragraph((model.get("signature") or {}).get("name") or model.get("name") or "CONFIRM BEFORE SUBMISSION", style="JF Signature")
     signature = model.get("signature") or {}
-    for value in [signature.get("title"), f"Email: {signature['email']}" if signature.get("email") else "", f"Phone: {signature['phone']}" if signature.get("phone") else ""]:
-        if value:
-            doc.add_paragraph(value, style="JF Contact")
-    for section in doc.sections:
-        f = section.footer.paragraphs[0]
-        f.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = f.add_run(f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Cover Letter")
+    signoff = [
+        ("Sincerely,", "JF Body"),
+        (model.get("name") or signature.get("name") or "CONFIRM BEFORE SUBMISSION", "JF Signature"),
+    ]
+    for item in [signature.get("title"), f"Email: {signature['email']}" if signature.get("email") else "", f"Phone: {signature['phone']}" if signature.get("phone") else ""]:
+        if item:
+            signoff.append((item, "JF Contact"))
+    for index, (value, style_name) in enumerate(signoff):
+        paragraph = doc.add_paragraph(str(value), style=style_name)
+        paragraph.paragraph_format.keep_with_next = index < len(signoff) - 1
+
+    footer = sec.footer.paragraphs[0]
+    footer.style = styles["JF Footer"]
+    footer.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    footer.paragraph_format.tab_stops.clear_all()
+    footer.paragraph_format.tab_stops.add_tab_stop(
+        sec.page_width - sec.left_margin - sec.right_margin, WD_TAB_ALIGNMENT.RIGHT
+    )
+    footer.add_run(str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
+    footer.add_run("\tPage ")
+    _docx_page_field(footer)
+    for run in footer.runs:
+        run.font.name = font
         run.font.size = Pt(7)
         run.font.color.rgb = RGBColor(102, 115, 122)
+    doc.settings.element.append(OxmlElement("w:updateFields"))
     doc.save(str(path))

@@ -10,9 +10,11 @@ from fastapi.testclient import TestClient
 from dashboard import server
 from utils import tracker
 from utils.alerts import (
-    list_alerts, mark_alert_read, record_deadline_alerts, record_scan_alerts,
+    list_alerts,
+    record_deadline_alerts,
+    record_scan_alerts,
 )
-from utils.discovery import Job, SCAN_COMPLETE, SOURCES_UNAVAILABLE
+from utils.discovery import SCAN_COMPLETE, SOURCES_UNAVAILABLE, Job
 from utils.scan_guard import ScanAlreadyRunning, exclusive_scan
 from utils.windows_schedule import schedule_status
 
@@ -188,10 +190,9 @@ def test_daily_check_scheduler_is_not_claimed_on_other_operating_systems():
 
 
 def test_cross_process_scan_guard_rejects_simultaneous_scans(client):
-    with exclusive_scan():
-        with pytest.raises(ScanAlreadyRunning):
-            with exclusive_scan():
-                raise AssertionError("Should never enter a second scan")
+    with exclusive_scan(), pytest.raises(ScanAlreadyRunning):
+        with exclusive_scan():
+            raise AssertionError("Should never enter a second scan")
 
 
 def test_shipped_ui_offers_visible_alerts_and_daily_monitor_controls():

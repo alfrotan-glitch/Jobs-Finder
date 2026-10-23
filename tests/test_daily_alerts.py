@@ -190,9 +190,8 @@ def test_daily_check_scheduler_is_not_claimed_on_other_operating_systems():
 
 
 def test_cross_process_scan_guard_rejects_simultaneous_scans(client):
-    with exclusive_scan(), pytest.raises(ScanAlreadyRunning):
-        with exclusive_scan():
-            raise AssertionError("Should never enter a second scan")
+    with exclusive_scan(), pytest.raises(ScanAlreadyRunning), exclusive_scan():
+        raise AssertionError("Should never enter a second scan")
 
 
 def test_shipped_ui_offers_visible_alerts_and_daily_monitor_controls():

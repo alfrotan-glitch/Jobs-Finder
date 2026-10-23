@@ -49,7 +49,8 @@ The launcher:
 
 - uses this project directory
 - creates exactly one project `.venv` if missing
-- installs from `requirements.txt`
+- installs from `requirements.txt` and repairs missing dependencies after project updates
+- leaves the canonical profile, generated documents, and local application database untouched during dependency repair
 - starts only the dashboard
 - opens <http://localhost:8080>
 - does not run background scanning or submit applications
@@ -215,6 +216,14 @@ Dashboard:
 5. Select a vacancy and press **Prepare package**.
 6. Review the generated files.
 7. Open the official route and apply manually.
+
+### Keeping your application history intact
+
+- **Find Jobs** refreshes source information without erasing packages or an application you marked **Applied manually**. Already-applied jobs are not shown as new actions.
+- A saved vacancy whose deadline passes is labeled **Deadline passed** and excluded from current recommendations, even when you have not rescanned. It remains visible as a historical listing; any saved documents/application record are retained.
+- **Recommended** restores the saved CV, Word/PDF links and email draft for an already prepared package. The next-step panel points to **Review package** rather than asking you to create it again.
+- ACBAR application routes come from the **vacancy's submission instructions**. A general contact email or site navigation link is not treated as an employer application route; official online forms take priority over unrelated contact addresses.
+- The activity summary for a historical scan preserves the *original* results and counts, whereas current recommendations exclude vacancies that subsequently expired or were already submitted.
 
 The **Settings** tab shows the current, non-editable system configuration (active sources, ACBAR connection settings, ReliefWeb result limit, and the fact that background scanning and automatic submission are both disabled) -- it has no nonfunctional controls.
 

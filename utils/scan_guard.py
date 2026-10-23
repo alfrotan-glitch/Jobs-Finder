@@ -23,8 +23,11 @@ class ScanAlreadyRunning(RuntimeError):
 def exclusive_scan() -> Iterator[None]:
     path = Path(str(tracker.canonical_db_path()) + ".scan.lock")
     with path.open("a+b") as file:
-        file.seek(0)
-        if file.read(1) != b"1":
+        # On Windows the *first byte itself* is protected by the other
+        # process. Reading it before trying the lock raises PermissionError
+        # instead of the expected non-blocking "already scanning" signal.
+        # Checking metadata avoids touching the locked byte.
+        if os.fstat(file.fileno()).st_size == 0:
             file.seek(0)
             file.write(b"1")
             file.flush()

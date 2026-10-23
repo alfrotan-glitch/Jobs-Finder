@@ -303,6 +303,8 @@ input:focus-visible { outline: 3px solid rgba(31, 95, 104, .28); outline-offset:
 .statusBadge.ready_to_apply,
 .statusBadge.verified { background: var(--success-bg); border-color: rgba(47,111,82,.18); color: var(--success); }
 .statusBadge.needs_verification { background: var(--warning-bg); border-color: rgba(154,106,22,.18); color: var(--warning); }
+.statusBadge.expired, .statusBadge.applied_manually { background: #eff1f3; border-color: #d4dae0; color: #44505c; }
+.jobCard:has(.statusBadge.expired) { opacity: .84; }
 .statusBadge.not_eligible,
 .statusBadge.missing,
 .statusBadge.unavailable,

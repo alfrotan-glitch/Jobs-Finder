@@ -86,6 +86,18 @@ def test_acbar_company_exact_label_and_other_label_whitespace_still_work():
     assert discovery._labeled_value("Organizational context:\\nMisleading", r"Organization") == ""
 
 
+def test_partial_scan_dashboard_does_not_hide_recommended_deadlines():
+    js = (Path(__file__).parents[1] / "dashboard" / "static" / "app.js").read_text(encoding="utf-8")
+    step = js[js.index("function renderNextStep() {"):js.index("function recommendationProvenanceNotice()")]
+    assert 'scanStatus === "PARTIAL_SCAN"' in step
+    assert "Check requirements before the deadline" in step
+    assert 'data-action="view-job"' in step
+    assert "Some sources were partially checked" in step
+    # A partial scan may retain actionable jobs, so source issues are not
+    # allowed to override all of the recommended results.
+    assert step.index("const available = state.recommended.filter") < step.index('if (scanStatus === "PARTIAL_SCAN")')
+
+
 def test_acbar_detail_web_application_route():
     summary = discovery._parse_acbar_listing(fixture("acbar_listing.html"), "https://www.acbar.org/en/jobs?page=2")[0]
     job = discovery._parse_acbar_detail(fixture("acbar_detail_web.html"), summary)

@@ -31,6 +31,7 @@ from utils.tracker import (
     print_stats,
     update_tailored_resume,
 )
+from utils.windows_notice import show_alert_balloon
 from utils.windows_schedule import ScheduleError, schedule_status, set_schedule
 
 # Public alias for the one canonical database.  Applicant facts are not stored
@@ -329,11 +330,18 @@ def main() -> None:
 
     profile = _require_canonical_profile()
     if args.command in {"find", "monitor-once"}:
+        previous = list_alerts() if args.command == "monitor-once" else None
+        newest_before = max((int(item["id"]) for item in (previous or {}).get("alerts", [])), default=0)
         try:
             asyncio.run(cmd_scan(profile))
         except ScanAlreadyRunning as exc:
             print(str(exc))
             sys.exit(2)
+        if args.command == "monitor-once":
+            after = list_alerts(limit=100)
+            added = sum(int(item["id"]) > newest_before for item in after["alerts"])
+            if added:
+                show_alert_balloon(min(added, 999))
     elif args.command == "master-cv":
         cmd_master_cv(profile)
     elif args.command == "prepare":

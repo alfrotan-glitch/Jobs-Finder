@@ -20,7 +20,6 @@ from utils.profile import CanonicalProfileError, load_canonical_profile
 from utils.profile_builder import build_profile_from_cv_file
 from utils.recommendations import evaluate_scan_jobs
 from utils.scan_guard import ScanAlreadyRunning, exclusive_scan
-from utils.windows_schedule import ScheduleError, schedule_status, set_schedule
 from utils.tracker import (
     delete_all,
     get_job_by_id,
@@ -32,6 +31,7 @@ from utils.tracker import (
     print_stats,
     update_tailored_resume,
 )
+from utils.windows_schedule import ScheduleError, schedule_status, set_schedule
 
 # Public alias for the one canonical database.  Applicant facts are not stored
 # in SQLite; they are always loaded through utils.profile.load_canonical_profile.

@@ -11,6 +11,7 @@ from typing import Any
 
 import yaml
 
+from utils.alerts import list_alerts, record_deadline_alerts, record_scan_alerts
 from utils.discovery import is_expired, run_discovery_scan
 from utils.documents import prepare_application_bundle, write_master_cv
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
@@ -18,6 +19,8 @@ from utils.paths import CANONICAL_DB_PATH
 from utils.profile import CanonicalProfileError, load_canonical_profile
 from utils.profile_builder import build_profile_from_cv_file
 from utils.recommendations import evaluate_scan_jobs
+from utils.scan_guard import ScanAlreadyRunning, exclusive_scan
+from utils.windows_schedule import ScheduleError, schedule_status, set_schedule
 from utils.tracker import (
     delete_all,
     get_job_by_id,
@@ -92,14 +95,16 @@ def print_scan_accounting(scan: Any) -> None:
 
 
 async def cmd_scan(profile: dict[str, Any]) -> dict[str, Any]:
+    """Run one complete scan and update the local alert inbox."""
     print("Finding Afghanistan health/medical vacancies...")
-    scan = await run_discovery_scan(profile)
-    # One shared orchestration (also used by the dashboard): store, match, and
-    # record — the recommendation collection is derived once, authoritatively.
-    # Runtime matching deliberately receives no CV/cache text: profile.yaml is
-    # the sole applicant-facts source.
-    evaluate_scan_jobs(scan, profile)
-    log_scan_result(scan.to_dict())
+    # The scheduled Windows process, web process and manual CLI all use the
+    # same cross-process lock. A second scan never overwrites active work.
+    with exclusive_scan():
+        scan = await run_discovery_scan(profile)
+        evaluate_scan_jobs(scan, profile)
+        log_scan_result(scan.to_dict())
+        record_scan_alerts(scan)
+        record_deadline_alerts()
     print(scan.message)
     print_scan_accounting(scan)
     print_scan_recommendations(scan)
@@ -275,6 +280,11 @@ def main() -> None:
     import_cv.add_argument("cv_path")
 
     sub.add_parser("master-cv", help="Write a position-neutral master CV from verified canonical-profile evidence")
+    sub.add_parser("monitor-once", help="Run one safe scan, update alerts, and check approaching deadlines")
+    sub.add_parser("alerts", help="Show saved new-job and deadline notifications")
+    sub.add_parser("schedule-enable", help="Opt in to Windows daily job checks at 09:00")
+    sub.add_parser("schedule-disable", help="Turn off automatic Windows daily job checks")
+    sub.add_parser("schedule-status", help="Show Windows daily check status")
 
     server = sub.add_parser("server", help="Launch the web dashboard")
     server.add_argument("--host", default="127.0.0.1")
@@ -285,6 +295,20 @@ def main() -> None:
     if args.command == "server":
         from dashboard.server import run_server
         run_server(host=args.host, port=args.port)
+        return
+    if args.command in {"schedule-enable", "schedule-disable", "schedule-status"}:
+        try:
+            state = schedule_status() if args.command == "schedule-status" else set_schedule(args.command == "schedule-enable")
+        except ScheduleError as exc:
+            print(f"Scheduling failed: {exc}")
+            sys.exit(1)
+        print(state)
+        return
+    if args.command == "alerts":
+        inbox = list_alerts()
+        print(f"Unread alerts: {inbox['unread_count']}")
+        for item in inbox["alerts"]:
+            print(f"{item['kind']} | {item['title']} | {item['message']}")
         return
     if args.command == "import-cv":
         cmd_import_cv(args.cv_path)
@@ -304,8 +328,12 @@ def main() -> None:
         return
 
     profile = _require_canonical_profile()
-    if args.command == "find":
-        asyncio.run(cmd_scan(profile))
+    if args.command in {"find", "monitor-once"}:
+        try:
+            asyncio.run(cmd_scan(profile))
+        except ScanAlreadyRunning as exc:
+            print(str(exc))
+            sys.exit(2)
     elif args.command == "master-cv":
         cmd_master_cv(profile)
     elif args.command == "prepare":

@@ -190,7 +190,9 @@ def test_database_has_no_applicant_profile_store(isolated_canonical_profile):
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
     finally:
         connection.close()
-    assert tables == {"vacancies", "scan_runs"}
+    # The two new tables store only vacancy-alert events and job-id first-seen
+    # markers, never applicant facts or a competing profile.
+    assert tables == {"vacancies", "scan_runs", "job_alerts", "seen_recommendations"}
     assert load_canonical_profile(required=True) == CANONICAL_TEST_PROFILE
 
 

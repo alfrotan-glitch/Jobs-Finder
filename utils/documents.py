@@ -1190,7 +1190,11 @@ def _professional_profile_paragraph(
     An explicitly verified owner-written summary is always preserved verbatim.
     """
     owner_summary = _verified_profile_summary(profile)
-    if owner_summary:
+    if owner_summary and not first_person:
+        # A verified owner-written CV summary can be reproduced verbatim in
+        # the CV. Cover letters need an applicant-voiced introduction instead:
+        # a third-person summary copied unchanged would be awkward and might
+        # imply that the applicant is talking about someone else.
         return owner_summary
     rank_key = _focus_rank_key(_focus_terms(job, match_report))
     sentences: list[str] = []
@@ -1633,7 +1637,7 @@ def generate_tailored_documents(
     cover_lines.append(intro)
     if vacancy_highlights:
         strongest = [_without_attribution(item) for item in vacancy_highlights[:3]]
-        cover_lines.extend(["", "Relevant verified experience for this role includes:"])
+        cover_lines.extend(["", "Relevant verified qualifications and professional strengths include:"])
         cover_lines.extend(f"- {item}" for item in strongest if item)
     elif focus_phrases:
         cover_lines.extend(["", f"I understand that the vacancy emphasizes {', '.join(focus_phrases[:3])}, and my verified experience covers these areas."])

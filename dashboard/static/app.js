@@ -8,6 +8,8 @@ const state = {
   profileReview: {},
   settings: {},
   lastScan: null,
+  alerts: {alerts: [], unread_count: 0},
+  monitorSchedule: {supported: false, enabled: false, time: "09:00"},
   currentTab: "dashboard",
 };
 
@@ -242,6 +244,98 @@ function renderMetrics() {
   $("metricApplications").textContent = applications;
 }
 
+function renderAlerts() {
+  const inbox = state.alerts || {alerts: [], unread_count: 0};
+  const notices = inbox.alerts || [];
+  const unread = Number(inbox.unread_count || 0);
+  const counter = $("alertNavCount");
+  counter.hidden = unread === 0;
+  counter.textContent = unread > 99 ? "99+" : String(unread);
+  $("alertInboxSummary").textContent = unread
+    ? `${unread} unread notification${unread === 1 ? "" : "s"} · ${notices.length} recent`
+    : "All caught up. New matches and deadline reminders will appear here.";
+  const itemHtml = (item) => {
+    const job = jobById(item.job_id);
+    const route = job
+      ? `<button class="secondary smallButton" data-action="view-job" data-job-id="${escapeAttr(item.job_id)}">View vacancy</button>`
+      : "";
+    const label = item.kind === "NEW_MATCH" ? "New match" : item.kind === "DEADLINE" ? "Deadline reminder" : "Source issue";
+    return `<article class="alertItem ${item.read_at ? "" : "unread"}">
+      <div class="alertItemIcon" aria-hidden="true">${item.kind === "NEW_MATCH" ? "★" : item.kind === "DEADLINE" ? "⌛" : "!"}</div>
+      <div class="alertItemBody">
+        <span class="microLabel">${escapeHtml(label)} · ${escapeHtml(item.created_at || "")}</span>
+        <h4>${escapeHtml(item.title || "Notification")}</h4>
+        <p>${escapeHtml(item.message || "")}</p>
+        <div class="cardActions">
+          ${route}
+          ${!item.read_at ? `<button class="textButton" data-action="mark-alert-read" data-alert-id="${escapeAttr(item.id)}">Mark read</button>` : ""}
+        </div>
+      </div>
+    </article>`;
+  };
+  $("alertsList").innerHTML = notices.length
+    ? notices.map(itemHtml).join("")
+    : emptyState("No alerts yet", "Run Find Jobs once to record new matches. Enable daily checks in Settings for automatic updates while signed in.");
+  $("dashboardAlerts").innerHTML = notices.length
+    ? notices.slice(0, 3).map((item) => `<div class="alertDigest">
+        <strong>${escapeHtml(item.title || "Alert")}</strong>
+        <span>${escapeHtml(item.message || "")}</span>
+      </div>`).join("")
+    : `<p class="sectionHelp">No notifications yet. Your next scan will look for matching vacancies and upcoming deadlines.</p>`;
+}
+
+function renderMonitoringSchedule() {
+  const monitor = state.monitorSchedule || {};
+  const summary = $("monitoringSchedule");
+  if (!monitor.supported) {
+    summary.innerHTML = `<p>Scheduled daily checks require Windows.</p><p class="sectionHelp">You can still use Find Jobs and review saved alerts manually.</p>`;
+    return;
+  }
+  if (monitor.error) {
+    summary.innerHTML = `<p class="sectionHelp">${escapeHtml(monitor.error)}</p><button class="secondary smallButton" data-action="refresh-monitor-status">Retry status check</button>`;
+    return;
+  }
+  summary.innerHTML = `<p><strong>${monitor.enabled ? "Daily checks enabled" : "Daily checks off"}</strong></p>
+    <p class="sectionHelp">At ${escapeHtml(monitor.time || "09:00")} (Windows local time), Windows will look for suitable vacancies and approaching deadlines.</p>
+    <p class="sectionHelp">Your computer must be on and you must be signed in. The dashboard can be closed. Alerts are stored here; no job applications are submitted.</p>
+    <button class="${monitor.enabled ? "secondary" : "primary subtle"}" data-action="toggle-daily-check" data-enabled="${monitor.enabled ? "false" : "true"}">${monitor.enabled ? "Disable daily checks" : "Enable daily checks"}</button>`;
+}
+
+async function changeDailyChecks(enabled) {
+  try {
+    const result = await apiJson("/api/monitor/schedule", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({enabled}),
+    });
+    state.monitorSchedule = result;
+    renderMonitoringSchedule();
+    setStatus(enabled ? "Daily monitoring enabled for 9 AM while signed in." : "Daily monitoring disabled.", "ok");
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
+async function markAlertRead(id) {
+  try {
+    await apiJson(`/api/alerts/${encodeURIComponent(id)}/read`, {method: "POST"});
+    state.alerts = await apiJson("/api/alerts");
+    renderAlerts();
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
+async function markAllAlertsRead() {
+  try {
+    await apiJson("/api/alerts/read-all", {method: "POST"});
+    state.alerts = await apiJson("/api/alerts");
+    renderAlerts();
+    setStatus("Notifications marked read.", "ok");
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
 function renderScanSummary() {
   const box = $("scanSummaryBox");
   if (!box) return;
@@ -471,7 +565,7 @@ function renderSettings() {
     <p class="sectionHelp">No email or form is submitted automatically.</p>`;
   $("settingsSources").innerHTML = renderSimpleList((settings.sources || []).map((source) => `${source.name} — ${source.active ? "Enabled" : "Disabled"}`));
   $("settingsPrivacy").innerHTML = `
-    <p>Your profile stays in an ignored local file and is not committed by the app.</p>
+    <p>Your canonical profile is stored locally and is Git-tracked in the source repository; the dashboard does not publish changes automatically.</p>
     <p class="sectionHelp">Generated documents are kept locally for review and are not submitted by the system.</p>`;
 }
 
@@ -537,6 +631,8 @@ function renderAll() {
   renderSettings();
   renderAdvanced();
   renderNextStep();
+  renderAlerts();
+  renderMonitoringSchedule();
 }
 
 function jobById(id) {
@@ -685,6 +781,7 @@ function switchTab(tab) {
     recommended: ["Recommended", "Most relevant vacancies"],
     jobs: ["All Jobs", "Complete discovered vacancy list"],
     applications: ["Applications", "Track packages and manual submissions"],
+    alerts: ["Alerts", "New matches and approaching deadlines"],
     profile: ["My Profile", "Professional profile"],
     settings: ["Settings", "Preferences"],
     advanced: ["Advanced", "Technical diagnostics"],
@@ -704,7 +801,7 @@ async function apiJson(url, options = {}) {
 
 async function refresh() {
   setLoadingLists();
-  const [recommended, jobs, profile, details, review, settings, latestScan] = await Promise.all([
+  const [recommended, jobs, profile, details, review, settings, latestScan, alerts, monitorSchedule] = await Promise.all([
     apiJson("/api/recommended"),
     apiJson("/api/jobs"),
     apiJson("/api/profile"),
@@ -712,6 +809,8 @@ async function refresh() {
     apiJson("/api/profile/review"),
     apiJson("/api/settings"),
     apiJson("/api/scan/latest"),
+    apiJson("/api/alerts"),
+    apiJson("/api/monitor/schedule"),
   ]);
   state.recommended = recommended.jobs || [];
   state.recommendationContext = recommended.scan || null;
@@ -722,6 +821,8 @@ async function refresh() {
   state.profileReview = review;
   state.settings = settings;
   state.lastScan = latestScan.scan || state.lastScan;
+  state.alerts = alerts;
+  state.monitorSchedule = monitorSchedule;
   renderAll();
 }
 
@@ -869,6 +970,10 @@ function handleAction(event) {
   const action = target.dataset.action;
   const id = target.dataset.jobId;
   if (action === "find-jobs") findJobs();
+  if (action === "mark-alert-read") markAlertRead(target.dataset.alertId);
+  if (action === "read-all-alerts") markAllAlertsRead();
+  if (action === "toggle-daily-check") changeDailyChecks(target.dataset.enabled === "true");
+  if (action === "refresh-monitor-status") refresh().catch((error) => setStatus(humanizeError(error.message), "error"));
   if (action === "view-job") {
     const job = jobById(id);
     if (job) openDrawer(job);
@@ -906,3 +1011,19 @@ document.addEventListener("keydown", (event) => {
 
 setStatus("Ready. Run a scan when you want to look for new vacancies.");
 refresh().catch((error) => setStatus(humanizeError(error.message), "error"));
+
+// Keep the inbox current if Windows Task Scheduler finishes a daily scan
+// while the local dashboard is already open. This is a lightweight local
+// read; it never initiates discovery or creates a browser-side background job.
+window.setInterval(async () => {
+  try {
+    const previous = Number(state.alerts?.unread_count || 0);
+    state.alerts = await apiJson("/api/alerts");
+    renderAlerts();
+    if (Number(state.alerts.unread_count || 0) > previous) {
+      setStatus("New job-search alerts are available in your inbox.", "ok");
+    }
+  } catch (_) {
+    // Startup/offline errors are surfaced by the normal refresh path.
+  }
+}, 120000);

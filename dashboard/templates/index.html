@@ -22,6 +22,7 @@
       <nav class="sideNav">
         <button data-tab="dashboard" class="navItem active"><span aria-hidden="true">⌂</span><span>Dashboard</span></button>
         <button data-tab="recommended" class="navItem"><span aria-hidden="true">★</span><span>Recommended</span></button>
+        <button data-tab="alerts" class="navItem"><span aria-hidden="true">◉</span><span>Alerts</span><span id="alertNavCount" class="unreadCount" hidden>0</span></button>
         <button data-tab="jobs" class="navItem"><span aria-hidden="true">□</span><span>All Jobs</span></button>
         <button data-tab="applications" class="navItem"><span aria-hidden="true">✓</span><span>Applications</span></button>
         <button data-tab="profile" class="navItem"><span aria-hidden="true">◦</span><span>My Profile</span></button>
@@ -76,10 +77,21 @@
 
           <div class="metricsGrid" aria-label="Job-search summary">
             <article class="metricCard"><span>Recommended</span><strong id="metricRecommended">0</strong></article>
-            <article class="metricCard"><span>New Jobs</span><strong id="metricJobs">0</strong></article>
+            <article class="metricCard"><span>Tracked jobs</span><strong id="metricJobs">0</strong></article>
             <article class="metricCard"><span>Ready to Apply</span><strong id="metricReady">0</strong></article>
             <article class="metricCard"><span>Applications</span><strong id="metricApplications">0</strong></article>
           </div>
+
+          <section class="surfaceBlock alertSummaryBlock" aria-labelledby="alertSummaryTitle">
+            <div class="sectionHeader">
+              <div>
+                <p class="microLabel">Opportunity intelligence</p>
+                <h3 id="alertSummaryTitle">New matches & approaching deadlines</h3>
+              </div>
+              <button class="textButton" data-tab-target="alerts">Open inbox</button>
+            </div>
+            <div id="dashboardAlerts" class="alertPreview"></div>
+          </section>
 
           <section class="surfaceBlock scanActivityBlock" aria-labelledby="scanActivityTitle">
             <div class="sectionHeader">
@@ -114,6 +126,24 @@
               <div id="nextStepBox" class="nextStepBox"></div>
             </section>
           </div>
+        </section>
+
+        <section id="alerts" class="panel" aria-labelledby="alertsTitle">
+          <div class="sectionIntro">
+            <p class="microLabel">Opportunity intelligence</p>
+            <h2 id="alertsTitle">Job alerts</h2>
+            <p>First-time matching vacancies, deadlines approaching, and source connection problems. Saved locally even after you close the program.</p>
+          </div>
+          <section class="surfaceBlock">
+            <div class="sectionHeader">
+              <div>
+                <h3>Your notification inbox</h3>
+                <p id="alertInboxSummary" class="sectionHelp">Checking alerts…</p>
+              </div>
+              <button class="secondary smallButton" data-action="read-all-alerts">Mark all read</button>
+            </div>
+            <div id="alertsList" class="alertList" aria-live="polite"></div>
+          </section>
         </section>
 
         <section id="recommended" class="panel" aria-labelledby="recommendedTitle">
@@ -211,6 +241,7 @@
             <section class="surfaceBlock"><h3>Job Search</h3><div id="settingsJobSearch"></div></section>
             <section class="surfaceBlock"><h3>Application Preferences</h3><div id="settingsApplications"></div></section>
             <section class="surfaceBlock"><h3>Sources</h3><div id="settingsSources"></div></section>
+            <section class="surfaceBlock wideBlock"><h3>Automatic daily checks</h3><div id="monitoringSchedule"></div></section>
             <section class="surfaceBlock"><h3>Privacy</h3><div id="settingsPrivacy"></div></section>
           </div>
         </section>

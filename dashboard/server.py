@@ -20,6 +20,13 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from utils.alerts import (
+    list_alerts,
+    mark_alert_read,
+    mark_all_alerts_read,
+    record_deadline_alerts,
+    record_scan_alerts,
+)
 from utils.discovery import (
     ACBAR_DEFAULT_DETAIL_CONCURRENCY,
     ACBAR_DEFAULT_TIMEOUT_SECONDS,
@@ -41,6 +48,7 @@ from utils.profile import (
 )
 from utils.profile_builder import build_profile_from_cv_file
 from utils.recommendations import evaluate_scan_jobs
+from utils.scan_guard import ScanAlreadyRunning, exclusive_scan
 from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
 from utils.tracker import (
     get_job_by_id,
@@ -54,6 +62,7 @@ from utils.tracker import (
     stats,
     update_tailored_resume,
 )
+from utils.windows_schedule import ScheduleError, schedule_status, set_schedule
 
 # The dashboard and CLI intentionally expose the same canonical locations.
 ROOT = PROJECT_ROOT
@@ -718,16 +727,57 @@ async def api_find():
     if _SCAN_LOCK.locked():
         raise HTTPException(status_code=409, detail="A vacancy scan is already running. Please use the result of that scan.")
     async with _SCAN_LOCK:
-        profile = _runtime_profile(True)
-        scan = await run_discovery_scan(profile)
-        # One shared orchestration identical to the CLI (utils/recommendations.py):
-        # store, match, record — the recommendation collection in the response
-        # is the exact collection the summary counted. Runtime applicant
-        # evidence is the canonical profile only, never CV/cache text.
-        evaluate_scan_jobs(scan, profile)
-        result = scan.to_dict()
-        log_scan_result(result)
-        return result
+        try:
+            with exclusive_scan():
+                profile = _runtime_profile(True)
+                scan = await run_discovery_scan(profile)
+                # The single canonical matcher/recorder shared with the CLI.
+                evaluate_scan_jobs(scan, profile)
+                result = scan.to_dict()
+                log_scan_result(result)
+                record_scan_alerts(scan)
+                record_deadline_alerts()
+                return result
+        except ScanAlreadyRunning as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/alerts")
+def api_alerts(limit: int = 50):
+    """Persistent local inbox of first-time matches and deadline reminders."""
+    return list_alerts(limit=limit)
+
+
+@app.post("/api/alerts/{alert_id}/read")
+def api_alert_read(alert_id: int):
+    if not mark_alert_read(alert_id):
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {"ok": True}
+
+
+@app.post("/api/alerts/read-all")
+def api_alert_read_all():
+    return {"ok": True, "marked": mark_all_alerts_read()}
+
+
+@app.get("/api/monitor/schedule")
+def api_monitor_schedule():
+    return schedule_status()
+
+
+@app.post("/api/monitor/schedule")
+async def api_set_monitor_schedule(request: Request):
+    """Explicit user opt-in/out; no hidden auto-monitoring on dashboard load."""
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="A JSON settings object is required.") from exc
+    if not isinstance(payload, dict) or type(payload.get("enabled")) is not bool:
+        raise HTTPException(status_code=400, detail="The enabled setting must be true or false.")
+    try:
+        return set_schedule(payload["enabled"])
+    except ScheduleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/api/master-cv")

@@ -420,6 +420,23 @@ input[type="file"] { max-width: 100%; padding: .72rem; border-radius: 12px; bord
 .requirementList span { display: block; margin-top: .25rem; color: var(--muted); }
 .packageStatus { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .8rem; }
 .packageStatus span { color: var(--success); font-weight: 760; }
+.unreadCount { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding-inline: .4rem; border-radius: 99px; background: var(--primary); color: white; font-size: .75rem; font-weight: 800; }
+.unreadCount[hidden] { display: none; }
+.alertSummaryBlock { margin-bottom: 1rem; }
+.alertPreview { display: grid; gap: .65rem; }
+.alertDigest { padding: .75rem .9rem; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); display: grid; gap: .25rem; }
+.alertDigest strong { font-size: .94rem; color: var(--text); }
+.alertDigest span { color: var(--muted); line-height: 1.45; font-size: .85rem; }
+.alertList { display: grid; gap: .7rem; }
+.alertItem { display: flex; align-items: flex-start; gap: 1rem; padding: 1rem; border-radius: 17px; border: 1px solid var(--line); background: var(--surface-soft); }
+.alertItem.unread { border-left: 4px solid var(--primary); background: white; box-shadow: var(--shadow-soft); }
+.alertItemIcon { flex: 0 0 38px; height: 38px; border-radius: 12px; background: var(--primary-soft); display: grid; place-items: center; color: var(--primary); font-weight: 800; }
+.alertItemBody { min-width: 0; flex: 1; }
+.alertItemBody h4 { margin: .35rem 0 .3rem; font-size: 1.07rem; }
+.alertItemBody p { margin: 0; line-height: 1.55; color: var(--muted); overflow-wrap: anywhere; }
+.alertItemBody .cardActions { margin-top: .75rem; }
+@media (max-width: 720px) { .alertItem { gap: .7rem; padding: .85rem; } .alertItemIcon { flex-basis: 30px; height: 30px; } }
+
 .documentGrid { display: grid; gap: .65rem; }
 .documentCard { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .78rem; border-radius: 16px; border: 1px solid var(--line); background: var(--surface-soft); }
 .documentCard div { display: flex; flex-direction: column; }

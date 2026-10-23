@@ -9,6 +9,7 @@ venv/
 applications.db
 applications.db-wal
 applications.db-shm
+applications.db.scan.lock
 
 # Cache
 .cache/

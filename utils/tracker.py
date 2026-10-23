@@ -319,6 +319,34 @@ def get_db() -> sqlite3.Connection:
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_runs_created ON scan_runs(created_at)")
+        # An upgrade of an existing user database preserves its vacancies,
+        # scan history and submitted applications; only the new alert tables
+        # are created. No separate applicant record or CV cache is introduced.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS job_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dedupe_key TEXT NOT NULL UNIQUE,
+                kind TEXT NOT NULL,
+                job_id TEXT DEFAULT '',
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                deadline TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                read_at TEXT
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_job_alerts_created ON job_alerts(created_at DESC, id DESC)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS seen_recommendations (
+                job_id TEXT PRIMARY KEY,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL
+            )
+            """
+        )
         conn.commit()
         return conn
     except sqlite3.Error as error:
@@ -335,7 +363,7 @@ def _schema_is_ready(conn: sqlite3.Connection) -> bool:
         str(row[0])
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }
-    return {"vacancies", "scan_runs"}.issubset(tables)
+    return {"vacancies", "scan_runs", "job_alerts", "seen_recommendations"}.issubset(tables)
 
 
 def _read_connection() -> sqlite3.Connection:
@@ -731,6 +759,8 @@ def delete_all() -> int:
         _trace_database("delete_all", "before_delete", conn)
         conn.execute("DELETE FROM vacancies")
         conn.execute("DELETE FROM scan_runs")
+        conn.execute("DELETE FROM job_alerts")
+        conn.execute("DELETE FROM seen_recommendations")
         _trace_database("delete_all", "after_delete", conn)
         _trace_database("delete_all", "before_commit", conn)
         conn.commit()

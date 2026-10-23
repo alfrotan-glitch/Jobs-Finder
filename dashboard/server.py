@@ -256,9 +256,15 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
     internal verification flags, evidence IDs, or matching keys.
     """
     summary = profile_summary(profile)
-    professional_summary = profile.get("professional_summary") or profile.get("summary") or ""
-    if isinstance(professional_summary, dict):
-        professional_summary = professional_summary.get("text") or professional_summary.get("value") or ""
+    # The attractive public-facing profile preview must use exactly the same
+    # verified-only summary as the Master CV. Previously this displayed a raw
+    # unverified owner draft or an empty box even when a strong verified CV
+    # summary could be generated. The source file remains unchanged.
+    from utils.documents import _verified_profile_summary, generate_master_cv
+
+    professional_summary = _verified_profile_summary(profile)
+    if not professional_summary and build_profile_evidence(profile).has_verified("md_degree"):
+        professional_summary = generate_master_cv(profile)["master_cv_model"]["profile"]
 
     def named_items(value: Any) -> list[str]:
         out: list[str] = []

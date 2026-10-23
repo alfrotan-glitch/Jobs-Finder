@@ -174,8 +174,9 @@ function generatedPaths(job) {
   return job.documents?.generated_paths || job.generated_paths || {};
 }
 
-function openFileUrl(path) {
-  return `/api/generated-file?path=${encodeURIComponent(path)}`;
+function openFileUrl(path, download = false) {
+  const query = `path=${encodeURIComponent(path)}`;
+  return `/api/generated-file?${query}${download ? "&download=1" : ""}`;
 }
 
 function jobCard(job, {compact = false} = {}) {
@@ -557,6 +558,21 @@ function documentCard(label, path) {
   return `<div class="documentCard"><div><strong>${escapeHtml(label)}</strong><span>READY FOR REVIEW</span></div><a class="button secondary" href="${escapeAttr(openFileUrl(path))}" target="_blank" rel="noopener">Open</a></div>`;
 }
 
+// Keep every usable format visible. PDF is best for visual review and
+// submission; the editable Word document is for refinements; text is a
+// portable, accessible copy. No generated document is ever sent by the app.
+function documentBundleCard(label, formats) {
+  const files = formats && typeof formats === "object" ? formats : {};
+  const links = [];
+  if (files.pdf) {
+    links.push(`<a class="button secondary smallButton" href="${escapeAttr(openFileUrl(files.pdf))}" target="_blank" rel="noopener">Preview PDF</a>`);
+    links.push(`<a class="button secondary smallButton" href="${escapeAttr(openFileUrl(files.pdf, true))}">Download PDF</a>`);
+  }
+  if (files.docx) links.push(`<a class="button secondary smallButton" href="${escapeAttr(openFileUrl(files.docx, true))}">Download Word</a>`);
+  if (files.txt) links.push(`<a class="button secondary smallButton" href="${escapeAttr(openFileUrl(files.txt))}" target="_blank" rel="noopener">View text</a>`);
+  return `<div class="documentCard documentBundle"><div><strong>${escapeHtml(label)}</strong><span>${links.length ? "Ready for your review · no application sent" : "NOT CREATED"}</span></div><div class="documentActions">${links.join("")}</div></div>`;
+}
+
 function artifactStatusLabel(path) {
   return path ? "READY FOR REVIEW" : "NOT CREATED";
 }
@@ -564,10 +580,13 @@ function artifactStatusLabel(path) {
 function renderPackage(job) {
   const pkg = job.package || {};
   const paths = generatedPaths(job);
-  const cvPath = paths.tailored_cv?.pdf || paths.tailored_cv?.txt;
-  const coverPath = paths.cover_letter?.pdf || paths.cover_letter?.txt;
+  const cvFormats = paths.tailored_cv || {};
+  const coverFormats = paths.cover_letter || {};
+  const cvPath = cvFormats.pdf || cvFormats.docx || cvFormats.txt;
+  const coverPath = coverFormats.pdf || coverFormats.docx || coverFormats.txt;
   const packagePath = paths.application_package_txt;
   const email = pkg.email_draft;
+  const reviewNotes = [...new Set([...(pkg.review_warnings || []), ...(job.documents?.review_warnings || [])])];
   if (!pkg.package_status && !paths.tailored_cv) {
     return `<section class="detailSection"><h3>Your application package</h3><p class="sectionHelp">NOT CREATED — no package has been prepared yet.</p></section>`;
   }
@@ -577,11 +596,13 @@ function renderPackage(job) {
     <p class="sectionHelp"><strong>Package state: ${escapeHtml(packageState)}</strong> — ${escapeHtml(stateNote)}</p>
     <div class="packageStatus"><span>${escapeHtml(artifactStatusLabel(cvPath))}: Tailored CV</span><span>${escapeHtml(artifactStatusLabel(coverPath))}: Cover letter</span>${email ? `<span>READY FOR REVIEW: Email draft</span>` : ""}</div>
     <div class="documentGrid">
-      ${documentCard("Tailored CV", cvPath)}
-      ${documentCard("Cover letter", coverPath)}
+      ${documentBundleCard("Tailored CV", cvFormats)}
+      ${documentBundleCard("Cover letter", coverFormats)}
       ${email ? `<div class="documentCard"><div><strong>Email draft</strong><span>READY FOR REVIEW — manual sending only</span></div><button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Open</button></div>` : ""}
       ${packagePath ? documentCard("Application instructions", packagePath) : ""}
+      ${paths.application_data_checklist ? documentCard("Application checklist", paths.application_data_checklist) : ""}
     </div>
+    ${reviewNotes.length ? `<div class="applicationReviewNotes" role="note"><strong>Review before applying</strong><ul>${reviewNotes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul></div>` : ""}
   </section>`;
 }
 
@@ -632,8 +653,8 @@ function showEmailDraft(job) {
       <p><strong>To:</strong> ${escapeHtml(email.to || "")}</p>
       <p><strong>Subject:</strong> ${escapeHtml(email.subject || "")}</p>
       <pre>${escapeHtml(email.body || "")}</pre>
-      <div class="cardActions"><a class="button primary subtle" href="mailto:${escapeAttr(email.to || "")}">Open email</a><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email.to || "")}">Copy email</button></div>
-      <p class="sectionHelp">Prepared for review only. The system has not sent this email.</p>
+      <div class="cardActions"><a class="button primary subtle" href="${escapeAttr(`mailto:${encodeURIComponent(email.to || "")}?subject=${encodeURIComponent(email.subject || "")}`)}">Open email with subject</a><button class="secondary" data-action="copy-email-draft" data-job-id="${escapeAttr(job.id)}">Copy full draft</button><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email.to || "")}">Copy address</button></div>
+      <p class="sectionHelp">This is a draft only. Paste the text into your email client, attach the reviewed documents, and send manually. The system has not contacted the employer.</p>
     </section>`;
   $("drawerTitle").textContent = "Email draft";
   $("drawerKicker").textContent = job.title || "Application package";
@@ -734,6 +755,21 @@ async function copyEmail(email) {
   }
 }
 
+async function copyEmailDraft(jobId) {
+  const email = jobById(jobId)?.package?.email_draft;
+  if (!email) {
+    setStatus("The application email draft is not available.", "warn");
+    return;
+  }
+  const text = `To: ${email.to || ""}\nSubject: ${email.subject || ""}\n\n${email.body || ""}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("Full email draft copied. Check attachments before sending.", "ok");
+  } catch (error) {
+    window.prompt("Copy the full draft and check attachments before sending:", text);
+  }
+}
+
 async function confirmField(field) {
   const body = {field};
   if (field.startsWith("language:")) {
@@ -781,10 +817,7 @@ async function generateMasterCv() {
   try {
     const data = await apiJson("/api/master-cv", { method: "POST" });
     const paths = data.documents || {};
-    const cards = ["pdf", "docx", "txt"]
-      .filter((kind) => paths[kind])
-      .map((kind) => documentCard(`Master CV (${kind.toUpperCase()})`, paths[kind]))
-      .join("");
+    const cards = documentBundleCard("Position-neutral Master CV", paths);
     const warnings = (data.review_warnings || []).length
       ? `<p class="sectionHelp">Review notes: ${escapeHtml((data.review_warnings || []).join(" "))}</p>`
       : "";
@@ -834,6 +867,7 @@ function handleAction(event) {
     if (job) showEmailDraft(job);
   }
   if (action === "copy-email") copyEmail(target.dataset.email || "");
+  if (action === "copy-email-draft") copyEmailDraft(id);
   if (action === "mark-applied") markApplied(id);
   if (action === "confirm-field") confirmField(target.dataset.field || "");
 }

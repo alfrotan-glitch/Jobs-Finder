@@ -8,6 +8,7 @@ logic.
 
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -71,6 +72,30 @@ app = FastAPI(title="Jobs-Finder", docs_url=None, redoc_url=None, openapi_url=No
 app.mount("/static", StaticFiles(directory=str(ROOT / "dashboard" / "static")), name="static")
 templates = Jinja2Templates(directory=str(ROOT / "dashboard" / "templates"))
 
+# Prevent overlapping dashboard scans from racing to replace the latest saved
+# recommendation collection. CLI scanning remains a separate, manual command.
+_SCAN_LOCK = asyncio.Lock()
+
+
+def _is_trusted_local_host(request: Request) -> bool:
+    """Reject DNS-rebinding Host headers before exposing local applicant data.
+
+    The dashboard has no authentication and is designed for loopback use.
+    ``testserver`` is the in-process TestClient hostname, not a public domain.
+    Check the parsed hostname (not a string prefix) and validate any port.
+    """
+    raw = request.headers.get("host", "")
+    if not raw or any(character in raw for character in ",/@?#\\"):
+        return False
+    try:
+        parsed = urlsplit(f"http://{raw}")
+        if parsed.path or parsed.query or parsed.fragment or parsed.username is not None:
+            return False
+        port = parsed.port  # Reject malformed/non-numeric ports.
+        return parsed.hostname in {"localhost", "127.0.0.1", "::1", "testserver"} and (port is None or port > 0)
+    except ValueError:
+        return False
+
 
 def _is_same_origin_browser_request(request: Request) -> bool:
     """Accept same-origin browser writes while rejecting cross-site requests.
@@ -93,7 +118,9 @@ def _is_same_origin_browser_request(request: Request) -> bool:
 @app.middleware("http")
 async def _protect_browser_responses(request: Request, call_next):
     """Apply privacy defaults and same-origin protection to every route."""
-    if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and not _is_same_origin_browser_request(request):
+    if not _is_trusted_local_host(request):
+        response = JSONResponse(status_code=400, content={"detail": "Untrusted Host header. Use the local Jobs-Finder address."})
+    elif request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and not _is_same_origin_browser_request(request):
         response = JSONResponse(
             status_code=403,
             content={"detail": "Cross-origin state-changing requests are not allowed."},
@@ -229,9 +256,15 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
     internal verification flags, evidence IDs, or matching keys.
     """
     summary = profile_summary(profile)
-    professional_summary = profile.get("professional_summary") or profile.get("summary") or ""
-    if isinstance(professional_summary, dict):
-        professional_summary = professional_summary.get("text") or professional_summary.get("value") or ""
+    # The attractive public-facing profile preview must use exactly the same
+    # verified-only summary as the Master CV. Previously this displayed a raw
+    # unverified owner draft or an empty box even when a strong verified CV
+    # summary could be generated. The source file remains unchanged.
+    from utils.documents import _verified_profile_summary, generate_master_cv
+
+    professional_summary = _verified_profile_summary(profile)
+    if not professional_summary and build_profile_evidence(profile).has_verified("md_degree"):
+        professional_summary = generate_master_cv(profile)["master_cv_model"]["profile"]
 
     def named_items(value: Any) -> list[str]:
         out: list[str] = []
@@ -435,7 +468,7 @@ def api_profile_details():
 
 
 @app.get("/api/generated-file")
-def api_generated_file(path: str):
+def api_generated_file(path: str, download: bool = False):
     """Open a generated package artifact for user review.
 
     Only files under the local ignored documents/ directory are served. This is
@@ -451,7 +484,11 @@ def api_generated_file(path: str):
         raise HTTPException(status_code=404, detail="Generated file not found.")
     if resolved.suffix.lower() not in {".txt", ".pdf", ".docx"}:
         raise HTTPException(status_code=400, detail="Unsupported generated file type.")
-    return FileResponse(str(resolved), filename=resolved.name)
+    # A PDF or text document opens directly for an accessible in-browser
+    # review. Word documents are downloaded (they cannot be rendered safely
+    # by browsers); a user may explicitly download any of the three formats.
+    disposition = "attachment" if download or resolved.suffix.lower() == ".docx" else "inline"
+    return FileResponse(str(resolved), filename=resolved.name, content_disposition_type=disposition)
 
 
 @app.get("/api/profile/review")
@@ -475,7 +512,9 @@ async def api_profile_confirm(request: Request):
         payload = await request.json()
     except Exception:
         payload = {}
-    field = str((payload or {}).get("field") or "")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="A JSON object is required to confirm a profile field.")
+    field = str(payload.get("field") or "")
     if not _is_confirmable(field):
         raise HTTPException(status_code=400, detail=f"Unsupported field: {field}")
     profile = _runtime_profile(True)
@@ -661,16 +700,19 @@ def api_scans(limit: int = 10):
 
 @app.post("/api/find")
 async def api_find():
-    profile = _runtime_profile(True)
-    scan = await run_discovery_scan(profile)
-    # One shared orchestration identical to the CLI (utils/recommendations.py):
-    # store, match, record — the recommendation collection in the response is
-    # the exact collection the summary counted.  Runtime applicant evidence is
-    # the canonical profile only, never CV/cache text.
-    evaluate_scan_jobs(scan, profile)
-    result = scan.to_dict()
-    log_scan_result(result)
-    return result
+    if _SCAN_LOCK.locked():
+        raise HTTPException(status_code=409, detail="A vacancy scan is already running. Please use the result of that scan.")
+    async with _SCAN_LOCK:
+        profile = _runtime_profile(True)
+        scan = await run_discovery_scan(profile)
+        # One shared orchestration identical to the CLI (utils/recommendations.py):
+        # store, match, record — the recommendation collection in the response
+        # is the exact collection the summary counted. Runtime applicant
+        # evidence is the canonical profile only, never CV/cache text.
+        evaluate_scan_jobs(scan, profile)
+        result = scan.to_dict()
+        log_scan_result(result)
+        return result
 
 
 @app.post("/api/master-cv")

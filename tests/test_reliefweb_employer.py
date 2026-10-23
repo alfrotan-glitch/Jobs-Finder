@@ -8,6 +8,8 @@ the employer name shown to the owner and written into the stable job id.
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from utils import discovery
@@ -16,7 +18,7 @@ LISTING_URL = "https://reliefweb.int/jobs?country=Afghanistan"
 
 
 def _listing(html: str):
-    return discovery._parse_reliefweb_listing(html, LISTING_URL, limit=20)
+    return discovery._parse_reliefweb_listing(html, LISTING_URL, limit=20, today=date(2026, 10, 1))
 
 
 @pytest.mark.parametrize(

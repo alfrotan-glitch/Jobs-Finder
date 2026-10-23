@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date
 
 import pytest
 
@@ -101,6 +102,16 @@ def test_deduplicate_and_expired_vacancies_are_removed():
     ]
 
     assert [job.id for job in deduplicate_jobs(jobs)] == ["a"]
+
+
+def test_expired_vacancy_cannot_reappear_via_duplicate_without_a_deadline():
+    jobs = [
+        Job("expired", "Medical Officer", "Org", "Kabul", "https://example.org/1", "", "x",
+            metadata={"closing_date": "2026-10-15"}),
+        Job("undated-duplicate", "Medical Officer", "Org", "Kabul",
+            "https://example.org/1?ref=second-listing", "", "x", metadata={}),
+    ]
+    assert deduplicate_jobs(jobs, today=date(2026, 10, 23)) == []
 
 
 def test_acbar_listing_parser_preserves_url_and_deadline():

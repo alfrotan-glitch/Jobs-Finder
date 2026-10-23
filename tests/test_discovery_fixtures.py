@@ -54,7 +54,7 @@ def test_acbar_detail_web_application_route():
 
 def test_reliefweb_listing_country_dedup_and_detail():
     jobs = discovery._parse_reliefweb_listing(
-        fixture("reliefweb_listing.html"), "https://reliefweb.int/jobs?country=Afghanistan", limit=20
+        fixture("reliefweb_listing.html"), "https://reliefweb.int/jobs?country=Afghanistan", limit=20, today=date(2026, 10, 1)
     )
     assert len(jobs) == 2
     assert {job.title for job in jobs} == {"Health Programme Officer", "Finance Manager"}
@@ -145,3 +145,12 @@ async def test_scan_status_matrix(monkeypatch, good_jobs, bad, expected):
         enabled.append("fixture_bad")
     result = await discovery.run_discovery_scan({"sources": {"enabled": enabled}}, today=date(2026, 10, 1))
     assert result.status == expected
+
+
+
+def test_reliefweb_fixture_expiry_changes_with_reference_date():
+    """Old fixture deadlines must not make this test date-dependent."""
+    html = fixture("reliefweb_listing.html")
+    url = "https://reliefweb.int/jobs?country=Afghanistan"
+    assert len(discovery._parse_reliefweb_listing(html, url, limit=20, today=date(2026, 10, 1))) == 2
+    assert discovery._parse_reliefweb_listing(html, url, limit=20, today=date(2026, 11, 1)) == []

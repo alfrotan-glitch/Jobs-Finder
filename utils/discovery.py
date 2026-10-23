@@ -12,7 +12,7 @@ import asyncio
 import hashlib
 import re
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
@@ -283,7 +283,7 @@ class SourceJobs(list[Job]):
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 def stable_job_id(source: str, *parts: str) -> str:
@@ -328,14 +328,16 @@ def deduplicate_jobs_with_stats(jobs: list[Job], *, today: date | None = None) -
 
     for job in jobs:
         source_id = str((job.metadata or {}).get("_scan_source_id") or job.platform or "").lower()
-        if is_expired(job, today=today):
-            inc(source_id, "expired_stale_excluded")
-            continue
         key = _canonical(job.url or job.apply_url or "") or _canonical(f"{job.title} {job.company} {job.location}")
         if not key or key in seen:
             inc(source_id, "duplicates_removed")
             continue
+        # Deduplicate before expiry: an undated duplicate must not resurrect
+        # a posting whose first authoritative card carries a passed deadline.
         seen.add(key)
+        if is_expired(job, today=today):
+            inc(source_id, "expired_stale_excluded")
+            continue
         out.append(job)
     return out, stats
 
@@ -1090,7 +1092,7 @@ async def discover_reliefweb_jobs(profile: dict[str, Any], *, today: date | None
     return SourceJobs(detailed, parsed_count=len(detailed), metrics=metrics)
 
 
-def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int, deduplicate_result: bool = True) -> list[Job]:
+def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int, deduplicate_result: bool = True, today: date | None = None) -> list[Job]:
     spec = SOURCE_REGISTRY.get("reliefweb", {})
     source_name = source_display_name(spec) or "reliefweb"
     raw_selector_list = ((spec.get("selectors") or {}).get("listing_links") or ['a[href*="/job/"]'])
@@ -1139,7 +1141,7 @@ def _parse_reliefweb_listing(html: str, base_url: str, *, limit: int, deduplicat
         )
         if len(jobs) >= limit:
             break
-    return deduplicate_jobs(jobs) if deduplicate_result else jobs
+    return deduplicate_jobs(jobs, today=today) if deduplicate_result else jobs
 
 
 def _parse_reliefweb_detail(html: str, job: Job) -> Job:

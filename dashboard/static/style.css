@@ -422,6 +422,17 @@ input[type="file"] { max-width: 100%; padding: .72rem; border-radius: 12px; bord
 .documentCard { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .78rem; border-radius: 16px; border: 1px solid var(--line); background: var(--surface-soft); }
 .documentCard div { display: flex; flex-direction: column; }
 .documentCard span { color: var(--muted); font-size: .88rem; margin-top: .15rem; }
+.documentBundle { align-items: flex-start; flex-wrap: wrap; }
+.documentActions { display: flex !important; flex-direction: row !important; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .4rem; max-width: 100%; }
+.documentActions .button { white-space: nowrap; min-height: 36px; }
+.applicationReviewNotes { margin-top: 1rem; padding: 1rem 1.1rem; border: 1px solid var(--line-strong); border-left: 4px solid var(--warning); border-radius: var(--radius-md); background: var(--surface-soft); }
+.applicationReviewNotes strong { display: block; margin-bottom: .45rem; color: var(--text); }
+.applicationReviewNotes ul { margin: .25rem 0 0; padding-left: 1.3rem; color: var(--muted); line-height: 1.55; }
+.applicationReviewNotes li + li { margin-top: .35rem; }
+@media (max-width: 720px) {
+  .documentBundle { flex-direction: column; align-items: stretch; }
+  .documentActions { justify-content: flex-start; }
+}
 .emailPreview pre { white-space: pre-wrap; line-height: 1.55; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 16px; padding: 1rem; }
 
 .skeletonCard { min-height: 174px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--surface); padding: 1rem; display: grid; gap: .75rem; align-content: start; overflow: hidden; }

@@ -71,7 +71,9 @@ python main.py server --host 127.0.0.1 --port 8080
 
 Open <http://localhost:8080>.
 
-The **Find jobs** action accepts only one active scan per dashboard process. A simultaneous scan request returns HTTP `409` instead of starting a second scan that could race with the latest saved results. Once the first scan finishes (or fails), a new scan can be started. This is an in-process guard, not a cross-process scheduler; do not run multiple dashboard workers against the same local profile and database.\n\n## Running the tests
+The **Find jobs** action accepts only one active scan per dashboard process. A simultaneous scan request returns HTTP `409` instead of starting a second scan that could race with the latest saved results. Once the first scan finishes (or fails), a new scan can be started. This is an in-process guard, not a cross-process scheduler; do not run multiple dashboard workers against the same local profile and database.
+
+## Running the tests
 
 ```bash
 python3 -m venv .venv

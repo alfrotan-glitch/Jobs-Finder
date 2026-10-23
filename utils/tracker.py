@@ -38,6 +38,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from utils.discovery import is_expired
 from utils.medical_requirements import canonical_source_fields, has_actionable_source
 from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.recommendations import is_recommendable, recommendation_rank
@@ -381,6 +382,10 @@ def _to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     metadata = data.get("metadata") or {}
     data["apply_email"] = metadata.get("apply_email") or metadata.get("application_email") or ""
     data["application_method"] = metadata.get("application_method") or "UNAVAILABLE"
+    # A posting can expire *after* it was saved without another source scan.
+    # Its stored application history survives, but the UI must not continue
+    # advertising it as an open role after the deadline.
+    data["is_expired"] = is_expired(data)
     return data
 
 
@@ -548,8 +553,25 @@ def _update_medical_match(conn: sqlite3.Connection, job_id: str, report: dict[st
     status = readiness_to_status(readiness)
     _trace_database("log_medical_match", "before_update", conn)
     conn.execute(
-        "UPDATE vacancies SET match_json=?, readiness=?, status=?, updated_at=? WHERE id=?",
-        (json.dumps(report, ensure_ascii=False), readiness, status, now_iso(), job_id),
+        """
+        UPDATE vacancies SET
+          match_json=?,
+          readiness=?,
+          status=CASE
+            WHEN status=? THEN ?
+            WHEN status IN (?, ?) AND ? <> 'NOT_ELIGIBLE' THEN status
+            ELSE ?
+          END,
+          updated_at=?
+        WHERE id=?
+        """,
+        (
+            json.dumps(report, ensure_ascii=False),
+            readiness,
+            APPLIED_MANUALLY, APPLIED_MANUALLY,
+            PACKAGE_READY, PACKAGE_NEEDS_INPUT, readiness,
+            status, now_iso(), job_id,
+        ),
     )
     _trace_database("log_medical_match", "after_update", conn)
 
@@ -688,7 +710,10 @@ def get_recommended_jobs(limit: int = 20) -> list[dict[str, Any]]:
     compatible professional-role classification. Generic roles kept in broad
     discovery (ambiguous health wording, non-medical families) never pass.
     """
-    jobs = [job for job in list_actionable_jobs(limit=500) if is_recommendable(job, job.get("match") or {})]
+    jobs = [
+        job for job in list_actionable_jobs(limit=500)
+        if not job.get("is_expired") and is_recommendable(job, job.get("match") or {})
+    ]
     jobs.sort(key=recommendation_rank)
     return jobs[:limit]
 

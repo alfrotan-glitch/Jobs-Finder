@@ -956,7 +956,17 @@ def _listing_card(anchor: Any) -> Any:
 
 
 def _labeled_value(text: str, label: str) -> str:
-    match = re.search(rf"(?:^|\n)\s*{label}\s*:?\s*([^\n]+)", text, flags=re.IGNORECASE)
+    """Read a *whole* field label, never a prefix of an unrelated heading.
+
+    For example, 'Organization' must not match 'Organizational context:',
+    which would falsely turn the employer into 'al context:' on live ACBAR
+    pages. Labels may have a colon, a space, or a value on the next line.
+    """
+    match = re.search(
+        rf"(?:^|\n)[ \t]*(?:{label})(?=[ \t:\n]|$)[ \t]*:?[ \t]*(?:\n[ \t]*)?([^\n]+)",
+        text,
+        flags=re.IGNORECASE,
+    )
     return normalize_space(match.group(1)) if match else ""
 
 

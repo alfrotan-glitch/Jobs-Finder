@@ -637,12 +637,17 @@ def update_tailored_resume(job_id: str, documents: dict[str, Any]) -> None:
     with _write_connection() as conn:
         _trace_database("update_tailored_resume", "before_update", conn)
         conn.execute(
-            "UPDATE vacancies SET documents_json=?, package_json=?, package_status=?, status=?, updated_at=? WHERE id=?",
+            """
+            UPDATE vacancies
+            SET documents_json=?, package_json=?, package_status=?,
+                status=CASE WHEN status=? THEN ? ELSE ? END, updated_at=?
+            WHERE id=?
+            """,
             (
                 json.dumps(documents, ensure_ascii=False),
                 json.dumps(package, ensure_ascii=False),
                 package_status,
-                status,
+                APPLIED_MANUALLY, APPLIED_MANUALLY, status,
                 now_iso(),
                 job_id,
             ),

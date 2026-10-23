@@ -553,6 +553,12 @@ function renderApplicationMethod(job) {
   const email = applyEmail(job);
   const web = webApplyUrl(job);
   const page = vacancyPage(job);
+  if (job.is_expired) {
+    return `<div class="routePanel unavailable"><h3>Vacancy deadline passed</h3><p>This saved vacancy is no longer open for new application preparation. Confirm any reopening directly with the employer.</p>${page ? `<a class="button secondary" href="${escapeAttr(page)}" target="_blank" rel="noopener">View official vacancy</a>` : ""}</div>`;
+  }
+  if (job.status === "APPLIED_MANUALLY") {
+    return `<div class="routePanel"><h3>Already recorded as applied</h3><p>Your manual application has been preserved. You can still review its prepared documents below.</p>${page ? `<a class="button secondary" href="${escapeAttr(page)}" target="_blank" rel="noopener">View official vacancy</a>` : ""}</div>`;
+  }
   if (method === "EMAIL" && email) {
     return `<div class="routePanel"><p class="microLabel">Apply by email</p><h3>${escapeHtml(email)}</h3><div class="cardActions"><a class="button primary subtle" href="mailto:${escapeAttr(email)}">Open email</a><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email)}">Copy email</button><button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare email</button></div></div>`;
   }

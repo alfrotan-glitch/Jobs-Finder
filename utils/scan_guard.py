@@ -8,8 +8,8 @@ processes. This small OS file lock keeps discovery+matching atomic as a unit.
 from __future__ import annotations
 
 import os
-from contextlib import contextmanager
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from utils import tracker

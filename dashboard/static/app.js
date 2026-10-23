@@ -426,7 +426,7 @@ function renderNextStep() {
     <p>${state.jobs.length ? "No current recommended vacancy is available. Review all discovered opportunities." : "Start with a scan to find suitable opportunities from the configured sources."}</p>
     ${state.jobs.length
       ? '<button class="primary subtle" data-tab-target="jobs">All jobs</button>'
-      : '<button class="primary subtle" data-action="find-jobs">Find Jobs</button>'}`;`;
+      : '<button class="primary subtle" data-action="find-jobs">Find Jobs</button>'}`;
 }
 
 function recommendationProvenanceNotice() {

@@ -717,7 +717,9 @@ def get_recommended_jobs(limit: int = 20) -> list[dict[str, Any]]:
     """
     jobs = [
         job for job in list_actionable_jobs(limit=500)
-        if not job.get("is_expired") and is_recommendable(job, job.get("match") or {})
+        if not job.get("is_expired")
+        and job.get("status") != APPLIED_MANUALLY
+        and is_recommendable(job, job.get("match") or {})
     ]
     jobs.sort(key=recommendation_rank)
     return jobs[:limit]

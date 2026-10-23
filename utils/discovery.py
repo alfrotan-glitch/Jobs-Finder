@@ -960,6 +960,33 @@ def _labeled_value(text: str, label: str) -> str:
     return normalize_space(match.group(1)) if match else ""
 
 
+def _acbar_application_section(text: str) -> str:
+    """Limit application-route extraction to vacancy instructions, not site chrome.
+
+    ACBAR pages include a generic footer contact such as webinfo@acbar.org.
+    That address is *not* the hiring contact for a job whose posting says to
+    use an external application form. Search the submission instructions (or
+    at least the vacancy body before footer/navigation) rather than treating
+    the first email anywhere on the page as an employer route.
+    """
+    lines = [line.strip() for line in text.splitlines()]
+    stop = len(lines)
+    for index, line in enumerate(lines):
+        if line.lower() in {"acbar highlights", "member highlights", "contact us", "useful links"}:
+            stop = index
+            break
+    body = lines[:stop]
+    for index, line in enumerate(body):
+        if re.fullmatch(
+            r"(?:submission guidelines?|how to apply|application (?:instructions?|procedures?|process)|"
+            r"method of application|submission procedure|application guideline)",
+            line,
+            flags=re.IGNORECASE,
+        ):
+            return "\n".join(body[index + 1 :])
+    return "\n".join(body)
+
+
 def _parse_acbar_detail(html: str, job: Job) -> Job:
     spec = SOURCE_REGISTRY.get("acbar", {})
     source_name = source_display_name(spec) or job.source_name or "acbar"
@@ -986,25 +1013,40 @@ def _parse_acbar_detail(html: str, job: Job) -> Job:
     gender = _labeled_value(text, r"Gender")
     if gender:
         job.metadata["gender"] = gender
-    email = _extract_email(text)
-    if email:
+    application_text = _acbar_application_section(text)
+    email = _extract_email(application_text)
+    # Only explicit form/application links count. Global site navigation often
+    # includes /jobs URLs and must never become an employer's application URL.
+    external_application_links: list[str] = []
+    for anchor in soup.select("a[href]"):
+        href = urljoin(job.url, str(anchor.get("href") or ""))
+        label = normalize_space(anchor.get_text(" ", strip=True)).lower()
+        host = (urlparse(href).hostname or "").lower()
+        if host in set(spec.get("host_aliases") or []) or not href.startswith(("https://", "http://")):
+            continue
+        if re.search(r"apply|application|submit|form", label) or re.search(r"forms|apply|careers", href, flags=re.IGNORECASE):
+            external_application_links.append(href)
+    app_url = _extract_application_url("\n".join([application_text, *external_application_links]))
+    if app_url:
+        # A direct application form is the primary route even when the page
+        # includes a separate contact email. Never send the applicant to the
+        # site owner's general-purpose mailbox instead of the official form.
+        job.apply_url = app_url
+        job.application_method = "WEB"
+        job.metadata["application_url"] = app_url
+        job.metadata["apply_url"] = app_url
+        job.metadata["application_method"] = "WEB"
+        if email:
+            job.apply_email = email
+            job.metadata["apply_email"] = email
+            job.metadata["application_email"] = email
+    elif email:
         job.apply_email = email
         job.apply_url = None
         job.application_method = "EMAIL"
         job.metadata["apply_email"] = email
         job.metadata["application_email"] = email
         job.metadata["application_method"] = "EMAIL"
-    linked_urls = [urljoin(job.url, str(anchor.get("href") or "")) for anchor in soup.select("a[href]")]
-    app_url = _extract_application_url("\n".join([text, *linked_urls]))
-    if app_url:
-        job.metadata["application_url"] = app_url
-        job.metadata["apply_url"] = app_url
-        if email:
-            job.apply_url = app_url
-        else:
-            job.apply_url = app_url
-            job.application_method = "WEB"
-            job.metadata["application_method"] = "WEB"
     closing = parse_closing_date(text)
     if closing:
         job.metadata["closing_date"] = closing

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +14,7 @@ from utils.alerts import (
 )
 from utils.discovery import Job, SCAN_COMPLETE, SOURCES_UNAVAILABLE
 from utils.scan_guard import ScanAlreadyRunning, exclusive_scan
-from utils.windows_schedule import ScheduleError, schedule_status
+from utils.windows_schedule import schedule_status
 
 
 @pytest.fixture
@@ -82,7 +81,7 @@ def test_first_seen_matching_alert_is_persistent_and_never_duplicate(client):
 
 
 def test_deadline_thresholds_are_deduplicated_and_only_for_actionable_jobs(client):
-    today = date(2026, 10, 23)
+    today = date.today()
     soon = _job("soon", deadline=today + timedelta(days=6))
     blocked = _job("ineligible", deadline=today + timedelta(days=1))
     past = _job("past", deadline=today - timedelta(days=1))

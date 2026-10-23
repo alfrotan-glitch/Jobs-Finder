@@ -217,6 +217,10 @@ def cmd_open(job_id: str) -> None:
         return
     # Missing or legacy method labels must not prefer an unrelated contact
     # email over an explicit application form when both are stored.
+    if not web_url and email:
+        print(f"Opening email application draft to: {email}")
+        webbrowser.open(f"mailto:{email}")
+        return
     url = web_url or vacancy_url
     if not url:
         print("No official application route is stored. Open the source vacancy URL manually.")

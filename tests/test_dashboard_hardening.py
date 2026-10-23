@@ -93,3 +93,54 @@ def test_cv_preview_accepts_a_bounded_text_upload(client, monkeypatch):
     assert response.status_code == 200
     assert response.json()["persisted"] is False
     assert not profile_repository.canonical_profile_path().exists()
+
+
+
+def test_untrusted_host_cannot_read_private_dashboard_data(client):
+    """A malicious DNS-rebinding domain must not reach local applicant APIs."""
+    for hostname in ("attacker.example", "localhost.attacker.example", "127.0.0.1.attacker.example"):
+        response = client.get("/api/profile/details", headers={"Host": hostname})
+        assert response.status_code == 400
+        assert "Untrusted Host" in response.json()["detail"]
+        assert response.headers["cache-control"] == "no-store, max-age=0, private"
+
+
+def test_trusted_host_supports_loopback_addresses_and_ipv6(client):
+    for hostname in ("localhost:8080", "127.0.0.1:8080", "[::1]:8080"):
+        response = client.get("/api/health", headers={"Host": hostname})
+        assert response.status_code == 200
+
+
+def test_malformed_host_headers_are_rejected(client):
+    for hostname in ("localhost:invalid", "localhost@attacker.example", "localhost/path", "localhost:0"):
+        response = client.get("/api/health", headers={"Host": hostname})
+        assert response.status_code == 400
+
+
+def test_confirm_endpoint_rejects_non_object_json_without_mutating_profile(client):
+    """Malformed confirmation bodies should never raise 500 or alter evidence."""
+    canonical = profile_repository.canonical_profile_path()
+    canonical.write_text("personal:\n  first_name: Jane\n", encoding="utf-8")
+    original = canonical.read_bytes()
+    for payload in ([], ["personal:first_name"], "personal:first_name", 42, None):
+        response = client.post("/api/profile/confirm", json=payload)
+        assert response.status_code == 400
+        assert canonical.read_bytes() == original
+
+
+def test_duplicate_scan_request_is_rejected_without_starting_discovery(client, monkeypatch):
+    """Do not run two overlapping dashboard scans against one saved latest scan."""
+    import asyncio
+
+    def should_not_run():
+        raise AssertionError("discovery must not run while the scan lock is held")
+
+    monkeypatch.setattr(server, "run_discovery_scan", should_not_run)
+
+    async def during_scan():
+        async with server._SCAN_LOCK:
+            return client.post("/api/find")
+
+    response = asyncio.run(during_scan())
+    assert response.status_code == 409
+    assert "already running" in response.json()["detail"]

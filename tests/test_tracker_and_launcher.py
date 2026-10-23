@@ -35,6 +35,16 @@ def test_launcher_is_one_safe_canonical_runtime():
     assert "port %port% is already in use" in text
 
 
+def test_one_click_launcher_repairs_missing_dependencies_without_erasing_user_data():
+    text = Path("run_jobs_finder.bat").read_text(encoding="utf-8").lower()
+
+    assert "python/venv: repairing missing project dependencies" in text
+    assert 'pip install -r "%requirements%"' in text
+    assert "dependencies repaired successfully" in text
+    assert "profile, documents, and application database have not been deleted" in text
+    assert "pip install --upgrade pip" not in text
+
+
 def test_requirements_are_lightweight():
     requirements = Path("requirements.txt").read_text(encoding="utf-8").lower()
     assert "python-jobspy" not in requirements

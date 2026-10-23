@@ -56,19 +56,27 @@ jobs:
 
   docx-rendering:
     runs-on: ubuntu-24.04
-    timeout-minutes: 18
+    timeout-minutes: 22
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install native Writer and the CV font family
-        timeout-minutes: 7
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           if ! command -v libreoffice >/dev/null 2>&1; then
-            sudo timeout 210 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=25 update
-            sudo timeout 210 apt-get -o Dpkg::Options::=--force-confold --no-install-recommends -y install libreoffice-writer fonts-dejavu-core
+            # Azure's default apt mirror occasionally throttles the 97 MB
+            # LibreOffice download to a few KB/s. Use Ubuntu's official
+            # archive mirror instead; never skip real Writer verification.
+            for source in /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+              if test -f "$source"; then
+                sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' "$source"
+              fi
+            done
+            sudo timeout 180 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=40 update
+            sudo timeout 600 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=40 -o Dpkg::Options::=--force-confold --no-install-recommends -y install libreoffice-writer fonts-dejavu-core
           fi
           libreoffice --version
           fc-match 'DejaVu Sans'

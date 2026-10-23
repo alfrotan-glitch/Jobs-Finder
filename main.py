@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from utils.discovery import run_discovery_scan
+from utils.discovery import is_expired, run_discovery_scan
 from utils.documents import prepare_application_bundle, write_master_cv
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.paths import CANONICAL_DB_PATH
@@ -166,16 +166,22 @@ def cmd_prepare(profile: dict[str, Any], job_id: str) -> dict[str, Any] | None:
     if not job:
         print(f"Vacancy not found: {job_id}")
         return None
+    if job.get("status") == "APPLIED_MANUALLY":
+        print("Not preparing a duplicate package: this application was already recorded as submitted manually.")
+        return None
+    if is_expired(job):
+        print("Not preparing a package: the official vacancy deadline has passed. Check for a newly published vacancy.")
+        return None
     # The same canonical mapping used for discovery/matching is passed into
-    # document generation.  CV imports and resume caches never feed runtime
-    # matching or employer-facing documents.
+    # document generation. CV imports and resume caches are never applicant evidence.
     report = match_job_against_profile(job, profile).to_dict()
-    log_medical_match(job_id, report)
     if report.get("readiness_status") == NOT_ELIGIBLE_STATUS:
         print("Not preparing a package: this vacancy is classified NOT_ELIGIBLE.")
         print(report.get("explanation", ""))
         return None
     docs = prepare_application_bundle(job, profile, report)
+    # Do not mutate the job tracker before successful file generation.
+    log_medical_match(job_id, report)
     update_tailored_resume(job_id, docs)
     package = docs.get("application_package", {})
     print(f"Prepared package: {job['title']} — {job['company']}")
@@ -200,7 +206,18 @@ def cmd_open(job_id: str) -> None:
     email = package.get("apply_email") or metadata.get("apply_email") or job.get("apply_email") or ""
     web_url = package.get("apply_url") or metadata.get("apply_url") or job.get("apply_url") or ""
     vacancy_url = package.get("official_vacancy_page") or metadata.get("vacancy_url") or job.get("url") or ""
-    if email:
+    method = str(package.get("application_method") or metadata.get("application_method") or job.get("application_method") or "").upper()
+    if web_url and method == "WEB":
+        print(f"Opening official web application: {web_url}")
+        webbrowser.open(web_url)
+        return
+    if email and method == "EMAIL":
+        print(f"Opening email application draft to: {email}")
+        webbrowser.open(f"mailto:{email}")
+        return
+    # Missing or legacy method labels must not prefer an unrelated contact
+    # email over an explicit application form when both are stored.
+    if not web_url and email:
         print(f"Opening email application draft to: {email}")
         webbrowser.open(f"mailto:{email}")
         return

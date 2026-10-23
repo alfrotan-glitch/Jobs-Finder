@@ -79,6 +79,8 @@ function readinessValue(job) {
 }
 
 function readinessLabel(job) {
+  if (job.is_expired) return "DEADLINE PASSED";
+  if (job.status === "APPLIED_MANUALLY") return "APPLIED MANUALLY";
   const readiness = readinessValue(job);
   if (readiness === "READY_TO_APPLY") return "READY TO APPLY";
   if (readiness === "NEEDS_VERIFICATION") return "REQUIRES VERIFICATION";
@@ -187,6 +189,7 @@ function jobCard(job, {compact = false} = {}) {
   const org = compactText(job.company, "Organization not listed");
   const location = compactText(job.location, "Location not listed");
   const isNotEligible = readiness === "NOT_ELIGIBLE";
+  const canPrepare = !isNotEligible && !job.is_expired && job.status !== "APPLIED_MANUALLY";
   return `
     <article class="jobCard ${compact ? "compact" : ""}">
       <div class="jobCardHeader">
@@ -194,7 +197,7 @@ function jobCard(job, {compact = false} = {}) {
           <h3>${escapeHtml(job.title || "Untitled vacancy")}</h3>
           <p>${escapeHtml(org)} · ${escapeHtml(location)}</p>
         </div>
-        <span class="statusBadge ${statusClass(readiness)}">${escapeHtml(readinessLabel(job))}</span>
+        <span class="statusBadge ${job.is_expired ? "expired" : statusClass(job.status === "APPLIED_MANUALLY" ? "APPLIED_MANUALLY" : readiness)}">${escapeHtml(readinessLabel(job))}</span>
       </div>
       <div class="jobMetaRow" aria-label="Vacancy metadata">
         <span>Deadline: ${escapeHtml(deadline(job))}</span>
@@ -208,7 +211,7 @@ function jobCard(job, {compact = false} = {}) {
       </div>
       <div class="cardActions">
         <button class="secondary" data-action="view-job" data-job-id="${id}">View details</button>
-        ${!isNotEligible && directApplicationRouteAvailable(job) ? `<button class="primary subtle" data-action="prepare-job" data-job-id="${id}">${method === "EMAIL" ? "Prepare email" : "Prepare application"}</button>` : ""}
+        ${canPrepare && directApplicationRouteAvailable(job) ? `<button class="primary subtle" data-action="prepare-job" data-job-id="${id}">${method === "EMAIL" ? "Prepare email" : "Prepare application"}</button>` : ""}
         ${packageExists(job) ? `<button class="secondary" data-action="review-package" data-job-id="${id}">Review package</button>` : ""}
         ${packageReadyForReview(job) && job.status !== "APPLIED_MANUALLY" ? `<button class="secondary" data-action="mark-applied" data-job-id="${id}">Mark applied</button>` : ""}
       </div>
@@ -231,7 +234,7 @@ function setLoadingLists() {
 }
 
 function renderMetrics() {
-  const ready = state.jobs.filter((job) => readinessValue(job) === "READY_TO_APPLY").length;
+  const ready = state.jobs.filter((job) => !job.is_expired && job.status !== "APPLIED_MANUALLY" && readinessValue(job) === "READY_TO_APPLY").length;
   const applications = state.jobs.filter((job) => ["PACKAGE_READY", "PACKAGE_NEEDS_INPUT", "APPLIED_MANUALLY"].includes(job.status)).length;
   $("metricRecommended").textContent = state.recommended.length;
   $("metricJobs").textContent = state.jobs.length;
@@ -285,13 +288,14 @@ function renderNextStep() {
       <button class="primary subtle" data-action="find-jobs">Find Jobs</button>`;
     return;
   }
-  const ready = state.recommended.find((job) => readinessValue(job) === "READY_TO_APPLY");
+  const ready = state.recommended.find((job) => readinessValue(job) === "READY_TO_APPLY" && !job.is_expired && job.status !== "APPLIED_MANUALLY");
   if (ready) {
+    const hasPackage = packageExists(ready);
     box.innerHTML = `
       <div class="nextStepIcon ok" aria-hidden="true">✓</div>
-      <h4>Prepare the strongest application</h4>
-      <p>${escapeHtml(ready.title)} is ready for review.</p>
-      <button class="primary subtle" data-action="prepare-job" data-job-id="${escapeAttr(ready.id)}">Prepare application</button>`;
+      <h4>${hasPackage ? "Review your prepared application" : "Prepare the strongest application"}</h4>
+      <p>${escapeHtml(ready.title)} is ready for your next review step.</p>
+      <button class="primary subtle" data-action="${hasPackage ? "review-package" : "prepare-job"}" data-job-id="${escapeAttr(ready.id)}">${hasPackage ? "Review package" : "Prepare application"}</button>`;
     return;
   }
   box.innerHTML = `
@@ -316,6 +320,8 @@ function recommendationProvenanceNotice() {
 function renderJobLists() {
   const sourceFailed = state.lastScan && ["SOURCES_UNAVAILABLE", "SCAN_FAILED"].includes(state.lastScan.status);
   const provenance = recommendationProvenanceNotice();
+  const currentJobs = state.jobs.filter((job) => !job.is_expired);
+  const historicalJobs = state.jobs.filter((job) => job.is_expired);
   const sourceAction = `<button class="secondary" data-tab-target="advanced">View details</button>`;
   $("dashboardRecommendedList").innerHTML = state.recommended.length
     ? provenance + state.recommended.slice(0, 4).map((job) => jobCard(job, {compact: true})).join("")
@@ -328,7 +334,10 @@ function renderJobLists() {
       ? emptyState("Job sources could not be reached", "No recommendation can be shown until a source returns vacancy data.", sourceAction)
       : emptyState("No suitable vacancies found yet", "Your last scan did not return actionable recommended vacancies.", `<button class="primary subtle" data-action="find-jobs">Run scan</button>`);
   $("jobsList").innerHTML = state.jobs.length
-    ? state.jobs.map((job) => jobCard(job)).join("")
+    ? currentJobs.map((job) => jobCard(job)).join("")
+      + (historicalJobs.length
+        ? `<p class="sectionHelp"><strong>Past-deadline vacancies</strong> — kept for your records, not open for preparation.</p>${historicalJobs.map((job) => jobCard(job)).join("")}`
+        : "")
     : sourceFailed
       ? emptyState("Job sources could not be reached", "This is a source connectivity problem, not a finding that no jobs exist.", sourceAction)
       : emptyState("No jobs yet", "Run a scan to populate this list with actionable vacancies.", `<button class="primary subtle" data-action="find-jobs">Run scan</button>`);
@@ -544,6 +553,12 @@ function renderApplicationMethod(job) {
   const email = applyEmail(job);
   const web = webApplyUrl(job);
   const page = vacancyPage(job);
+  if (job.is_expired) {
+    return `<div class="routePanel unavailable"><h3>Vacancy deadline passed</h3><p>This saved vacancy is no longer open for new application preparation. Confirm any reopening directly with the employer.</p>${page ? `<a class="button secondary" href="${escapeAttr(page)}" target="_blank" rel="noopener">View official vacancy</a>` : ""}</div>`;
+  }
+  if (job.status === "APPLIED_MANUALLY") {
+    return `<div class="routePanel"><h3>Already recorded as applied</h3><p>Your manual application has been preserved. You can still review its prepared documents below.</p>${page ? `<a class="button secondary" href="${escapeAttr(page)}" target="_blank" rel="noopener">View official vacancy</a>` : ""}</div>`;
+  }
   if (method === "EMAIL" && email) {
     return `<div class="routePanel"><p class="microLabel">Apply by email</p><h3>${escapeHtml(email)}</h3><div class="cardActions"><a class="button primary subtle" href="mailto:${escapeAttr(email)}">Open email</a><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email)}">Copy email</button><button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare email</button></div></div>`;
   }
@@ -616,10 +631,11 @@ function openDrawer(job, mode = "details") {
   $("drawerKicker").textContent = compactText(job.company, "Vacancy");
   $("drawerContent").innerHTML = `
     <div class="detailHero">
-      <span class="statusBadge ${statusClass(readinessValue(job))}">${escapeHtml(readinessLabel(job))}</span>
+      <span class="statusBadge ${job.is_expired ? "expired" : statusClass(readinessValue(job))}">${escapeHtml(readinessLabel(job))}</span>
       <p>${escapeHtml(compactText(job.company, "Organization not listed"))} · ${escapeHtml(compactText(job.location, "Location not listed"))}</p>
       <div class="jobMetaRow"><span>Deadline: ${escapeHtml(deadline(job))}</span><span>${escapeHtml(methodDescription(job))}</span><span>${escapeHtml(sourceName(job))}</span></div>
     </div>
+    ${job.is_expired ? `<p class="sectionHelp">The stated deadline for this saved vacancy has passed. Historical documents remain available, but preparing a new application is blocked unless a new official vacancy is published.</p>` : ""}
     <section class="detailSection"><h3>About the role</h3><p>${escapeHtml(compactText(job.description, "No role description is stored for this vacancy."))}</p></section>
     ${renderApplicationMethod(job)}
     ${renderPackage(job)}

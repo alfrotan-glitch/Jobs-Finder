@@ -183,6 +183,34 @@ def test_monitor_schedule_is_explicit_opt_in_and_respects_api_validation(client,
     assert changes == [True, False]
 
 
+def test_explicit_database_reset_clears_alerts_without_creating_a_second_profile(client):
+    job = _job("reset-alerts")
+    tracker.log_discovered_and_medical_match(job, _report())
+    record_scan_alerts(_scan(job))
+    assert list_alerts()["alerts"]
+    assert tracker.delete_all() == 1
+    assert list_alerts()["alerts"] == []
+    assert list_alerts()["unread_count"] == 0
+    tracker.log_discovered_and_medical_match(job, _report())
+    record_scan_alerts(_scan(job))
+    assert len(list_alerts()["alerts"]) == 1
+
+
+def test_windows_popups_are_only_optional_local_convenience():
+    import os
+
+    from utils.paths import PROJECT_ROOT
+    from utils.windows_notice import show_alert_balloon
+
+    script = (PROJECT_ROOT / "tools/windows_alert_balloon.ps1").read_text(encoding="utf-8")
+    assert "ShowBalloonTip" in script
+    assert "Send-MailMessage" not in script
+    assert "Start-Sleep" in script
+    assert show_alert_balloon(0) is False
+    if os.name != "nt":
+        assert show_alert_balloon(2) is False
+
+
 def test_daily_check_scheduler_is_not_claimed_on_other_operating_systems():
     import os
     if os.name != "nt":

@@ -76,14 +76,14 @@ def test_acbar_employer_is_not_derived_from_organizational_context_heading():
         "https://app.tayohr.io/jobs/detail/vac-75835-district-polio-officer-dpo-74521"
     )
     assert not parsed.apply_email
-    assert discovery._labeled_value("Organizational context:\\nThe incumbent", r"Organization") == ""
+    assert discovery._labeled_value("Organizational context:\nThe incumbent", r"Organization") == ""
 
 
 def test_acbar_company_exact_label_and_other_label_whitespace_still_work():
-    assert discovery._labeled_value("Organization: HealthNet TPO\\nLocation: Kabul", r"Organization") == "HealthNet TPO"
-    assert discovery._labeled_value("Organization\\nCTG\\nLocation: Kabul", r"Organization") == "CTG"
+    assert discovery._labeled_value("Organization: HealthNet TPO\nLocation: Kabul", r"Organization") == "HealthNet TPO"
+    assert discovery._labeled_value("Organization\nCTG\nLocation: Kabul", r"Organization") == "CTG"
     assert discovery._labeled_value("Job Location: Helmand", r"(?:Job )?Location") == "Helmand"
-    assert discovery._labeled_value("Organizational context:\\nMisleading", r"Organization") == ""
+    assert discovery._labeled_value("Organizational context:\nMisleading", r"Organization") == ""
 
 
 def test_partial_scan_dashboard_does_not_hide_recommended_deadlines():

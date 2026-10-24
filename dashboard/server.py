@@ -311,7 +311,7 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
         return deduped
 
     experience = []
-    for item in profile.get("work_history") or []:
+    for source_index, item in enumerate(profile.get("work_history") or []):
         if not isinstance(item, dict):
             continue
         gated = "responsibilities" in item or "needs_verification" in item
@@ -326,6 +326,7 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
             verified = [_clean_value(bullet) for bullet in free_form if _clean_value(bullet)]
         experience.append(
             {
+                "source_index": source_index,
                 "title": _clean_value(item.get("title")),
                 "organization": _clean_value(item.get("organization")),
                 "location": _clean_value(item.get("location")),
@@ -594,6 +595,44 @@ async def api_profile_confirm(request: Request):
 
     save_canonical_profile(profile)
     return {"ok": True, "message": f"{field} marked verified in profile.yaml.", "review": _profile_review_payload(profile)}
+
+
+@app.post("/api/profile/experience/add-responsibility")
+async def api_add_verified_responsibility(request: Request):
+    """Save owner-attested real job responsibilities, never generated claims."""
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Submit the responsibility form as JSON.") from None
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid responsibility.")
+    source_index = payload.get("source_index")
+    text_value = payload.get("text")
+    confirmation = payload.get("confirmation")
+    if type(source_index) is not int or not isinstance(text_value, str):
+        raise HTTPException(status_code=400, detail="Choose the exact role and provide a factual responsibility.")
+    import re
+    normalized = re.sub(r"\\s+", " ", text_value).strip()
+    if len(normalized) < 30 or len(normalized) > 1200:
+        raise HTTPException(status_code=400, detail="Write a substantive factual responsibility (30–1200 characters).")
+    if confirmation != "I personally confirm this responsibility is factual and belongs to this role":
+        raise HTTPException(status_code=400, detail="Confirm this experience is accurate before saving.")
+    profile = _runtime_profile(True)
+    work = profile.get("work_history")
+    if not isinstance(work, list) or not 0 <= source_index < len(work):
+        raise HTTPException(status_code=404, detail="The selected work-history role does not exist.")
+    entry = work[source_index]
+    if not isinstance(entry, dict) or entry.get("verified") is not True:
+        raise HTTPException(status_code=409, detail="Confirm the work-history role before adding verified duties.")
+    existing = entry.get("responsibilities") or []
+    if not isinstance(existing, list):
+        raise HTTPException(status_code=409, detail="The canonical responsibilities field must be a list.")
+    if any(isinstance(item, dict) and str(item.get("text", "")).casefold() == normalized.casefold() for item in existing):
+        raise HTTPException(status_code=409, detail="This responsibility already exists for the selected role.")
+    existing.append({"text": normalized, "verified": True})
+    entry["responsibilities"] = existing
+    save_canonical_profile(profile)
+    return {"ok": True, "message": "Your verified responsibility was added to your canonical profile and will appear in new CVs.", "experience": _profile_details(profile)["experience"]}
 
 
 @app.post("/api/import-cv")

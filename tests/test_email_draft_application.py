@@ -127,4 +127,4 @@ def test_frontend_apply_action_and_backend_never_claim_auto_send():
     assert 'async function applyByEmail(id)' in js
     assert '@app.post("/api/jobs/{job_id}/open-email")' in server
     assert '"sent": False' in server
-    assert not re.search(r"(smtp\.sendmail|gmail\.messages\.send)", server, re.I)
+    assert not re.search(r"(smtp\.sendmail|gmail\.messages\.send)", server, re.IGNORECASE)

@@ -115,9 +115,13 @@ backups are rejected. Keep a second copy on another local drive.
 ### Applying by email — attached documents, no guesswork
 
 For a verified **EMAIL** vacancy, use **Apply · Email with PDFs**. Jobs-Finder
-first prepares the application package if needed, then downloads a standard
-`.eml` email draft. Its real attachments are the generated PDFs **actually
-requested by the posting** (CV only, cover letter only, or both). The draft
+first prepares the application package if needed, then **opens the unsent
+compose window in classic Windows Outlook**, if that desktop program is
+installed and configured with your email account. Its actual attachments
+are the generated PDFs **requested by the posting** (CV only, cover letter
+only, or both). In new Outlook, Gmail in a browser, and other environments
+where the Outlook COM composer is unavailable, Jobs-Finder downloads a
+portable `.eml` draft carrying the same attachments. The draft
 contains the saved recruitment address, subject/reference and email body.
 It is not sent. Open the downloaded `.eml` in an installed desktop email
 application, review the sender account, recipient, content and attachments,

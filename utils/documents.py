@@ -1769,10 +1769,17 @@ def _infer_required_documents(job: dict[str, Any]) -> list[str]:
         if label not in docs:
             docs.append(label)
 
-    if "cv" in text or "resume" in text or not docs:
+    # Determine *which* attachments are actually named by the employer.
+    # Do not automatically add a cover letter to a CV-only application, and
+    # do not attach a CV to an explicitly cover-letter-only instruction.
+    wants_cv = bool(re.search(r"\b(?:cv|resume|curriculum vitae)\b", text))
+    wants_cover = "cover letter" in text or "application letter" in text
+    if wants_cv:
         add("Tailored CV / resume")
-    if "cover letter" in text or "application letter" in text:
+    if wants_cover:
         add("Tailored cover letter / application letter")
+    if not wants_cv and not wants_cover:
+        add("Tailored CV / resume")
     if "application form" in text:
         add("Organization application form, completed if required")
     if "reference" in text or "referee" in text:
@@ -1894,7 +1901,6 @@ def _attachment_labels(required_documents: list[str], generated_paths: dict[str,
             add(doc)
     if not labels:
         add(generated_paths.get("tailored_cv") or "Tailored CV / resume")
-        add(generated_paths.get("cover_letter") or "Tailored cover letter / application letter")
     return labels
 
 
@@ -2104,6 +2110,9 @@ def generate_application_package(
         route_type = "email"
     elif application_method == "WEB" and online_url:
         route_type = "online_form"
+    elif application_method in {"WEB", "ONLINE_FORM"}:
+        route_type = "manual_review"
+        application_method = "UNAVAILABLE"
     elif email_to:
         route_type = "email"
         application_method = "EMAIL"
@@ -2123,8 +2132,8 @@ def generate_application_package(
             special_instructions.append(note)
     form_fields = _infer_form_fields(job, profile)
     attachment_list = _attachment_labels(required_documents, generated_paths)
-    if (generated_paths.get("cover_letter") or docs.get("cover_letter")) and not any("cover" in str(item).lower() for item in attachment_list):
-        attachment_list.append(generated_paths.get("cover_letter") or "Tailored cover letter")
+    # The package may generate a helpful optional cover letter for review, but
+    # the email attachment checklist remains exactly vacancy-driven.
     blocking_user_inputs = _infer_blocking_user_inputs(job, route_type, required_documents)
 
     email_draft = None

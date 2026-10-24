@@ -22,14 +22,14 @@ documented way to recover without developer intervention.
 | Local access | Loopback-only default, untrusted-host rejection, response privacy headers and local write-origin guards | Verify no access over LAN and only intended Windows session can see sensitive records |
 | Windows launcher | Batch-script assertions and runtime libraries tested; no dependency on Microsoft account | Double-click installation and upgrade on the real Windows computer; confirm launch after restart |
 | Backups | SQLite online snapshot, confidential ZIP export, checksum and DB-integrity verification, tampering/path guard tests | User must download a ZIP, verify it independently, store second-drive copy, and test a real offline recovery |
-| Full disaster recovery | **Not complete**: no safe verified one-click restore/relink procedure | Develop and test fail-safe recovery on a spare Windows profile / installation before customer sign-off |
+| Full disaster recovery | Non-destructive one-click recovery creates an independent runnable folder from verified ZIP, relinks existing saved document paths, and preserves original work in automated Windows/Linux tests | Confirm file chooser and first-run launcher on owner's PC; rehearse recovery using a second-drive ZIP |
 
 ## Automatic handover must not claim
 
 - Guaranteed vacancy coverage, unbroken external source connectivity, automatic
   submission, automatic application success, or human eligibility certification.
 - A live Windows scheduler or one-click installer tested on the owner's device.
-- A true backup/restore solution just because a ZIP can be downloaded.
+- Completed disaster recovery on the owner's Windows computer just because a ZIP-based test passes on CI.
 - A "zero issues" product based only on code coverage or passed tests.
 
 ## Minimum final on-device acceptance script
@@ -48,8 +48,9 @@ documented way to recover without developer intervention.
 6. Enable the daily task, confirm its actual Windows Task Scheduler action
    points to this checkout, let the next session run, then disable it again.
 7. Download the private backup ZIP to a second local drive, use **Verify
-   backup ZIP** to check it, and conduct a supervised restore rehearsal in an
-   isolated folder/PC without overwriting the working installation.
+   backup ZIP** to check it, double-click **Restore_Jobs_Finder_Backup.bat**,
+   choose that archive, verify the independently recovered folder, and start
+   its Windows launcher without overwriting the working installation.
 8. Check all generated links and files are private and non-LAN-accessible.
 
 **Final customer acceptance requires items 1–8 to pass using the user's

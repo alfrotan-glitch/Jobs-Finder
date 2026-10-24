@@ -188,3 +188,53 @@ def test_frontend_apply_and_verified_role_controls_are_real():
     assert "email-draft" in js
     assert 'data-action="add-verified-duty"' in js
     assert "I CONFIRM THIS IS MY EXPERIENCE" in js
+
+
+
+def test_native_outlook_composer_opens_review_window_without_sending(email_job, monkeypatch):
+    import json
+    import subprocess
+    from types import SimpleNamespace
+
+    from utils import email_application
+
+    root, job, cv, _ = email_job
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout="UNSENT_COMPOSE_OPENED\n", stderr="")
+
+    monkeypatch.setattr(email_application, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(email_application, "shutil", SimpleNamespace(which=lambda name: "powershell.exe"))
+    monkeypatch.setattr(
+        email_application, "subprocess",
+        SimpleNamespace(run=fake_run, TimeoutExpired=subprocess.TimeoutExpired)
+    )
+    assert email_application.open_classic_outlook_composer(job, root=root) is True
+    assert len(calls) == 1
+    args, call = calls[0]
+    assert args[0] == "powershell.exe"
+    assert ".Display()" in args[-1]
+    assert ".Send()" not in args[-1]
+    assert "applications@example.org" not in args[-1]  # JSON via stdin, never interpolated as commands.
+    payload = json.loads(call["input"])
+    assert payload["to"] == "applications@example.org"
+    assert payload["attachments"] == [str(cv)]
+    assert job["status"] == "PACKAGE_READY"
+
+
+def test_outlook_draft_endpoint_does_not_submit_application(email_job, monkeypatch):
+    root, job, _, _ = email_job
+    monkeypatch.setattr(server, "ROOT", root)
+    monkeypatch.setattr(server, "get_job_by_id", lambda _id: job)
+    monkeypatch.setattr(server, "is_expired", lambda _job: False)
+    monkeypatch.setattr(server, "open_classic_outlook_composer", lambda _job, root: True)
+    client = TestClient(server.app)
+    path = "/api/jobs/acbar-test-head-tfu/open-compose"
+    assert client.get(path).status_code == 405
+    response = client.post(path)
+    assert response.status_code == 200
+    assert response.json()["opened"] is True
+    assert response.json()["sent"] is False
+    assert job["status"] == "PACKAGE_READY"

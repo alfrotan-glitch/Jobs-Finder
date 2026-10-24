@@ -499,3 +499,7 @@ input[type="file"] { max-width: 100%; padding: .72rem; border-radius: 12px; bord
   .timelineItem div:first-child { flex-direction: column; align-items: flex-start; }
   .detailDrawer { width: 100vw; }
 }
+
+/* Ledger pagination is intentionally explicit: archived history is not silently truncated. */
+.loadMoreRow { display: flex; flex-wrap: wrap; align-items: center; gap: .9rem; padding: 1rem .25rem; justify-content: center; }
+.loadMoreRow p { margin: 0; }

@@ -42,7 +42,11 @@ from utils.discovery import (
     run_discovery_scan,
 )
 from utils.documents import prepare_application_bundle, write_master_cv
-from utils.email_drafts import EmailDraftError, build_email_draft, open_windows_email_draft
+from utils.email_drafts import (
+    EmailDraftError,
+    build_email_draft,
+    open_windows_email_draft,
+)
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.profile import (

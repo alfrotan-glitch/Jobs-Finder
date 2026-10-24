@@ -11,9 +11,9 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -65,7 +65,7 @@ def backup_archive() -> tuple[str, bytes]:
             snapshot = Path(temporary) / "applications.db"
             original = tracker._read_connection()
             try:
-                with sqlite3.connect(str(snapshot), timeout=15) as target:
+                with closing(sqlite3.connect(str(snapshot), timeout=15)) as target:
                     original.backup(target, pages=128, sleep=0.05)
                     check = target.execute("PRAGMA integrity_check").fetchone()
                     if not check or check[0] != "ok":

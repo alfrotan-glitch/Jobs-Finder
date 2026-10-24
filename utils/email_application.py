@@ -7,7 +7,11 @@ the actual Send click to the applicant. This module NEVER sends mail.
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import subprocess
+import sys
 from email.message import EmailMessage
 from email.policy import SMTP
 from pathlib import Path
@@ -126,3 +130,79 @@ def compose_application_email(job: dict[str, Any], *, root: Path = PROJECT_ROOT)
         raise EmailCompositionError("The email was not prepared with attachments.")
     safe_id = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(job.get("id") or "job"))[:55]
     return f"Application_{safe_id}.eml", message.as_bytes(), [path.name for path in attachments]
+
+
+def open_classic_outlook_composer(job: dict[str, Any], *, root: Path = PROJECT_ROOT) -> bool:
+    """Display an unsent, fully attached compose window in classic Outlook.
+
+    This is an optional Windows convenience. Modern Outlook/new Outlook,
+    browser Gmail and other clients may not expose the classic Outlook COM
+    API, in which case the caller should use the portable .eml download.
+    Neither this function nor the PowerShell script ever invokes Send.
+    """
+    _, raw, names = compose_application_email(job, root=root)
+    if sys.platform != "win32":
+        return False
+    executable = shutil.which("powershell.exe")
+    if not executable:
+        return False
+
+    # Build the path set entirely from the same reviewed/generated PDFs
+    # verified by compose_application_email; never accept a browser-supplied
+    # filesystem path or untrusted address.
+    generated = (job.get("documents") or {}).get("generated_paths") or {}
+    paths: list[str] = []
+    for label in ("tailored_cv", "cover_letter"):
+        entry = generated.get(label) or {}
+        if not isinstance(entry, dict) or not entry.get("pdf"):
+            continue
+        path = _local_document_path(str(entry["pdf"]), root)
+        if path.name in names:
+            paths.append(str(path))
+    if len(paths) != len(names):
+        raise EmailCompositionError("The reviewed attachment files are incomplete.")
+
+    from email import policy
+    from email.parser import BytesParser
+
+    message = BytesParser(policy=policy.default).parsebytes(raw)
+    body = message.get_body(preferencelist=("plain",)).get_content()
+    payload = {
+        "to": str(message["To"]),
+        "subject": str(message["Subject"]),
+        "body": body,
+        "attachments": paths,
+    }
+    # JSON over standard input, never embedded into executable PowerShell
+    # code: vacancy strings cannot inject commands. COM.Display() does not
+    # dispatch email. The actual user presses Send from their Outlook account.
+    script = r"""
+$ErrorActionPreference = 'Stop'
+try {
+    $p = [Console]::In.ReadToEnd() | ConvertFrom-Json
+    $app = New-Object -ComObject Outlook.Application
+    $draft = $app.CreateItem(0)
+    $draft.To = [string]$p.to
+    $draft.Subject = [string]$p.subject
+    $draft.Body = [string]$p.body
+    foreach ($file in $p.attachments) {
+        [void]$draft.Attachments.Add([string]$file)
+    }
+    $draft.Display()
+    Write-Output 'UNSENT_COMPOSE_OPENED'
+} catch {
+    exit 21
+}
+"""
+    try:
+        result = subprocess.run(
+            [executable, "-NoProfile", "-NonInteractive", "-Command", script],
+            input=json.dumps(payload, ensure_ascii=False),
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and "UNSENT_COMPOSE_OPENED" in result.stdout

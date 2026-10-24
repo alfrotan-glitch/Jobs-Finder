@@ -906,7 +906,7 @@ def canonical_source_fields(job: Any) -> dict[str, Any]:
     apply_email = application_email if application_method == "EMAIL" else ""
     apply_url = application_url if application_method == "WEB" else None
 
-    direct_route = application_email or application_url
+    direct_route = apply_email or apply_url
 
     problems: list[str] = []
     if not source_name_is_valid(source_name):

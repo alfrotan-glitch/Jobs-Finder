@@ -1,5 +1,8 @@
 const state = {
   jobs: [],
+  applications: [],
+  jobsMeta: {total: 0, has_more: false, counts: {}},
+  applicationsMeta: {total: 0, has_more: false},
   recommended: [],
   recommendationContext: null,
   recommendationOrigin: "",
@@ -239,12 +242,11 @@ function setLoadingLists() {
 }
 
 function renderMetrics() {
-  const ready = state.jobs.filter((job) => !job.is_expired && job.status !== "APPLIED_MANUALLY" && readinessValue(job) === "READY_TO_APPLY").length;
-  const applications = state.jobs.filter((job) => ["PACKAGE_READY", "PACKAGE_NEEDS_INPUT", "APPLIED_MANUALLY"].includes(job.status)).length;
+  const counts = state.jobsMeta.counts || {};
   $("metricRecommended").textContent = state.recommended.length;
-  $("metricJobs").textContent = state.jobs.length;
-  $("metricReady").textContent = ready;
-  $("metricApplications").textContent = applications;
+  $("metricJobs").textContent = state.jobsMeta.total ?? state.jobs.length;
+  $("metricReady").textContent = counts.ready_to_apply ?? 0;
+  $("metricApplications").textContent = (counts.package || 0) + (counts.applied || 0);
 }
 
 function renderAlerts() {
@@ -258,8 +260,7 @@ function renderAlerts() {
     ? `${unread} unread notification${unread === 1 ? "" : "s"} · ${notices.length} recent`
     : "All caught up. New matches and deadline reminders will appear here.";
   const itemHtml = (item) => {
-    const job = jobById(item.job_id);
-    const route = job
+    const route = item.job_id
       ? `<button class="secondary smallButton" data-action="view-job" data-job-id="${escapeAttr(item.job_id)}">View vacancy</button>`
       : "";
     const label = item.kind === "NEW_MATCH" ? "New match" : item.kind === "DEADLINE" ? "Deadline reminder" : "Source issue";
@@ -457,6 +458,10 @@ function renderJobLists() {
     : sourceFailed
       ? emptyState("Job sources could not be reached", "No recommendation can be shown until a source returns vacancy data.", sourceAction)
       : emptyState("No suitable vacancies found yet", "Your last scan did not return actionable recommended vacancies.", `<button class="primary subtle" data-action="find-jobs">Run scan</button>`);
+  $("jobsPaging").innerHTML = state.jobsMeta.has_more
+    ? `<p class="sectionHelp">Showing ${state.jobs.length} of ${state.jobsMeta.total} stored vacancies.</p>
+       <button class="secondary" data-action="load-more-jobs">Load more jobs</button>`
+    : `<p class="sectionHelp">${state.jobsMeta.total || 0} total stored vacancies, including expired and previously reviewed entries.</p>`;
   $("jobsList").innerHTML = state.jobs.length
     ? currentJobs.map((job) => jobCard(job)).join("")
       + (historicalJobs.length
@@ -468,26 +473,21 @@ function renderJobLists() {
 }
 
 function renderApplications() {
-  const counts = {
-    FOUND: 0,
-    REVIEWED: 0,
-    PACKAGE: 0,
-    APPLIED: 0,
-  };
-  for (const job of state.jobs) {
-    if (job.status === "FOUND") counts.FOUND += 1;
-    else if (["PACKAGE_READY", "PACKAGE_NEEDS_INPUT"].includes(job.status)) counts.PACKAGE += 1;
-    else if (job.status === "APPLIED_MANUALLY") counts.APPLIED += 1;
-    else counts.REVIEWED += 1;
-  }
-  $("stageFound").textContent = counts.FOUND;
-  $("stageReviewed").textContent = counts.REVIEWED;
-  $("stagePackage").textContent = counts.PACKAGE;
-  $("stageApplied").textContent = counts.APPLIED;
-  const applicationJobs = state.jobs.filter((job) => ["PACKAGE_READY", "PACKAGE_NEEDS_INPUT", "APPLIED_MANUALLY"].includes(job.status));
-  $("applicationsList").innerHTML = applicationJobs.length
-    ? applicationJobs.map((job) => jobCard(job)).join("")
+  // The pipeline counts the complete canonical ledger, not the current
+  // 100-record page. Submitted or prepared records older than that page
+  // remain visible in their own independently paginated Applications view.
+  const counts = state.jobsMeta.counts || {};
+  $("stageFound").textContent = counts.found || 0;
+  $("stageReviewed").textContent = counts.reviewed || 0;
+  $("stagePackage").textContent = counts.package || 0;
+  $("stageApplied").textContent = counts.applied || 0;
+  $("applicationsList").innerHTML = state.applications.length
+    ? state.applications.map((job) => jobCard(job)).join("")
     : emptyState("No application packages yet", "Prepare a package from a recommended vacancy to start tracking it here.");
+  $("applicationsPaging").innerHTML = state.applicationsMeta.has_more
+    ? `<p class="sectionHelp">Showing ${state.applications.length} of ${state.applicationsMeta.total} saved applications.</p>
+       <button class="secondary" data-action="load-more-applications">Load more applications</button>`
+    : `<p class="sectionHelp">${state.applicationsMeta.total || 0} saved application records.</p>`;
 }
 
 function renderProfileIdentity() {
@@ -666,7 +666,42 @@ function renderAll() {
 }
 
 function jobById(id) {
-  return state.jobs.find((job) => String(job.id) === String(id)) || state.recommended.find((job) => String(job.id) === String(id));
+  return state.jobs.find((job) => String(job.id) === String(id))
+    || state.applications.find((job) => String(job.id) === String(id))
+    || state.recommended.find((job) => String(job.id) === String(id));
+}
+
+async function openJobById(id, mode = "details") {
+  try {
+    const job = jobById(id) || (await apiJson(`/api/jobs/${encodeURIComponent(id)}`)).job;
+    if (job) openDrawer(job, mode);
+    else setStatus("Vacancy record not found.", "warn");
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
+async function loadMoreJobs() {
+  try {
+    const data = await apiJson(`/api/jobs?limit=100&offset=${state.jobs.length}`);
+    state.jobs.push(...data.jobs);
+    state.jobsMeta = data;
+    renderMetrics();
+    renderJobLists();
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
+async function loadMoreApplications() {
+  try {
+    const data = await apiJson(`/api/applications?limit=100&offset=${state.applications.length}`);
+    state.applications.push(...data.jobs);
+    state.applicationsMeta = data;
+    renderApplications();
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+  }
 }
 
 function requirementSection(title, items, emptyText) {
@@ -831,9 +866,10 @@ async function apiJson(url, options = {}) {
 
 async function refresh() {
   setLoadingLists();
-  const [recommended, jobs, profile, details, review, settings, latestScan, alerts, monitorSchedule] = await Promise.all([
+  const [recommended, jobs, applications, profile, details, review, settings, latestScan, alerts, monitorSchedule] = await Promise.all([
     apiJson("/api/recommended"),
-    apiJson("/api/jobs"),
+    apiJson("/api/jobs?limit=100&offset=0"),
+    apiJson("/api/applications?limit=100&offset=0"),
     apiJson("/api/profile"),
     apiJson("/api/profile/details"),
     apiJson("/api/profile/review"),
@@ -846,6 +882,9 @@ async function refresh() {
   state.recommendationContext = recommended.scan || null;
   state.recommendationOrigin = recommended.data_origin || "";
   state.jobs = jobs.jobs || [];
+  state.jobsMeta = jobs;
+  state.applications = applications.jobs || [];
+  state.applicationsMeta = applications;
   state.profile = profile;
   state.profileDetails = details;
   state.profileReview = review;
@@ -1000,19 +1039,15 @@ function handleAction(event) {
   const action = target.dataset.action;
   const id = target.dataset.jobId;
   if (action === "find-jobs") findJobs();
+  if (action === "load-more-jobs") loadMoreJobs();
+  if (action === "load-more-applications") loadMoreApplications();
   if (action === "mark-alert-read") markAlertRead(target.dataset.alertId);
   if (action === "read-all-alerts") markAllAlertsRead();
   if (action === "toggle-daily-check") changeDailyChecks(target.dataset.enabled === "true");
   if (action === "refresh-monitor-status") refresh().catch((error) => setStatus(humanizeError(error.message), "error"));
-  if (action === "view-job") {
-    const job = jobById(id);
-    if (job) openDrawer(job);
-  }
+  if (action === "view-job") openJobById(id);
   if (action === "prepare-job") prepareJob(id);
-  if (action === "review-package") {
-    const job = jobById(id);
-    if (job) openDrawer(job, "package");
-  }
+  if (action === "review-package") openJobById(id, "package");
   if (action === "show-email-draft") {
     const job = jobById(id);
     if (job) showEmailDraft(job);

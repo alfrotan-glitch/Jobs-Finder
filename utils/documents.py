@@ -2100,10 +2100,16 @@ def generate_application_package(
     web_route_raw = facts.get("apply_url") or facts.get("application_url") or metadata.get("apply_url") or metadata.get("application_url") or job.get("apply_url") or ""
     route_value, route_notes = _normalize_application_url(str(web_route_raw))
     online_url = route_value if _is_http_url(route_value) else ""
-    if application_method == "EMAIL" and email_to:
-        route_type = "email"
-    elif application_method == "WEB" and online_url:
-        route_type = "online_form"
+    # An explicit employer method is authoritative. A generic contact
+    # address is NOT a fallback when the vacancy demands a WEB form.
+    if application_method in {"WEB", "ONLINE_FORM"}:
+        route_type = "online_form" if online_url else "manual_review"
+        application_method = "WEB" if online_url else "UNAVAILABLE"
+        email_to = ""
+    elif application_method == "EMAIL":
+        route_type = "email" if email_to else "manual_review"
+        application_method = "EMAIL" if email_to else "UNAVAILABLE"
+        online_url = ""
     elif email_to:
         route_type = "email"
         application_method = "EMAIL"

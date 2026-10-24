@@ -895,6 +895,30 @@ async function refresh() {
   renderAll();
 }
 
+async function verifyBackup() {
+  const input = $("backupVerifyFile");
+  const output = $("backupVerifyResult");
+  if (!input.files || !input.files[0]) {
+    setStatus("Choose a previously downloaded Jobs-Finder ZIP backup first.", "warn");
+    return;
+  }
+  const button = $("verifyBackupBtn");
+  button.disabled = true;
+  output.textContent = "Checking ZIP integrity and saved database…";
+  try {
+    const form = new FormData();
+    form.append("file", input.files[0]);
+    const report = await apiJson("/api/backup/verify", {method: "POST", body: form});
+    output.textContent = `Verified ${report.files_verified} files · ${report.vacancies_saved} saved vacancies · ${report.applications_submitted_saved} submitted applications · SQLite integrity OK. No files were restored or changed.`;
+    setStatus("Your selected backup passed its independent integrity check. Keep it private.", "ok");
+  } catch (error) {
+    output.textContent = "Verification failed. Do not depend on this backup until a healthy replacement has been exported.";
+    setStatus(humanizeError(error.message), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function exportBackup() {
   const button = $("exportBackupBtn");
   button.disabled = true;
@@ -1070,6 +1094,7 @@ function handleAction(event) {
   const id = target.dataset.jobId;
   if (action === "find-jobs") findJobs();
   if (action === "export-backup") exportBackup();
+  if (action === "verify-backup") verifyBackup();
   if (action === "load-more-jobs") loadMoreJobs();
   if (action === "load-more-applications") loadMoreApplications();
   if (action === "mark-alert-read") markAlertRead(target.dataset.alertId);

@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 from email import policy
 from email.parser import BytesParser
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient

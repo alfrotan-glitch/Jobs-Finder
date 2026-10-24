@@ -8,7 +8,7 @@ import json
 import os
 import sqlite3
 import subprocess
-from pathlib import Path
+from types import SimpleNamespace
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
@@ -135,7 +135,7 @@ def test_user_initiated_zip_validation_is_safe_and_has_no_restore_route(private_
 
 
 def test_scheduler_collision_detection_and_user_explanation(monkeypatch):
-    monkeypatch.setattr(windows_schedule.os, "name", "nt")
+    monkeypatch.setattr(windows_schedule, "os", SimpleNamespace(name="nt"))
     class FakeResult:
         returncode = 1
         stdout = ""
@@ -161,8 +161,8 @@ def test_windows_schedule_script_rejects_cross_checkout_task_mutation():
     ps = (
         'function Get-ScheduledTask { '
         '[pscustomobject]@{ Settings=[pscustomobject]@{Enabled=$true}; '
-        'Actions=@([pscustomobject]@{Execute="C:\\Another\\python.exe"; '
-        'WorkingDirectory="C:\\Another"; Arguments="wrong"}) } }; '
+        'Actions=@([pscustomobject]@{Execute="C:/Another/python.exe"; '
+        'WorkingDirectory="C:/Another"; Arguments="wrong"}) } }; '
         f'& "{PROJECT_ROOT / "tools" / "windows_daily_check.ps1"}" -Action status'
     )
     result = subprocess.run(

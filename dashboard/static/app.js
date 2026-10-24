@@ -219,7 +219,7 @@ function jobCard(job, {compact = false} = {}) {
       </div>
       <div class="cardActions">
         <button class="secondary" data-action="view-job" data-job-id="${id}">View details</button>
-        ${canPrepare && directApplicationRouteAvailable(job) ? `<button class="primary subtle" data-action="prepare-job" data-job-id="${id}">${method === "EMAIL" ? "Prepare email" : "Prepare application"}</button>` : ""}
+        ${canPrepare && directApplicationRouteAvailable(job) ? `<button class="primary subtle" data-action="apply-job" data-job-id="${id}">${method === "EMAIL" ? "Apply · Email with PDFs" : "Apply online"}</button><button class="secondary" data-action="prepare-job" data-job-id="${id}">Prepare documents</button>` : ""}
         ${packageExists(job) ? `<button class="secondary" data-action="review-package" data-job-id="${id}">Review package</button>` : ""}
         ${packageReadyForReview(job) && job.status !== "APPLIED_MANUALLY" ? `<button class="secondary" data-action="mark-applied" data-job-id="${id}">Mark applied</button>` : ""}
       </div>
@@ -531,6 +531,7 @@ function renderProfileDetails() {
       <article class="timelineItem">
         <div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.dates || "")}</span></div>
         <p>${escapeHtml(item.organization)}${item.location ? ` · ${escapeHtml(item.location)}` : ""}</p>
+        ${item.can_add_verified_duty ? `<button class="secondary smallButton" data-action="add-verified-duty" data-role-index="${item.role_index}" data-role-title="${escapeAttr(item.title)}">Add documented responsibility</button>` : ""}
         ${(item.bullets || []).length ? `<ul>${item.bullets.slice(0, 6).map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
         ${(item.pending_bullets || []).length ? `<p class="sectionHelp">Awaiting your confirmation — these ${item.pending_bullets.length} detailed draft(s) are NOT used in any generated CV or cover letter until you verify them:</p><ul class="pendingList">${item.pending_bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
       </article>`).join("")
@@ -721,10 +722,10 @@ function renderApplicationMethod(job) {
     return `<div class="routePanel"><h3>Already recorded as applied</h3><p>Your manual application has been preserved. You can still review its prepared documents below.</p>${page ? `<a class="button secondary" href="${escapeAttr(page)}" target="_blank" rel="noopener">View official vacancy</a>` : ""}</div>`;
   }
   if (method === "EMAIL" && email) {
-    return `<div class="routePanel"><p class="microLabel">Apply by email</p><h3>${escapeHtml(email)}</h3><div class="cardActions"><a class="button primary subtle" href="mailto:${escapeAttr(email)}">Open email</a><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email)}">Copy email</button><button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare email</button></div></div>`;
+    return `<div class="routePanel"><p class="microLabel">Apply by email</p><h3>${escapeHtml(email)}</h3><div class="cardActions"><button class="primary subtle" data-action="apply-job" data-job-id="${escapeAttr(job.id)}">Apply · Email with PDFs</button><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email)}">Copy email</button><button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare email</button></div></div>`;
   }
   if (method === "WEB" && web) {
-    return `<div class="routePanel"><p class="microLabel">Apply online</p><h3>Web application</h3><div class="cardActions"><a class="button primary subtle" href="${escapeAttr(web)}" target="_blank" rel="noopener">Open application</a><button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare package</button></div></div>`;
+    return `<div class="routePanel"><p class="microLabel">Apply online</p><h3>Web application</h3><div class="cardActions"><button class="primary subtle" data-action="apply-job" data-job-id="${escapeAttr(job.id)}">Apply online</button><button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare package</button></div></div>`;
   }
   return `<div class="routePanel unavailable"><p class="microLabel">Application route unavailable</p><h3>No direct route found</h3><p>Open the official vacancy page and verify how to apply before proceeding.</p>${page ? `<a class="button secondary" href="${escapeAttr(page)}" target="_blank" rel="noopener">Official vacancy page</a>` : ""}</div>`;
 }
@@ -774,7 +775,7 @@ function renderPackage(job) {
     <div class="documentGrid">
       ${documentBundleCard("Tailored CV", cvFormats)}
       ${documentBundleCard("Cover letter", coverFormats)}
-      ${email ? `<div class="documentCard"><div><strong>Email draft</strong><span>READY FOR REVIEW — manual sending only</span></div><button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Open</button></div>` : ""}
+      ${email ? `<div class="documentCard"><div><strong>Email draft</strong><span>With requested PDFs · review before sending</span></div><button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Review</button><button class="primary subtle" data-action="apply-job" data-job-id="${escapeAttr(job.id)}">Apply · Attached email</button></div>` : ""}
       ${packagePath ? documentCard("Application instructions", packagePath) : ""}
       ${paths.application_data_checklist ? documentCard("Application checklist", paths.application_data_checklist) : ""}
     </div>
@@ -831,7 +832,7 @@ function showEmailDraft(job) {
       <p><strong>Subject:</strong> ${escapeHtml(email.subject || "")}</p>
       <pre>${escapeHtml(email.body || "")}</pre>
       <div class="cardActions"><a class="button primary subtle" href="${escapeAttr(`mailto:${encodeURIComponent(email.to || "")}?subject=${encodeURIComponent(email.subject || "")}`)}">Open email with subject</a><button class="secondary" data-action="copy-email-draft" data-job-id="${escapeAttr(job.id)}">Copy full draft</button><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email.to || "")}">Copy address</button></div>
-      <p class="sectionHelp">This is a draft only. Paste the text into your email client, attach the reviewed documents, and send manually. The system has not contacted the employer.</p>
+      <p class="sectionHelp">Apply downloads a standard .eml draft with the vacancy-required PDFs attached. Open it in a desktop mail app, verify the sender, recipient, subject and attachments, then click Send. Browser Gmail cannot automatically attach local files. Nothing has been sent yet.</p>
     </section>`;
   $("drawerTitle").textContent = "Email draft";
   $("drawerKicker").textContent = job.title || "Application package";
@@ -1103,6 +1104,8 @@ function handleAction(event) {
   if (action === "refresh-monitor-status") refresh().catch((error) => setStatus(humanizeError(error.message), "error"));
   if (action === "view-job") openJobById(id);
   if (action === "prepare-job") prepareJob(id);
+  if (action === "apply-job") applyJob(id);
+  if (action === "add-verified-duty") addVerifiedDuty(Number(target.dataset.roleIndex), target.dataset.roleTitle || "");
   if (action === "review-package") openJobById(id, "package");
   if (action === "show-email-draft") {
     const job = jobById(id);

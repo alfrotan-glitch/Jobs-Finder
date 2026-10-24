@@ -307,7 +307,7 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
         return deduped
 
     experience = []
-    for item in profile.get("work_history") or []:
+    for role_index, item in enumerate(profile.get("work_history") or []):
         if not isinstance(item, dict):
             continue
         gated = "responsibilities" in item or "needs_verification" in item
@@ -322,6 +322,8 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
             verified = [_clean_value(bullet) for bullet in free_form if _clean_value(bullet)]
         experience.append(
             {
+                "role_index": role_index,
+                "can_add_verified_duty": item.get("verified") is True,
                 "title": _clean_value(item.get("title")),
                 "organization": _clean_value(item.get("organization")),
                 "location": _clean_value(item.get("location")),

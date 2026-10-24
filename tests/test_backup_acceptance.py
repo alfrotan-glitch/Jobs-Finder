@@ -106,7 +106,10 @@ def test_traversal_and_unexpected_archive_members_rejected(private_export, badna
         parts["manifest.json"] = json.dumps(manifest).encode()
 
     evil = _repack(raw, mutate=inject)
-    with pytest.raises(backups.BackupError, match="unsafe file path"):
+    # On Windows ZipFile normalizes backslashes in member names to forward
+    # slashes. The security invariant is still to reject this archive, either
+    # as a noncanonical path or as a mismatch with the integrity manifest.
+    with pytest.raises(backups.BackupError, match="unsafe file path|contents do not match"):
         backups.verify_backup_archive(evil)
 
 

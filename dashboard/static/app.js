@@ -1021,6 +1021,14 @@ async function applyJob(id) {
     if (!packageExists(job) || !job.documents?.generated_paths?.tailored_cv) {
       await apiJson("/api/jobs/" + encodeURIComponent(id) + "/prepare", {method: "POST"});
     }
+    // Classic Outlook can open the actual unsent compose window with PDFs.
+    // If unavailable (e.g. Gmail browser, new Outlook, non-Windows) use EML.
+    const native = await apiJson("/api/jobs/" + encodeURIComponent(id) + "/open-compose", {method: "POST"});
+    if (native.opened) {
+      await refresh();
+      setStatus("Outlook opened an unsent email with the required PDFs attached. Check it and click Send in Outlook. The app has not sent anything.", "ok");
+      return;
+    }
     const response = await fetch("/api/jobs/" + encodeURIComponent(id) + "/email-draft", {method: "POST"});
     if (!response.ok) {
       const data = await response.json();

@@ -40,10 +40,16 @@ def _execute(action: str) -> str:
         details = (result.stderr or result.stdout or "").strip()
         # Don't echo system usernames, project paths or arbitrary PS output
         # into a local web API response.
+        reason = details.lower()
+        if "another jobs-finder checkout" in reason:
+            raise ScheduleError(
+                "The daily check is already assigned to a different Jobs-Finder installation. "
+                "Disable it from that installation before enabling this one."
+            )
         raise ScheduleError(
             "Windows rejected the scheduling operation. "
             + ("Try starting Jobs-Finder once before enabling daily checks."
-               if "environment is missing" in details.lower()
+               if "environment is missing" in reason
                else "Check Windows Task Scheduler permissions and try again.")
         )
     response = result.stdout.strip().splitlines()

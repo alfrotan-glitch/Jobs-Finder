@@ -187,5 +187,5 @@ def test_frontend_apply_and_verified_role_controls_are_real():
     assert 'data-action="apply-job"' in js
     assert "async function applyJob" in js
     assert "email-draft" in js
-    assert "data-action=\\"add-verified-duty\\"" in js
+    assert 'data-action="add-verified-duty"' in js
     assert "I CONFIRM THIS IS MY EXPERIENCE" in js

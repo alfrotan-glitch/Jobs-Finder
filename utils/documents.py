@@ -1568,16 +1568,22 @@ def generate_tailored_documents(
         has_languages_section=True,
     )
 
-    # Lead with documented, genuinely held role titles relevant to the
-    # specific vacancy. This is not a claim that the applicant has held the
-    # advertised job; no invented outcomes, promotions, or figures enter CV.
+    # Editorial opening: use only scope directly entailed by VERIFIED work
+    # role titles and the vacancy focus. Never repeat an entire job title in
+    # the summary: doing so weakens ATS chronology parsing and the prominence
+    # of actual experience headings later in the document.
     target_terms = _focus_terms(job, match_report) | _job_title_terms(job)
-    relevant_titles = [
-        str(item["role"]).strip() for item in ordered_work
-        if item.get("role") and len(_focus_term_hits(str(item["role"]), target_terms)) >= 1
-    ]
-    if relevant_titles and not _verified_profile_summary(profile):
-        summary = "Relevant professional appointments include " + _join_and(relevant_titles[:2]) + ". " + summary
+    role_titles = [str(item.get("role") or "").lower() for item in ordered_work]
+    lead_scopes: list[str] = []
+    if ("tfu" in target_terms or "nutrition" in target_terms or "sam" in target_terms):
+        if any("tfu" in role and ("medical doctor" in role or "clinician" in role) for role in role_titles):
+            lead_scopes.append("therapeutic feeding unit (TFU) clinical care")
+        if any("nutrition" in role and "supervisor" in role for role in role_titles):
+            lead_scopes.append("health and nutrition team supervision")
+    if "safeguarding" in target_terms and any("safeguarding" in role for role in role_titles):
+        lead_scopes.append("safeguarding focal-point responsibilities")
+    if lead_scopes and not _verified_profile_summary(profile):
+        summary = "Relevant experience includes " + _join_and(lead_scopes[:3]) + ". " + summary
 
     canonical_cv_model = {
         "name": name,

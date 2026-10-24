@@ -532,6 +532,11 @@ function renderProfileDetails() {
         <div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.dates || "")}</span></div>
         <p>${escapeHtml(item.organization)}${item.location ? ` · ${escapeHtml(item.location)}` : ""}</p>
         ${(item.bullets || []).length ? `<ul>${item.bullets.slice(0, 6).map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
+        <div class="experienceImprove">
+          <p class="sectionHelp"><strong>Make this CV stronger:</strong> Add an actual responsibility, scope, method or result from this position. Only write work you personally performed; never invent numbers.</p>
+          <textarea rows="3" id="responsibility-${item.source_index}" placeholder="Example structure: Action you performed + who/what you worked with + methods/protocols + real result (only if known)."></textarea>
+          <button class="secondary" data-action="add-responsibility" data-role-index="${item.source_index}">Add verified work detail</button>
+        </div>
         ${(item.pending_bullets || []).length ? `<p class="sectionHelp">Awaiting your confirmation — these ${item.pending_bullets.length} detailed draft(s) are NOT used in any generated CV or cover letter until you verify them:</p><ul class="pendingList">${item.pending_bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
       </article>`).join("")
     : `<p class="sectionHelp">No professional experience listed.</p>`;
@@ -774,7 +779,7 @@ function renderPackage(job) {
     <div class="documentGrid">
       ${documentBundleCard("Tailored CV", cvFormats)}
       ${documentBundleCard("Cover letter", coverFormats)}
-      ${email ? `<div class="documentCard"><div><strong>Email draft</strong><span>READY FOR REVIEW — manual sending only</span></div><button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Open</button></div>` : ""}
+      ${email ? `<div class="documentCard"><div><strong>Apply by email</strong><span>Open a real unsent draft with the PDF documents requested by the employer.</span></div><button class="primary" data-action="apply-email" data-job-id="${escapeAttr(job.id)}">Apply — Open email</button><button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Preview</button></div>` : ""}
       ${packagePath ? documentCard("Application instructions", packagePath) : ""}
       ${paths.application_data_checklist ? documentCard("Application checklist", paths.application_data_checklist) : ""}
     </div>
@@ -986,6 +991,60 @@ async function prepareJob(id) {
   }
 }
 
+async function applyByEmail(id) {
+  const job = jobById(id);
+  if (!job?.package?.email_draft) {
+    setStatus("Prepare and review the application package first.", "warn");
+    return;
+  }
+  const approved = window.confirm(
+    "Open an UNSENT email with the official recipient, subject, body and required PDF attachments?\n\n" +
+    "You must check everything and press Send in your email app yourself."
+  );
+  if (!approved) return;
+  try {
+    const result = await apiJson("/api/jobs/" + encodeURIComponent(id) + "/open-email", {method: "POST"});
+    setStatus(result.message || "Draft opened. No email has been sent.", "ok");
+  } catch (error) {
+    setStatus(humanizeError(error.message) + " Download the EML if you have no Windows mail app configured.", "error");
+    const link = document.createElement("a");
+    link.href = "/api/jobs/" + encodeURIComponent(id) + "/email-draft.eml";
+    link.textContent = "Download unsent email with attachments (.eml)";
+    link.className = "button secondary";
+    const area = $("drawerContent");
+    if (area) area.prepend(link);
+  }
+}
+
+async function addVerifiedResponsibility(index) {
+  const element = $("responsibility-" + index);
+  const text = element?.value?.trim() || "";
+  if (text.length < 30) {
+    setStatus("Describe an actual job responsibility in at least 30 characters.", "warn");
+    return;
+  }
+  const confirmed = window.confirm(
+    "I personally confirm this responsibility is factual and belongs to the selected job.\n\n" +
+    "Only genuine work details will be added to the verified profile and future applications."
+  );
+  if (!confirmed) return;
+  try {
+    await apiJson("/api/profile/experience/add-responsibility", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        source_index: Number(index),
+        text,
+        confirmation: "I personally confirm this responsibility is factual and belongs to this role",
+      }),
+    });
+    await refresh();
+    setStatus("Verified role detail saved. New CVs will include your stronger professional evidence.", "ok");
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
 async function copyEmail(email) {
   try {
     await navigator.clipboard.writeText(email);
@@ -1103,6 +1162,8 @@ function handleAction(event) {
   if (action === "refresh-monitor-status") refresh().catch((error) => setStatus(humanizeError(error.message), "error"));
   if (action === "view-job") openJobById(id);
   if (action === "prepare-job") prepareJob(id);
+  if (action === "apply-email") applyByEmail(id);
+  if (action === "add-responsibility") addVerifiedResponsibility(target.dataset.roleIndex);
   if (action === "review-package") openJobById(id, "package");
   if (action === "show-email-draft") {
     const job = jobById(id);

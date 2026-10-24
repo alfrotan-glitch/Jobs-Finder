@@ -2100,10 +2100,16 @@ def generate_application_package(
     web_route_raw = facts.get("apply_url") or facts.get("application_url") or metadata.get("apply_url") or metadata.get("application_url") or job.get("apply_url") or ""
     route_value, route_notes = _normalize_application_url(str(web_route_raw))
     online_url = route_value if _is_http_url(route_value) else ""
-    if application_method == "EMAIL" and email_to:
-        route_type = "email"
-    elif application_method == "WEB" and online_url:
-        route_type = "online_form"
+    # An explicit employer method is authoritative. A generic contact
+    # address is NOT a fallback when the vacancy demands a WEB form.
+    if application_method in {"WEB", "ONLINE_FORM"}:
+        route_type = "online_form" if online_url else "manual_review"
+        application_method = "WEB" if online_url else "UNAVAILABLE"
+        email_to = ""
+    elif application_method == "EMAIL":
+        route_type = "email" if email_to else "manual_review"
+        application_method = "EMAIL" if email_to else "UNAVAILABLE"
+        online_url = ""
     elif email_to:
         route_type = "email"
         application_method = "EMAIL"
@@ -2123,8 +2129,7 @@ def generate_application_package(
             special_instructions.append(note)
     form_fields = _infer_form_fields(job, profile)
     attachment_list = _attachment_labels(required_documents, generated_paths)
-    if (generated_paths.get("cover_letter") or docs.get("cover_letter")) and not any("cover" in str(item).lower() for item in attachment_list):
-        attachment_list.append(generated_paths.get("cover_letter") or "Tailored cover letter")
+    # Attach only documents actually requested by the official vacancy.
     blocking_user_inputs = _infer_blocking_user_inputs(job, route_type, required_documents)
 
     email_draft = None
@@ -2186,7 +2191,7 @@ def generate_application_package(
                 location=str(job.get("location") or ""),
                 profile=profile,
                 highlights=_email_highlights(docs.get("selected_vacancy_fit_evidence") or []),
-                include_cover_letter=bool(generated_paths.get("cover_letter") or docs.get("cover_letter")),
+                include_cover_letter=any("cover letter" in str(item).lower() or "application letter" in str(item).lower() for item in required_documents),
                 background_sentence=_professional_background_sentence(profile),
                 signature_title=_signature_title(profile, build_profile_evidence(profile)),
             ),

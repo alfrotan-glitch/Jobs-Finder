@@ -973,6 +973,77 @@ async function findJobs() {
   }
 }
 
+async function addVerifiedDuty(roleIndex, title) {
+  if (!Number.isInteger(roleIndex) || !title) return;
+  const entered = window.prompt('Describe ONE genuine, specific responsibility you performed in your role as "' + title + '". Explain your real actions, scope and verified outcomes. Do not guess statistics or duties.', '');
+  if (entered === null) return;
+  const duty = entered.trim();
+  if (duty.length < 35 || duty.length > 800) {
+    setStatus("Write a specific true responsibility (35–800 characters).", "warn");
+    return;
+  }
+  if (!window.confirm("I personally performed this responsibility, and every detail is true:\n\n" + duty)) return;
+  try {
+    const response = await apiJson("/api/profile/experience/" + roleIndex + "/add-duty", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text: duty, role_title: title, confirmation: "I CONFIRM THIS IS MY EXPERIENCE"}),
+    });
+    await refresh();
+    setStatus(response.message, "ok");
+  } catch (error) { setStatus(humanizeError(error.message), "error"); }
+}
+
+async function applyJob(id) {
+  let job = jobById(id);
+  if (!job) {
+    try { job = await apiJson("/api/jobs/" + encodeURIComponent(id)); }
+    catch (error) { setStatus(humanizeError(error.message), "error"); return; }
+  }
+  if (job.is_expired || job.status === "APPLIED_MANUALLY") {
+    setStatus("This vacancy has expired or was already recorded as submitted.", "warn");
+    return;
+  }
+  if (applicationMethod(job) === "WEB") {
+    const url = webApplyUrl(job);
+    if (!url || !/^https?:\/\//i.test(url)) {
+      setStatus("The official web application URL is unavailable.", "error"); return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+    setStatus("Official application page opened. Upload only its requested, reviewed files and submit there.", "warn");
+    return;
+  }
+  if (applicationMethod(job) !== "EMAIL") {
+    setStatus("No validated email application destination is available.", "warn");
+    return;
+  }
+  setStatus("Preparing the email and the employer-required PDF attachments…", "warn");
+  try {
+    if (!packageExists(job) || !job.documents?.generated_paths?.tailored_cv) {
+      await apiJson("/api/jobs/" + encodeURIComponent(id) + "/prepare", {method: "POST"});
+    }
+    const response = await fetch("/api/jobs/" + encodeURIComponent(id) + "/email-draft", {method: "POST"});
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.detail || "The email with attachments could not be prepared.");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "Application_" + String(id).replace(/[^a-z0-9_-]/gi, "_").slice(0, 55) + ".eml";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    await refresh();
+    setStatus("Email draft downloaded with the required PDFs. Open it in your mail app; review recipients, files and text, then press Send. No message has been sent yet.", "ok");
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+    try { await refresh(); const latest = jobById(id); if (latest) openDrawer(latest, "package"); }
+    catch (_ignored) { /* Keep the real error visible. */ }
+  }
+}
+
 async function prepareJob(id) {
   setStatus("Preparing application package…", "warn");
   try {

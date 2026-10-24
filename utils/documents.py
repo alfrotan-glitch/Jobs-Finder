@@ -1316,6 +1316,10 @@ def _render_canonical_cv_text(model: dict[str, Any]) -> str:
     """
     lines = [str(model.get("name") or "CONFIRM BEFORE SUBMISSION"), str(model.get("headline") or "Professional")]
     lines.extend(str(item) for item in model.get("contact_lines") or [] if str(item).strip())
+    # Clearly labeled vacancy target is not an employment credential. Keep
+    # the ATS/plain-text mirror in sync with the styled PDF and Word header.
+    if model.get("application_focus"):
+        lines.append("APPLICATION FOR: " + str(model["application_focus"]))
     lines.extend(["", "PROFESSIONAL SUMMARY", str(model.get("profile") or ""), ""])
 
     expertise = [group for group in (model.get("expertise") or []) if group.get("items")]
@@ -1564,8 +1568,26 @@ def generate_tailored_documents(
         has_languages_section=True,
     )
 
+    # Editorial opening: use only scope directly entailed by VERIFIED work
+    # role titles and the vacancy focus. Never repeat an entire job title in
+    # the summary: doing so weakens ATS chronology parsing and the prominence
+    # of actual experience headings later in the document.
+    target_terms = _focus_terms(job, match_report) | _job_title_terms(job)
+    role_titles = [str(item.get("role") or "").lower() for item in ordered_work]
+    lead_scopes: list[str] = []
+    if ("tfu" in target_terms or "nutrition" in target_terms or "sam" in target_terms):
+        if any("tfu" in role and ("medical doctor" in role or "clinician" in role) for role in role_titles):
+            lead_scopes.append("therapeutic feeding unit (TFU) clinical care")
+        if any("nutrition" in role and "supervisor" in role for role in role_titles):
+            lead_scopes.append("health and nutrition team supervision")
+    if "safeguarding" in target_terms and any("safeguarding" in role for role in role_titles):
+        lead_scopes.append("safeguarding focal-point responsibilities")
+    if lead_scopes and not _verified_profile_summary(profile):
+        summary = "Relevant experience includes " + _join_and(lead_scopes[:3]) + ". " + summary
+
     canonical_cv_model = {
         "name": name,
+        "application_focus": str(job.get("title") or "").strip(),
         "headline": professional_title,
         "contact_lines": contact,
         "profile": summary,
@@ -1603,6 +1625,18 @@ def generate_tailored_documents(
     pending_warning = _pending_responsibility_warning(profile)
     if pending_warning:
         warnings.append(pending_warning)
+    # Editorial quality is a distinct concern from evidence verification.
+    # Warn about thin proof for a senior/managerial position, without filling
+    # employer-facing documents with invented achievements or metrics.
+    target_title = str(job.get("title") or "").lower()
+    if any(term in target_title for term in ("head", "manager", "supervisor", "coordinator", "director")):
+        if any(len(item.get("bullets") or []) < 2 for item in ordered_work[:2]):
+            warnings.append(
+                "CV editorial review: one of the two most recent verified roles has fewer than two "
+                "documented responsibilities. If available, add factual, verified scope, team "
+                "responsibilities or results before using this CV for a senior vacancy. "
+                "Do not invent figures or achievements."
+            )
 
     facts = match_report.get("facts", {})
     metadata = job.get("metadata", {}) if isinstance(job.get("metadata", {}), dict) else {}

@@ -6,7 +6,6 @@ import hashlib
 import io
 import json
 import os
-import sqlite3
 import subprocess
 from types import SimpleNamespace
 from zipfile import ZIP_DEFLATED, ZipFile

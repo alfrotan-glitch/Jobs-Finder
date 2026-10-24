@@ -774,7 +774,7 @@ function renderPackage(job) {
     <div class="documentGrid">
       ${documentBundleCard("Tailored CV", cvFormats)}
       ${documentBundleCard("Cover letter", coverFormats)}
-      ${email ? `<div class="documentCard"><div><strong>Email draft</strong><span>READY FOR REVIEW — manual sending only</span></div><button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Open</button></div>` : ""}
+      ${email ? `<div class="documentCard"><div><strong>Apply by email</strong><span>Open a real unsent draft with the PDF documents requested by the employer.</span></div><button class="primary" data-action="apply-email" data-job-id="${escapeAttr(job.id)}">Apply — Open email</button><button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Preview</button></div>` : ""}
       ${packagePath ? documentCard("Application instructions", packagePath) : ""}
       ${paths.application_data_checklist ? documentCard("Application checklist", paths.application_data_checklist) : ""}
     </div>
@@ -986,6 +986,31 @@ async function prepareJob(id) {
   }
 }
 
+async function applyByEmail(id) {
+  const job = jobById(id);
+  if (!job?.package?.email_draft) {
+    setStatus("Prepare and review the application package first.", "warn");
+    return;
+  }
+  const approved = window.confirm(
+    "Open an UNSENT email with the official recipient, subject, body and required PDF attachments?\n\n" +
+    "You must check everything and press Send in your email app yourself."
+  );
+  if (!approved) return;
+  try {
+    const result = await apiJson("/api/jobs/" + encodeURIComponent(id) + "/open-email", {method: "POST"});
+    setStatus(result.message || "Draft opened. No email has been sent.", "ok");
+  } catch (error) {
+    setStatus(humanizeError(error.message) + " Download the EML if you have no Windows mail app configured.", "error");
+    const link = document.createElement("a");
+    link.href = "/api/jobs/" + encodeURIComponent(id) + "/email-draft.eml";
+    link.textContent = "Download unsent email with attachments (.eml)";
+    link.className = "button secondary";
+    const area = $("drawerContent");
+    if (area) area.prepend(link);
+  }
+}
+
 async function copyEmail(email) {
   try {
     await navigator.clipboard.writeText(email);
@@ -1103,6 +1128,7 @@ function handleAction(event) {
   if (action === "refresh-monitor-status") refresh().catch((error) => setStatus(humanizeError(error.message), "error"));
   if (action === "view-job") openJobById(id);
   if (action === "prepare-job") prepareJob(id);
+  if (action === "apply-email") applyByEmail(id);
   if (action === "review-package") openJobById(id, "package");
   if (action === "show-email-draft") {
     const job = jobById(id);

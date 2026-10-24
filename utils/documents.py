@@ -1163,6 +1163,51 @@ def _supervisory_lead_clauses(evidence) -> list[str]:
     return clauses
 
 
+def _verified_role_application_paragraph(
+    work: list[dict[str, Any]],
+    job: dict[str, Any],
+    match_report: dict[str, Any],
+) -> str:
+    """Turn existing verified responsibilities into job-specific letter prose.
+
+    No generative inference: each clause is an exact verified duty sentence,
+    formatted grammatically. Role, organization and responsibilities all come
+    from the same verified employment entry. Missing evidence stays missing.
+    """
+    focus = _focus_terms(job, match_report) | _job_title_terms(job)
+    ranked = sorted(
+        work,
+        key=lambda item: (
+            -len(_focus_term_hits(
+                " ".join([str(item.get("role") or ""), " ".join(item.get("bullets") or [])]),
+                focus,
+            )),
+            work.index(item),
+        ),
+    )
+    sentences: list[str] = []
+    for entry in ranked:
+        role = str(entry.get("role") or "").strip()
+        organization = str(entry.get("org") or "").strip()
+        duties = [str(bullet).strip().rstrip(".") for bullet in entry.get("bullets") or []]
+        if not role or not duties:
+            continue
+        if not _focus_term_hits(" ".join([role, *duties]), focus):
+            continue
+        selected = duties[:2]
+        clauses = [phrase[:1].lower() + phrase[1:] for phrase in selected]
+        sentence = (
+            f"In my verified role as {role}"
+            + (f" with {organization}" if organization else "")
+            + ", my documented responsibilities included "
+            + _join_and(clauses) + "."
+        )
+        sentences.append(sentence)
+        if len(sentences) >= 2:
+            break
+    return " ".join(sentences)
+
+
 def _professional_profile_paragraph(
     profile: dict[str, Any],
     evidence,
@@ -1669,6 +1714,12 @@ def generate_tailored_documents(
         first_person=True,
     )
     cover_lines.append(intro)
+    # Distinct from a generic job-letter template: explain two closely
+    # matched appointments with their exact already-verified clinical/
+    # supervisory responsibilities rather than listing only skills.
+    role_narrative = _verified_role_application_paragraph(ordered_work, job, match_report)
+    if role_narrative:
+        cover_lines.extend(["", role_narrative])
     if vacancy_highlights:
         strongest = [_without_attribution(item) for item in vacancy_highlights[:3]]
         cover_lines.extend(["", "Relevant verified qualifications and professional strengths include:"])

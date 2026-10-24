@@ -20,7 +20,6 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from utils.backups import BackupError, backup_archive
 from utils.alerts import (
     list_alerts,
     mark_alert_read,
@@ -28,6 +27,7 @@ from utils.alerts import (
     record_deadline_alerts,
     record_scan_alerts,
 )
+from utils.backups import BackupError, backup_archive
 from utils.discovery import (
     ACBAR_DEFAULT_DETAIL_CONCURRENCY,
     ACBAR_DEFAULT_TIMEOUT_SECONDS,

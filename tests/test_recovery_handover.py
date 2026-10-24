@@ -6,12 +6,13 @@ canonical profile or the current SQLite WAL database.
 
 from __future__ import annotations
 
-import io
 import json
+import os
 import sqlite3
+import subprocess
+import sys
 from contextlib import closing
 from pathlib import Path
-from zipfile import ZipFile
 
 import pytest
 
@@ -148,3 +149,37 @@ def test_recovered_backup_is_still_readable_without_original_files(working_copy,
     assert tracker.get_job_by_id("job-42")["status"] == "APPLIED_MANUALLY"
     assert (dest / "profile.yaml").is_file()
     assert (dest / "documents" / "applications" / "medical_cv.pdf").is_file()
+
+
+def test_real_recovered_runtime_boots_from_isolated_copy(working_copy, tmp_path):
+    """Recovery must deliver runnable code, not merely a valid data folder."""
+    from utils.paths import PROJECT_ROOT
+
+    _, archive, _, _ = working_copy
+    parent = tmp_path / "separate-recovered-installs"
+    parent.mkdir()
+    report = recovery.recover_backup_to_new_installation(
+        archive, source_root=PROJECT_ROOT, destination_parent=parent,
+    )
+    destination = Path(report["recovered_folder"])
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(destination)
+    smoke = (
+        "from utils import tracker; "
+        "from dashboard.server import app; "
+        "from fastapi.testclient import TestClient; "
+        "assert tracker.get_job_by_id('job-42')['status'] == 'APPLIED_MANUALLY'; "
+        "assert TestClient(app).get('/api/health').status_code == 200; "
+        "print('RECOVERED_APPLICATION_RUNNING')"
+    )
+    process = subprocess.run(
+        [sys.executable, "-c", smoke],
+        cwd=destination,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert process.returncode == 0, process.stderr
+    assert "RECOVERED_APPLICATION_RUNNING" in process.stdout

@@ -62,7 +62,11 @@ def test_independent_backup_verifier_reads_actual_profile_documents_and_submissi
 
 def test_tampered_profile_fails_integrity_without_touching_original(private_export):
     root, _, raw = private_export
-    tampered = _repack(raw, mutate=lambda parts: parts.__setitem__("profile.yaml", b"ATTACKED"))
+    def flip_one_byte(parts):
+        original = parts["profile.yaml"]
+        parts["profile.yaml"] = bytes([original[0] ^ 1]) + original[1:]
+
+    tampered = _repack(raw, mutate=flip_one_byte)
     with pytest.raises(backups.BackupError, match="damaged or altered"):
         backups.verify_backup_archive(tampered)
     assert "Verified" in (root / "profile.yaml").read_text(encoding="utf-8")

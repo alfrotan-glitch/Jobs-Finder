@@ -42,6 +42,7 @@ from utils.discovery import (
     run_discovery_scan,
 )
 from utils.documents import prepare_application_bundle, write_master_cv
+from utils.email_drafts import EmailDraftError, build_email_draft, open_windows_email_draft
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.profile import (
@@ -879,6 +880,49 @@ def api_prepare(job_id: str):
     log_medical_match(job_id, report)
     update_tailored_resume(job_id, docs)
     return {"job_id": job_id, "documents": docs.get("generated_paths", {}), "package": docs.get("application_package", {})}
+
+
+@app.get("/api/jobs/{job_id}/email-draft.eml")
+def api_email_draft(job_id: str):
+    job = get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+    if is_expired(job):
+        raise HTTPException(status_code=409, detail="This vacancy has expired.")
+    try:
+        filename, content = build_email_draft(job, project_root=ROOT)
+    except EmailDraftError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return Response(
+        content=content,
+        media_type="message/rfc822",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.post("/api/jobs/{job_id}/open-email")
+def api_open_email(job_id: str):
+    job = get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+    if is_expired(job):
+        raise HTTPException(status_code=409, detail="This vacancy has expired.")
+    try:
+        filename, content = build_email_draft(job, project_root=ROOT)
+        directory = ROOT / "documents" / "email_drafts"
+        directory.mkdir(parents=True, exist_ok=True)
+        import uuid
+        path = directory / (uuid.uuid4().hex + "-" + filename)
+        with path.open("xb") as stream:
+            stream.write(content)
+        open_windows_email_draft(path)
+    except EmailDraftError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"opened": True, "sent": False, "message": "Email draft opened in Windows. Review and press Send yourself."}
 
 
 @app.post("/api/jobs/{job_id}/mark-applied")

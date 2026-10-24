@@ -42,7 +42,7 @@ from utils.discovery import (
     run_discovery_scan,
 )
 from utils.documents import prepare_application_bundle, write_master_cv
-from utils.email_application import EmailCompositionError, compose_application_email
+from utils.email_application import EmailCompositionError, compose_application_email, open_classic_outlook_composer
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.profile import (
@@ -928,6 +928,29 @@ def api_prepare(job_id: str):
     log_medical_match(job_id, report)
     update_tailored_resume(job_id, docs)
     return {"job_id": job_id, "documents": docs.get("generated_paths", {}), "package": docs.get("application_package", {})}
+
+
+@app.post("/api/jobs/{job_id}/open-compose")
+def api_open_compose(job_id: str):
+    """User-clicked local Outlook draft: open, never send or mark submitted."""
+    job = get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Vacancy not found.")
+    if is_expired(job):
+        raise HTTPException(status_code=409, detail="Vacancy deadline passed.")
+    try:
+        opened = open_classic_outlook_composer(job, root=ROOT)
+    except EmailCompositionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "opened": opened,
+        "sent": False,
+        "message": (
+            "An unsent email with the required PDFs is open in classic Outlook. "
+            "Review it and click Send yourself."
+            if opened else "Classic Outlook is unavailable. Download the attached .eml draft instead."
+        ),
+    }
 
 
 @app.post("/api/jobs/{job_id}/email-draft")

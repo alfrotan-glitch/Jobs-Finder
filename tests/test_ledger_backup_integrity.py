@@ -6,7 +6,6 @@ import hashlib
 import io
 import json
 import sqlite3
-from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
@@ -132,7 +131,7 @@ def test_consistent_private_zip_backup_and_integrity_manifest(tmp_path, monkeypa
     document = tmp_path / "documents" / "applications" / "cover_letter.txt"
     document.parent.mkdir(parents=True)
     document.write_text("Private application document", encoding="utf-8")
-    outside = tmp_path.parent / "private_references_secret.yaml"
+    outside = tmp_path / "private_references_secret.yaml"
     outside.write_text("PRIVATE MUST NOT BE ARCHIVED", encoding="utf-8")
     with tracker.get_db() as conn:
         conn.execute(

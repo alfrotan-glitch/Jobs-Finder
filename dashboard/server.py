@@ -16,10 +16,11 @@ from urllib.parse import urlsplit
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from utils.backups import BackupError, backup_archive
 from utils.alerts import (
     list_alerts,
     mark_alert_read,
@@ -808,6 +809,23 @@ def api_master_cv():
         "review_warnings": master.get("review_warnings", []),
         "no_submission_performed": True,
     }
+
+
+@app.post("/api/backup/export")
+def api_backup_export():
+    """Owner-triggered local archive; never creates a remote copy."""
+    try:
+        filename, contents = backup_archive()
+    except BackupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return Response(
+        content=contents,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, max-age=0, private",
+        },
+    )
 
 
 @app.get("/api/jobs/{job_id}")

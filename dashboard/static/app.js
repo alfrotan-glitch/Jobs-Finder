@@ -532,6 +532,11 @@ function renderProfileDetails() {
         <div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.dates || "")}</span></div>
         <p>${escapeHtml(item.organization)}${item.location ? ` · ${escapeHtml(item.location)}` : ""}</p>
         ${(item.bullets || []).length ? `<ul>${item.bullets.slice(0, 6).map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
+        <div class="experienceImprove">
+          <p class="sectionHelp"><strong>Make this CV stronger:</strong> Add an actual responsibility, scope, method or result from this position. Only write work you personally performed; never invent numbers.</p>
+          <textarea rows="3" id="responsibility-${item.source_index}" placeholder="Example structure: Action you performed + who/what you worked with + methods/protocols + real result (only if known)."></textarea>
+          <button class="secondary" data-action="add-responsibility" data-role-index="${item.source_index}">Add verified work detail</button>
+        </div>
         ${(item.pending_bullets || []).length ? `<p class="sectionHelp">Awaiting your confirmation — these ${item.pending_bullets.length} detailed draft(s) are NOT used in any generated CV or cover letter until you verify them:</p><ul class="pendingList">${item.pending_bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
       </article>`).join("")
     : `<p class="sectionHelp">No professional experience listed.</p>`;
@@ -1011,6 +1016,35 @@ async function applyByEmail(id) {
   }
 }
 
+async function addVerifiedResponsibility(index) {
+  const element = $("responsibility-" + index);
+  const text = element?.value?.trim() || "";
+  if (text.length < 30) {
+    setStatus("Describe an actual job responsibility in at least 30 characters.", "warn");
+    return;
+  }
+  const confirmed = window.confirm(
+    "I personally confirm this responsibility is factual and belongs to the selected job.\n\n" +
+    "Only genuine work details will be added to the verified profile and future applications."
+  );
+  if (!confirmed) return;
+  try {
+    await apiJson("/api/profile/experience/add-responsibility", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        source_index: Number(index),
+        text,
+        confirmation: "I personally confirm this responsibility is factual and belongs to this role",
+      }),
+    });
+    await refresh();
+    setStatus("Verified role detail saved. New CVs will include your stronger professional evidence.", "ok");
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
 async function copyEmail(email) {
   try {
     await navigator.clipboard.writeText(email);
@@ -1129,6 +1163,7 @@ function handleAction(event) {
   if (action === "view-job") openJobById(id);
   if (action === "prepare-job") prepareJob(id);
   if (action === "apply-email") applyByEmail(id);
+  if (action === "add-responsibility") addVerifiedResponsibility(target.dataset.roleIndex);
   if (action === "review-package") openJobById(id, "package");
   if (action === "show-email-draft") {
     const job = jobById(id);

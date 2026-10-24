@@ -895,6 +895,36 @@ async function refresh() {
   renderAll();
 }
 
+async function exportBackup() {
+  const button = $("exportBackupBtn");
+  button.disabled = true;
+  setStatus("Preparing a private backup of your saved jobs and documents…", "warn");
+  try {
+    const response = await fetch("/api/backup/export", {method: "POST"});
+    if (!response.ok) {
+      const problem = await response.json().catch(() => ({}));
+      throw new Error(problem.detail || "The backup could not be created.");
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="(jobs-finder-backup-[0-9-]+\.zip)"/);
+    const filename = match?.[1] || "jobs-finder-backup.zip";
+    const url = URL.createObjectURL(blob);
+    const download = document.createElement("a");
+    download.href = url;
+    download.download = filename;
+    document.body.appendChild(download);
+    download.click();
+    download.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 3000);
+    setStatus("Backup prepared. Check your browser Downloads and keep the ZIP private.", "ok");
+  } catch (error) {
+    setStatus(humanizeError(error.message), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function findJobs() {
   if (state.profile && state.profile.exists === false) {
     setStatus("Your canonical local profile is missing. Create profile.yaml before scanning for jobs; CV preview does not create it.", "error");
@@ -1039,6 +1069,7 @@ function handleAction(event) {
   const action = target.dataset.action;
   const id = target.dataset.jobId;
   if (action === "find-jobs") findJobs();
+  if (action === "export-backup") exportBackup();
   if (action === "load-more-jobs") loadMoreJobs();
   if (action === "load-more-applications") loadMoreApplications();
   if (action === "mark-alert-read") markAlertRead(target.dataset.alertId);

@@ -2123,8 +2123,7 @@ def generate_application_package(
             special_instructions.append(note)
     form_fields = _infer_form_fields(job, profile)
     attachment_list = _attachment_labels(required_documents, generated_paths)
-    if (generated_paths.get("cover_letter") or docs.get("cover_letter")) and not any("cover" in str(item).lower() for item in attachment_list):
-        attachment_list.append(generated_paths.get("cover_letter") or "Tailored cover letter")
+    # Attach only documents actually requested by the official vacancy.
     blocking_user_inputs = _infer_blocking_user_inputs(job, route_type, required_documents)
 
     email_draft = None
@@ -2186,7 +2185,7 @@ def generate_application_package(
                 location=str(job.get("location") or ""),
                 profile=profile,
                 highlights=_email_highlights(docs.get("selected_vacancy_fit_evidence") or []),
-                include_cover_letter=bool(generated_paths.get("cover_letter") or docs.get("cover_letter")),
+                include_cover_letter=any("cover letter" in str(item).lower() or "application letter" in str(item).lower() for item in required_documents),
                 background_sentence=_professional_background_sentence(profile),
                 signature_title=_signature_title(profile, build_profile_evidence(profile)),
             ),

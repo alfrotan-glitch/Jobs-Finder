@@ -112,6 +112,41 @@ verification independently checks ZIP membership, SHA-256 checksums and a
 temporary SQLite snapshot. It never changes live files; corrupt or tampered
 backups are rejected. Keep a second copy on another local drive.
 
+### Applying by email — attached documents, no guesswork
+
+For a verified **EMAIL** vacancy, use **Apply · Email with PDFs**. Jobs-Finder
+first prepares the application package if needed, then downloads a standard
+`.eml` email draft. Its real attachments are the generated PDFs **actually
+requested by the posting** (CV only, cover letter only, or both). The draft
+contains the saved recruitment address, subject/reference and email body.
+It is not sent. Open the downloaded `.eml` in an installed desktop email
+application, review the sender account, recipient, content and attachments,
+then **you** choose Send. Some desktop apps may open `.eml` in read-only
+mode; use a compatible desktop client in that case. A webmail page such as
+Gmail cannot receive arbitrary local attachments from a browser `mailto:`
+link. Direct sending from Gmail would require the owner's separate authenticated
+authorization/integration; no password or mail token is requested or stored.
+Jobs-Finder does not falsely mark an application as sent when downloading a draft.
+
+If the employer requires an additional organization form, approved references,
+signed attachment or certificate, the system **blocks automatic assembly**
+until the missing document is provided and verified. WEB-route vacancies open
+the official online form, not a speculative contact-email draft. The program
+never bypasses CAPTCHA, account login or the form's final Submit control.
+
+### Improve a senior-level CV with your actual evidence
+
+Under **My Profile → Professional Experience**, select **Add documented
+responsibility** for a verified role. Give a precise description of what you
+personally did: the clinical protocol/service, supervisory scope,
+coordination, reporting or treatment setting, and **only real documented
+results**. Confirm its accuracy. The detail is saved under the single
+canonical `profile.yaml`, never guessed by AI and never imported silently
+from a nonverified CV. Regenerate new application packages to incorporate
+these verified details. Do **not** claim numbers of patients, staff, outcomes,
+supplies or project budgets without personal evidence. Richness comes from
+truthful job-specific context rather than made-up impressive-sounding duties.
+
 ### One-click verified recovery (no overwriting)
 
 Double-click **`Restore_Jobs_Finder_Backup.bat`** in your Jobs-Finder folder.

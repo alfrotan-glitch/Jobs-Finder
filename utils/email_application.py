@@ -39,11 +39,13 @@ def _required_artifact_types(checklist: list[str]) -> tuple[bool, bool, list[str
         lower = text.lower()
         if "only if" in lower or "if later" in lower or "if selected" in lower or "if requested" in lower:
             continue
-        if re.search(r"\b(cv|resume|curriculum vitae)\b", lower):
+        contains_cv = re.search(r"\b(cv|resume|curriculum vitae)\b", lower) is not None
+        contains_cover = "cover letter" in lower or "application letter" in lower
+        if contains_cv:
             wants_cv = True
-        elif "cover letter" in lower or "application letter" in lower:
+        if contains_cover:
             wants_cover = True
-        elif text:
+        if not contains_cv and not contains_cover and text:
             # Employer-supplied forms, credential scans, references and IDs
             # must NOT silently be replaced by generated fake attachments.
             manual.append(text)

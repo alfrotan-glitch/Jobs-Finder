@@ -380,11 +380,16 @@ def _register_fonts() -> tuple[str, str, str, str]:
             Path("/Library/Fonts/Georgia Bold.ttf"),
         ],
         "JFSans": [
+            windows_fonts / "segoeui.ttf",
+            Path("/usr/share/fonts/truetype/lato/Lato-Regular.ttf"),
             Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
             windows_fonts / "arial.ttf",
+            Path("/Library/Fonts/Avenir Next.ttc"),
             Path("/Library/Fonts/Arial.ttf"),
         ],
         "JFSansBold": [
+            windows_fonts / "segoeuib.ttf",
+            Path("/usr/share/fonts/truetype/lato/Lato-Bold.ttf"),
             Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
             windows_fonts / "arialbd.ttf",
             Path("/Library/Fonts/Arial Bold.ttf"),
@@ -434,13 +439,16 @@ def _register_fonts() -> tuple[str, str, str, str]:
 
 
 class Theme:
-    ink = "#172A35"
-    deep = "#0C3442"
-    teal = "#157C78"
+    # Calm professional identity: high-contrast ink, deep petrol headings,
+    # disciplined teal accents, and subtle neutral rules. ATS-safe single
+    # column throughout; no icons, background watermarks or text-in-shapes.
+    ink = "#1E2F3B"
+    deep = "#143848"
+    teal = "#147F81"
     gold = "#A88449"
-    muted = "#66737A"
-    soft = "#F6F8F7"
-    rule = "#D7E0E2"
+    muted = "#536773"
+    soft = "#F5F9F9"
+    rule = "#D8E5E7"
 
 
 def _c(hex_value: str):
@@ -644,7 +652,12 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
     styles = getSampleStyleSheet()
     name_style = ParagraphStyle("CVName", parent=styles["Title"], fontName=sans_bold, fontSize=scale["name"], leading=scale["name"] * 1.15, textColor=colors.HexColor(Theme.deep), spaceAfter=1, alignment=0)
     title_style = ParagraphStyle("CVTitle", parent=styles["Normal"], fontName=sans, fontSize=scale["title"], leading=scale["title"] * 1.22, textColor=colors.HexColor(Theme.teal), spaceAfter=3)
-    contact_style = ParagraphStyle("CVContact", parent=styles["Normal"], fontName=sans, fontSize=scale["contact"], leading=scale["contact"] * 1.3, textColor=colors.HexColor(Theme.muted), spaceAfter=8)
+    contact_style = ParagraphStyle("CVContact", parent=styles["Normal"], fontName=sans, fontSize=scale["contact"], leading=scale["contact"] * 1.3, textColor=colors.HexColor(Theme.muted), spaceAfter=5)
+    focus_style = ParagraphStyle(
+        "CVApplicationFocus", parent=styles["Normal"], fontName=sans,
+        fontSize=8.8, leading=11.5, textColor=colors.HexColor(Theme.teal),
+        spaceAfter=9, keepWithNext=True,
+    )
     section_style = ParagraphStyle(
         "CVSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=scale["section"], leading=scale["section"] * 1.2, textColor=colors.HexColor(Theme.deep),
         spaceBefore=scale["section_before"], spaceAfter=3,
@@ -691,7 +704,12 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
     contact_line = _cv_contact_line(model)
     if contact_line:
         story.append(Paragraph(esc(contact_line), contact_style))
-    header_rule = HRFlowable(width="100%", thickness=1.5, color=colors.HexColor(Theme.teal))
+    if model.get("application_focus"):
+        story.append(Paragraph(
+            "<b>APPLICATION FOR</b>&nbsp;&nbsp; " + esc(model["application_focus"]),
+            focus_style,
+        ))
+    header_rule = HRFlowable(width="100%", thickness=2.2, color=colors.HexColor(Theme.teal))
     header_rule.keepWithNext = True
     story.append(header_rule)
     if model.get("profile"):
@@ -704,7 +722,11 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
         for group in groups:
             items = "&nbsp;· ".join(esc(item) for item in group.get("items") or [])
             label = esc(group.get("group") or "")
-            paragraph = Paragraph(f"<b>{label}:</b> {items}" if label else items, group_style)
+            paragraph = Paragraph(
+                f'<font color="{Theme.teal}"><b>{label}:</b></font> {items}'
+                if label else items,
+                group_style,
+            )
             # A group label must never be left stranded at the foot of a page
             # with its competencies continuing overleaf.
             story.append(KeepTogether(paragraph))
@@ -851,7 +873,8 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
 
     style("CV Name", scale["name"], bold=True, color=Theme.deep, leading=scale["name"] * 1.15, after=1, keep=True)
     style("CV Professional Title", scale["title"], color=Theme.teal, after=3, keep=True)
-    style("CV Contact", scale["contact"], color=Theme.muted, leading=scale["contact"] * 1.3, after=8, keep=True)
+    style("CV Contact", scale["contact"], color=Theme.muted, leading=scale["contact"] * 1.3, after=5, keep=True)
+    style("CV Application Focus", 8.8, bold=False, color=Theme.teal, leading=11.5, after=9, keep=True)
     style("CV Section", scale["section"], bold=True, color=Theme.deep, before=scale["section_before"], after=scale["section_after"] + 3, keep=True, heading="Heading 1")
     style("CV Competency Group", scale["body"], leading=scale["leading"], after=scale["group_after"])
     style("CV Role", scale["role"], bold=True, color=Theme.deep, leading=scale["role"] * 1.19, before=scale["role_before"], after=.8, keep=True, heading="Heading 2")
@@ -887,8 +910,12 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
     contact_line = _cv_contact_line(model)
     if contact_line:
         doc.add_paragraph(contact_line, style="CV Contact")
+    if model.get("application_focus"):
+        p = doc.add_paragraph(style="CV Application Focus")
+        p.add_run("APPLICATION FOR  ").bold = True
+        p.add_run(str(model["application_focus"]))
 
-    border(doc.paragraphs[-1], Theme.teal, 12)
+    border(doc.paragraphs[-1], Theme.teal, 18)
 
     if model.get("profile"):
         add_section("PROFESSIONAL SUMMARY")
@@ -903,7 +930,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
             if label:
                 run = p.add_run(f"{label}: ")
                 run.bold = True
-                run.font.color.rgb = RGBColor(12, 52, 66)
+                run.font.color.rgb = RGBColor.from_string(Theme.teal[1:])
             p.add_run("\u00a0· ".join(str(item) for item in group.get("items") or []))
 
     experience = list(model.get("experience") or [])

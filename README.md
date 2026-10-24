@@ -72,7 +72,44 @@ python main.py server --host 127.0.0.1 --port 8080
 
 Open <http://localhost:8080>.
 
-The **Find jobs** action accepts only one active scan per dashboard process. A simultaneous scan request returns HTTP `409` instead of starting a second scan that could race with the latest saved results. Once the first scan finishes (or fails), a new scan can be started. This is an in-process guard, not a cross-process scheduler; do not run multiple dashboard workers against the same local profile and database.
+The **Find Jobs** action accepts only one active scan. A simultaneous dashboard, CLI, or opt-in Windows scheduled scan is protected by a cross-process filesystem lock and returns a clear already-running error instead of overwriting the current scan. The normal dashboard is a single local process; never publish it as an unauthenticated network service.
+
+## Complete local vacancy ledger (no hidden 200-job cutoff)
+
+**Tracked jobs** now counts all valid, officially sourced records in the local
+database, not just the first 200 loaded by the browser. **Ready to Apply** and
+the four application-pipeline counters are also calculated from the full
+actionable ledger, excluding expired/submitted jobs from the ready number.
+All Jobs and Applications provide **Load more** controls in batches of 100,
+with stable database pagination and exact counts. Previously submitted and
+prepared records remain visible even when hundreds of newer listings arrived.
+This does not delete any historical record, fabricate job availability, or
+change the original source-scan accounting.
+
+## Private one-click backup of your saved work
+
+Go to **Settings → Backup your work → Download backup ZIP**. The browser saves
+a private ZIP containing:
+
+- the single canonical `profile.yaml`;
+- a **consistent SQLite online snapshot** of `applications.db` including all
+  vacancy records, scan reports, application statuses and alerts;
+- application and Master CV files under the local `documents/`, `resumes/`
+  and `generated/` folders, when present;
+- `manifest.json` with the SHA-256 checksum and size of each file.
+
+Export never changes or deletes originals, never publishes data, and includes
+no external private-reference files. It has conservative per-file, total-size
+and file-count limits and fails clearly if the export cannot be complete.
+Keep the ZIP on a separate local drive or other trusted private storage; it
+contains personal details and potentially sensitive application documents.
+
+**Important:** this feature is **backup export**, not a tested one-click
+restore operation. Keep your normal local project folder intact. Restoring
+files manually from a ZIP should only be attempted with Jobs-Finder fully
+stopped, after securing a second copy of the live folder. The original
+document paths recorded in the database may need verification after a
+restore to a different folder/PC.
 
 ## Your personal job-alert inbox and optional daily checks
 

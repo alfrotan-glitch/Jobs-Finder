@@ -730,8 +730,72 @@ def _is_actionable_market_job(job: dict[str, Any]) -> bool:
     return has_actionable_source(job)
 
 
+def list_actionable_jobs_page(
+    *, limit: int = 100, offset: int = 0, statuses: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Return a complete, deterministic page and exact counts from ALL rows.
+
+    The old limit*3 heuristic hid older valid applications when numerous
+    untrusted/unactionable records occupied the latest rows. Only records
+    with a verified official source are counted. Pagination uses a stable
+    secondary id key so ties never skip or duplicate rows.
+    """
+    limit = max(1, min(500, int(limit)))
+    offset = max(0, int(offset))
+    conn = _read_connection()
+    try:
+        if statuses:
+            placeholders = ",".join("?" for _ in statuses)
+            cursor = conn.execute(
+                "SELECT * FROM vacancies WHERE status IN (" + placeholders + ") "
+                "ORDER BY discovered_at DESC, updated_at DESC, id ASC",
+                statuses,
+            )
+        else:
+            cursor = conn.execute(
+                "SELECT * FROM vacancies "
+                "ORDER BY discovered_at DESC, updated_at DESC, id ASC"
+            )
+        page: list[dict[str, Any]] = []
+        total = 0
+        counts = {
+            "found": 0, "reviewed": 0, "package": 0, "applied": 0,
+            "ready_to_apply": 0,
+        }
+        while batch := cursor.fetchmany(256):
+            for row in batch:
+                job = _to_dict(row)
+                if job is None or not _is_actionable_market_job(job):
+                    continue
+                status = str(job.get("status") or "")
+                total += 1
+                if status == FOUND:
+                    counts["found"] += 1
+                elif status in (PACKAGE_READY, PACKAGE_NEEDS_INPUT):
+                    counts["package"] += 1
+                elif status == APPLIED_MANUALLY:
+                    counts["applied"] += 1
+                else:
+                    counts["reviewed"] += 1
+                if (
+                    not job.get("is_expired")
+                    and status != APPLIED_MANUALLY
+                    and job.get("readiness") == "READY_TO_APPLY"
+                ):
+                    counts["ready_to_apply"] += 1
+                if offset < total <= offset + limit:
+                    page.append(job)
+        return {
+            "jobs": page, "total": total, "limit": limit, "offset": offset,
+            "has_more": offset + len(page) < total, "counts": counts,
+        }
+    finally:
+        _close_read_connection(conn)
+
+
 def list_actionable_jobs(limit: int = 100) -> list[dict[str, Any]]:
-    return [job for job in list_jobs(limit=limit * 3) if _is_actionable_market_job(job)][:limit]
+    """Backward-compatible first-page helper without arbitrary 3x truncation."""
+    return list_actionable_jobs_page(limit=limit)["jobs"]
 
 
 def get_recommended_jobs(limit: int = 20) -> list[dict[str, Any]]:

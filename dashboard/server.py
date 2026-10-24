@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -27,6 +27,7 @@ from utils.alerts import (
     record_deadline_alerts,
     record_scan_alerts,
 )
+from utils.backups import BackupError, backup_archive
 from utils.discovery import (
     ACBAR_DEFAULT_DETAIL_CONCURRENCY,
     ACBAR_DEFAULT_TIMEOUT_SECONDS,
@@ -55,6 +56,7 @@ from utils.tracker import (
     get_latest_scan,
     get_recommended_jobs,
     list_actionable_jobs,
+    list_actionable_jobs_page,
     list_recent_scans,
     log_medical_match,
     log_scan_result,
@@ -703,8 +705,18 @@ def api_recommended(limit: int = 200):
 
 
 @app.get("/api/jobs")
-def api_jobs(limit: int = 200):
-    return {"jobs": list_actionable_jobs(limit=limit)}
+def api_jobs(limit: int = 100, offset: int = 0):
+    """Exact actionable ledger with stable pages; never fabricate 200 total."""
+    return list_actionable_jobs_page(limit=limit, offset=offset)
+
+
+@app.get("/api/applications")
+def api_applications(limit: int = 100, offset: int = 0):
+    """An independent view over ALL saved package/application records."""
+    return list_actionable_jobs_page(
+        limit=limit, offset=offset,
+        statuses=("PACKAGE_READY", "PACKAGE_NEEDS_INPUT", "APPLIED_MANUALLY"),
+    )
 
 
 @app.get("/api/stats")
@@ -797,6 +809,23 @@ def api_master_cv():
         "review_warnings": master.get("review_warnings", []),
         "no_submission_performed": True,
     }
+
+
+@app.post("/api/backup/export")
+def api_backup_export():
+    """Owner-triggered local archive; never creates a remote copy."""
+    try:
+        filename, contents = backup_archive()
+    except BackupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return Response(
+        content=contents,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, max-age=0, private",
+        },
+    )
 
 
 @app.get("/api/jobs/{job_id}")

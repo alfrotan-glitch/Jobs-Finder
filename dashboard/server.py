@@ -42,6 +42,7 @@ from utils.discovery import (
     run_discovery_scan,
 )
 from utils.documents import prepare_application_bundle, write_master_cv
+from utils.email_application import EmailCompositionError, compose_application_email
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.profile import (
@@ -591,6 +592,52 @@ async def api_profile_confirm(request: Request):
     return {"ok": True, "message": f"{field} marked verified in profile.yaml.", "review": _profile_review_payload(profile)}
 
 
+@app.post("/api/profile/experience/{role_index}/add-duty")
+async def api_add_verified_duty(role_index: int, request: Request):
+    """Add one applicant-authored responsibility with explicit ownership confirmation.
+
+    This action NEVER suggests that unverified system-authored drafts are true.
+    The user must supply the new words and affirm their factual accuracy.
+    """
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Enter an actual documented responsibility.") from exc
+    if not isinstance(payload, dict) or payload.get("confirmation") != "I CONFIRM THIS IS MY EXPERIENCE":
+        raise HTTPException(status_code=400, detail="Confirm this is your own factual professional experience.")
+    duty = str(payload.get("text") or "").strip()
+    if not 35 <= len(duty) <= 800 or any(char in duty for char in ("\\0",)):
+        raise HTTPException(status_code=400, detail="Describe a real responsibility in 35–800 characters.")
+    if not isinstance(role_index, int) or role_index < 0:
+        raise HTTPException(status_code=400, detail="Invalid work-history role.")
+    profile = _runtime_profile(True)
+    history = profile.get("work_history")
+    if not isinstance(history, list) or role_index >= len(history) or not isinstance(history[role_index], dict):
+        raise HTTPException(status_code=404, detail="Work-history role not found.")
+    role = history[role_index]
+    if role.get("verified") is not True:
+        raise HTTPException(status_code=409, detail="Verify the employment record before confirming a new duty.")
+    if str(payload.get("role_title") or "") != str(role.get("title") or ""):
+        raise HTTPException(status_code=409, detail="The role changed. Refresh your profile before saving.")
+    responsibilities = role.setdefault("responsibilities", [])
+    if not isinstance(responsibilities, list):
+        raise HTTPException(status_code=409, detail="Professional responsibility entries need review before updating.")
+    from utils.documents import _entry_text_values
+
+    if any(" ".join(str(item).lower().split()) == " ".join(duty.lower().split()) for item in _entry_text_values(role)):
+        raise HTTPException(status_code=409, detail="This responsibility is already recorded.")
+    responsibilities.append({"text": duty, "verified": True})
+    save_canonical_profile(profile)
+    return {
+        "ok": True,
+        "role": str(role.get("title") or ""),
+        "responsibilities_verified": sum(
+            isinstance(item, dict) and item.get("verified") is True for item in responsibilities
+        ),
+        "message": "Your confirmed responsibility was saved to the canonical profile. Prepare a fresh CV for new applications.",
+    }
+
+
 @app.post("/api/import-cv")
 async def api_import_cv(file: UploadFile = File(...)):
     """Return an unverified, request-local CV preview without changing state.
@@ -879,6 +926,29 @@ def api_prepare(job_id: str):
     log_medical_match(job_id, report)
     update_tailored_resume(job_id, docs)
     return {"job_id": job_id, "documents": docs.get("generated_paths", {}), "package": docs.get("application_package", {})}
+
+
+@app.post("/api/jobs/{job_id}/email-draft")
+def api_application_email_draft(job_id: str):
+    """Download an actual MIME .eml with exact PDF attachments. NO email is sent."""
+    job = get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Vacancy not found.")
+    if is_expired(job):
+        raise HTTPException(status_code=409, detail="Vacancy deadline passed; verify the posting before applying.")
+    try:
+        filename, contents, names = compose_application_email(job, root=ROOT)
+    except EmailCompositionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return Response(
+        content=contents,
+        media_type="message/rfc822",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, max-age=0, private",
+            "X-Jobs-Finder-Attachment-Count": str(len(names)),
+        },
+    )
 
 
 @app.post("/api/jobs/{job_id}/mark-applied")

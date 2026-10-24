@@ -673,7 +673,7 @@ function jobById(id) {
 
 async function openJobById(id, mode = "details") {
   try {
-    const job = jobById(id) || (await apiJson(`/api/jobs/${encodeURIComponent(id)}`)).job;
+    const job = jobById(id) || await apiJson(`/api/jobs/${encodeURIComponent(id)}`);
     if (job) openDrawer(job, mode);
     else setStatus("Vacancy record not found.", "warn");
   } catch (error) {

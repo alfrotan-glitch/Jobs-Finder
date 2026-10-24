@@ -118,7 +118,7 @@ MAX_MANIFEST_BYTES = 128 * 1024
 
 def _trusted_backup_member(name: str) -> bool:
     """Allow only the canonical profile, DB and known project document dirs."""
-    if not name or "\\\\" in name or name.startswith("/") or ":" in name:
+    if not name or "\\" in name or name.startswith("/") or ":" in name:
         return False
     parts = PurePosixPath(name).parts
     if not parts or any(part in {"", ".", ".."} for part in name.split("/")):

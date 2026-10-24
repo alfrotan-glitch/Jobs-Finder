@@ -47,10 +47,11 @@ def test_head_of_tfu_targeted_cv_has_clear_position_label_without_fake_appointme
     model = tailored["tailored_cv_model"]
     assert model["application_focus"] == "Head of TFU"
     assert model["headline"] != "Head of TFU"
-    assert "TFU Medical Doctor & Safeguarding Focal Point" in model["profile"]
-    assert "Health & Nutrition Supervisor" in model["profile"]
+    assert "therapeutic feeding unit (TFU) clinical care" in model["profile"]
+    assert "health and nutrition team supervision" in model["profile"]
+    assert "TFU Medical Doctor & Safeguarding Focal Point" not in model["profile"]
     assert "Head of TFU" not in model["profile"]
-    assert "Relevant professional appointments include" in model["profile"]
+    assert "Relevant experience includes" in model["profile"]
     assert tailored["tailored_cv_text"].count("APPLICATION FOR: Head of TFU") == 1
     assert "serving as Head of TFU" not in tailored["tailored_cv_text"]
 

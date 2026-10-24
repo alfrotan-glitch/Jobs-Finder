@@ -112,12 +112,41 @@ verification independently checks ZIP membership, SHA-256 checksums and a
 temporary SQLite snapshot. It never changes live files; corrupt or tampered
 backups are rejected. Keep a second copy on another local drive.
 
-**Important:** this feature is **backup export and validation**, not a
-tested one-click restore operation. Keep your normal local project folder intact. Restoring
-files manually from a ZIP should only be attempted with Jobs-Finder fully
-stopped, after securing a second copy of the live folder. The original
-document paths recorded in the database may need verification after a
-restore to a different folder/PC.
+### One-click verified recovery (no overwriting)
+
+Double-click **`Restore_Jobs_Finder_Backup.bat`** in your Jobs-Finder folder.
+Choose a Jobs-Finder ZIP that you previously downloaded in Settings, review
+the confirmation, and select **Yes**. The assistant:
+
+1. Independently verifies every backup member and the SQLite database
+   (it refuses corrupted, suspicious or unsupported ZIPs).
+2. Creates a **new, independent Jobs-Finder-Recovered-... folder beside the
+   current project**; it never overwrites the old profile, database, or
+   applications, even if the old app is running.
+3. Copies the current verified runtime/launcher into the new folder (without
+   copying development files, Git history, caches or previous local state).
+4. Restores the archived profile, complete SQLite application history,
+   alerts and generated documents into the new folder.
+5. Safely rewrites stored generated-document paths to the NEW folder, so
+   saved CV/document buttons do not point to the previous Windows username
+   or desktop folder.
+6. Runs a final SQLite integrity check and makes the recovered copy visible
+   only after all steps succeed. On a failure it discards the incomplete
+   temporary folder and does not change the original installation.
+
+When recovery succeeds, **close the old Jobs-Finder dashboard**, open the
+reported `Jobs-Finder-Recovered-...` folder and double-click
+`run_jobs_finder.bat`. The new copy may set up its own `.venv` at first run.
+Windows will not automatically switch the existing daily scheduled task to
+this new location; disable it from the old installation first, then enable
+it from the recovered installation in Settings.
+
+The backup contains personal information, and the recovered folder is another
+private local copy. Only use files that you personally exported; keep the
+original and the ZIP until the new installation is verified. An existing ZIP
+does **not** contain GitHub source code by itself, so the recovery assistant
+needs to be run from a working Jobs-Finder program folder. This is a recovery
+into a separate runnable copy, not an unsafe direct overwrite of live files.
 
 ## Your personal job-alert inbox and optional daily checks
 

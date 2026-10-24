@@ -27,7 +27,12 @@ from utils.alerts import (
     record_deadline_alerts,
     record_scan_alerts,
 )
-from utils.backups import MAX_ARCHIVE_BYTES, BackupError, backup_archive, verify_backup_archive
+from utils.backups import (
+    MAX_ARCHIVE_BYTES,
+    BackupError,
+    backup_archive,
+    verify_backup_archive,
+)
 from utils.discovery import (
     ACBAR_DEFAULT_DETAIL_CONCURRENCY,
     ACBAR_DEFAULT_TIMEOUT_SECONDS,

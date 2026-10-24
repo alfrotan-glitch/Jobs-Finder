@@ -890,18 +890,21 @@ def canonical_source_fields(job: Any) -> dict[str, Any]:
         application_url = text
         break
 
-    if application_email:
-        application_method = "EMAIL"
-        apply_email = application_email
-        apply_url = application_url or None
+    # The publisher's explicit WEB route is authoritative even if the
+    # vacancy also contains a generic contact email. Never silently convert
+    # an online application form into an employer-facing email draft.
+    if requested_method in {"WEB", "ONLINE_FORM"}:
+        application_method = "WEB" if application_url else "UNAVAILABLE"
+    elif requested_method == "EMAIL":
+        application_method = "EMAIL" if application_email else "UNAVAILABLE"
     elif application_url:
         application_method = "WEB"
-        apply_email = ""
-        apply_url = application_url
+    elif application_email:
+        application_method = "EMAIL"
     else:
         application_method = "UNAVAILABLE"
-        apply_email = ""
-        apply_url = None
+    apply_email = application_email if application_method == "EMAIL" else ""
+    apply_url = application_url if application_method == "WEB" else None
 
     direct_route = application_email or application_url
 

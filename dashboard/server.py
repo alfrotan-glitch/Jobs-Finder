@@ -27,7 +27,12 @@ from utils.alerts import (
     record_deadline_alerts,
     record_scan_alerts,
 )
-from utils.backups import BackupError, backup_archive
+from utils.backups import (
+    MAX_ARCHIVE_BYTES,
+    BackupError,
+    backup_archive,
+    verify_backup_archive,
+)
 from utils.discovery import (
     ACBAR_DEFAULT_DETAIL_CONCURRENCY,
     ACBAR_DEFAULT_TIMEOUT_SECONDS,
@@ -826,6 +831,25 @@ def api_backup_export():
             "Cache-Control": "no-store, max-age=0, private",
         },
     )
+
+
+@app.post("/api/backup/verify")
+async def api_backup_verify(file: UploadFile = File(...)):
+    """Independently inspect a user-selected ZIP; never restore or copy it."""
+    try:
+        if not (file.filename or "").lower().endswith(".zip"):
+            raise HTTPException(status_code=400, detail="Select a Jobs-Finder ZIP backup.")
+        content = bytearray()
+        while chunk := await file.read(64 * 1024):
+            content.extend(chunk)
+            if len(content) > MAX_ARCHIVE_BYTES:
+                raise HTTPException(status_code=413, detail="The backup exceeds the safe size limit.")
+        try:
+            return verify_backup_archive(bytes(content))
+        except BackupError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        await file.close()
 
 
 @app.get("/api/jobs/{job_id}")

@@ -522,7 +522,11 @@ def _discovered_data(job: Any) -> tuple[dict[str, Any], dict[str, Any], dict[str
             "source_url": source.get("source_url") or metadata.get("source_url") or "",
             "vacancy_url": source.get("vacancy_url") or data.get("url") or "",
             "apply_url": source.get("apply_url") or None,
-            "apply_email": source.get("apply_email") or metadata.get("apply_email") or metadata.get("application_email") or "",
+            # The canonical publisher-selected destination is authoritative.
+            # Never resurrect a generic contact email when the official
+            # application route was explicitly WEB or unavailable.
+            "apply_email": source.get("apply_email") or "",
+            "application_email": source.get("apply_email") or "",
             "application_method": source.get("application_method") or metadata.get("application_method") or "UNAVAILABLE",
             "source_valid": source.get("source_valid"),
             "source_problems": source.get("problems") or [],

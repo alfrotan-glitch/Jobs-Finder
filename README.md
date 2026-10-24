@@ -104,8 +104,16 @@ and file-count limits and fails clearly if the export cannot be complete.
 Keep the ZIP on a separate local drive or other trusted private storage; it
 contains personal details and potentially sensitive application documents.
 
-**Important:** this feature is **backup export**, not a tested one-click
-restore operation. Keep your normal local project folder intact. Restoring
+**Verify the exported ZIP before depending on it.** Open
+**Settings → Backup your work → Verify backup ZIP**, select the file saved
+in Downloads or your local backup drive, and check that it reports verified
+files, saved vacancy/application counts, and SQLite integrity **OK**. This
+verification independently checks ZIP membership, SHA-256 checksums and a
+temporary SQLite snapshot. It never changes live files; corrupt or tampered
+backups are rejected. Keep a second copy on another local drive.
+
+**Important:** this feature is **backup export and validation**, not a
+tested one-click restore operation. Keep your normal local project folder intact. Restoring
 files manually from a ZIP should only be attempted with Jobs-Finder fully
 stopped, after securing a second copy of the live folder. The original
 document paths recorded in the database may need verification after a
@@ -155,6 +163,12 @@ available for advanced users:
 .\.venv\Scripts\python.exe main.py schedule-disable
 .\.venv\Scripts\python.exe main.py alerts
 ```
+
+If you have two separate Jobs-Finder copies on one Windows account, the app
+will **not** silently replace or disable the other installation's existing
+daily Task Scheduler task. Disable that task from its original installation
+before enabling the new copy. A task belonging to another folder is reported
+as a configuration problem, not misrepresented as "enabled here".
 
 The scanner and dashboard share a cross-process lock, so a scheduled scan
 cannot overlap with a manual one or corrupt the saved results. Windows task

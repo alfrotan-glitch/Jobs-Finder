@@ -219,7 +219,7 @@ function jobCard(job, {compact = false} = {}) {
       </div>
       <div class="cardActions">
         <button class="secondary" data-action="view-job" data-job-id="${id}">View details</button>
-        ${canPrepare && directApplicationRouteAvailable(job) ? `<button class="primary subtle" data-action="prepare-job" data-job-id="${id}">${method === "EMAIL" ? "Prepare email" : "Prepare application"}</button>` : ""}
+        ${canPrepare && directApplicationRouteAvailable(job) ? `<button class="primary subtle" data-action="${method === "EMAIL" && job.package?.package_status === "READY_FOR_REVIEW" ? "apply-email" : "prepare-job"}" data-job-id="${id}">${method === "EMAIL" && job.package?.package_status === "READY_FOR_REVIEW" ? "Apply · Attached email" : method === "EMAIL" ? "Prepare email + PDFs" : "Prepare application"}</button>` : ""}
         ${packageExists(job) ? `<button class="secondary" data-action="review-package" data-job-id="${id}">Review package</button>` : ""}
         ${packageReadyForReview(job) && job.status !== "APPLIED_MANUALLY" ? `<button class="secondary" data-action="mark-applied" data-job-id="${id}">Mark applied</button>` : ""}
       </div>
@@ -726,7 +726,7 @@ function renderApplicationMethod(job) {
     return `<div class="routePanel"><h3>Already recorded as applied</h3><p>Your manual application has been preserved. You can still review its prepared documents below.</p>${page ? `<a class="button secondary" href="${escapeAttr(page)}" target="_blank" rel="noopener">View official vacancy</a>` : ""}</div>`;
   }
   if (method === "EMAIL" && email) {
-    return `<div class="routePanel"><p class="microLabel">Apply by email</p><h3>${escapeHtml(email)}</h3><div class="cardActions"><a class="button primary subtle" href="mailto:${escapeAttr(email)}">Open email</a><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email)}">Copy email</button><button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare email</button></div></div>`;
+    return `<div class="routePanel"><p class="microLabel">Apply by email</p><h3>${escapeHtml(email)}</h3><div class="cardActions">${job.package?.package_status === "READY_FOR_REVIEW" ? `<button class="primary subtle" data-action="apply-email" data-job-id="${escapeAttr(job.id)}">Apply · Email with attachments</button>` : `<button class="primary subtle" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare email and files</button>`}<button class="secondary" data-action="copy-email" data-email="${escapeAttr(email)}">Copy email</button><button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare email</button></div></div>`;
   }
   if (method === "WEB" && web) {
     return `<div class="routePanel"><p class="microLabel">Apply online</p><h3>Web application</h3><div class="cardActions"><a class="button primary subtle" href="${escapeAttr(web)}" target="_blank" rel="noopener">Open application</a><button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare package</button></div></div>`;
@@ -835,8 +835,8 @@ function showEmailDraft(job) {
       <p><strong>To:</strong> ${escapeHtml(email.to || "")}</p>
       <p><strong>Subject:</strong> ${escapeHtml(email.subject || "")}</p>
       <pre>${escapeHtml(email.body || "")}</pre>
-      <div class="cardActions"><a class="button primary subtle" href="${escapeAttr(`mailto:${encodeURIComponent(email.to || "")}?subject=${encodeURIComponent(email.subject || "")}`)}">Open email with subject</a><button class="secondary" data-action="copy-email-draft" data-job-id="${escapeAttr(job.id)}">Copy full draft</button><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email.to || "")}">Copy address</button></div>
-      <p class="sectionHelp">This is a draft only. Paste the text into your email client, attach the reviewed documents, and send manually. The system has not contacted the employer.</p>
+      <div class="cardActions"><button class="primary subtle" data-action="apply-email" data-job-id="${escapeAttr(job.id)}">Open attached email draft</button><button class="secondary" data-action="copy-email-draft" data-job-id="${escapeAttr(job.id)}">Copy full draft</button><button class="secondary" data-action="copy-email" data-email="${escapeAttr(email.to || "")}">Copy address</button></div>
+      <p class="sectionHelp">Apply prepares a real .eml email containing only the vacancy-required reviewed PDFs. Windows may open it in a desktop mail app; otherwise download and open the .eml manually. Check sender, recipient, subject and attachments, then press Send in your email client. No email has been sent yet.</p>
     </section>`;
   $("drawerTitle").textContent = "Email draft";
   $("drawerKicker").textContent = job.title || "Application package";
@@ -998,8 +998,8 @@ async function applyByEmail(id) {
     return;
   }
   const approved = window.confirm(
-    "Open an UNSENT email with the official recipient, subject, body and required PDF attachments?\n\n" +
-    "You must check everything and press Send in your email app yourself."
+    "Open a REVIEWABLE, UNSENT email with the official recipient, subject, body and required PDF attachments?\n\n" +
+    "Windows needs a desktop email application associated with .eml files. Otherwise download the attached email. Verify all details and press Send yourself."
   );
   if (!approved) return;
   try {

@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import copy
-from pathlib import Path
 
 import pytest
 
-from utils.documents import (
-    _infer_required_documents,
-    generate_tailored_documents,
-)
+from utils.documents import _infer_required_documents
 from utils.email_drafts import EmailDraftError, build_email_draft
 
 

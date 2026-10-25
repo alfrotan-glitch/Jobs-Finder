@@ -1669,6 +1669,50 @@ def generate_tailored_documents(
         first_person=True,
     )
     cover_lines.append(intro)
+    # Add real depth to the letter by linking the vacancy to actual verified
+    # work, not by fabricating extra duties, achievements, or numerical
+    # results. ordered_work was built only from verified canonical history.
+    focus_terms = _focus_terms(job, match_report) | _job_title_terms(job)
+    relevant_roles = sorted(
+        enumerate(ordered_work),
+        key=lambda pair: (
+            -len(_focus_term_hits(
+                " ".join([
+                    str(pair[1].get("role") or ""),
+                    " ".join(str(x) for x in pair[1].get("bullets") or []),
+                ]),
+                focus_terms,
+            )),
+            pair[0],
+        ),
+    )
+    detailed_roles = 0
+    for _, role_info in relevant_roles:
+        role_name = str(role_info.get("role") or "").strip()
+        employer = str(role_info.get("org") or "").strip()
+        verified_duties = [
+            str(item).strip().rstrip(".")
+            for item in role_info.get("bullets") or []
+            if str(item).strip()
+        ]
+        if not role_name or not verified_duties:
+            continue
+        if not _focus_term_hits(
+            " ".join([role_name, *verified_duties]), focus_terms
+        ):
+            continue
+        if detailed_roles == 0:
+            cover_lines.append("")
+        opening = f"In my documented role as {role_name}"
+        if employer:
+            opening += f" with {employer}"
+        # Preserve each duty's exact substantiated wording; do not transform
+        # a general competency into a claim of managerial achievement.
+        narrative = opening + ", responsibilities included " + "; ".join(verified_duties[:2]) + "."
+        cover_lines.append(narrative)
+        detailed_roles += 1
+        if detailed_roles == 2:
+            break
     if vacancy_highlights:
         strongest = [_without_attribution(item) for item in vacancy_highlights[:3]]
         cover_lines.extend(["", "Relevant verified qualifications and professional strengths include:"])
@@ -1769,10 +1813,17 @@ def _infer_required_documents(job: dict[str, Any]) -> list[str]:
         if label not in docs:
             docs.append(label)
 
-    if "cv" in text or "resume" in text or not docs:
+    # Determine documents *named* by the employer before applying the
+    # fallback. "not docs" at the first branch always forced CV even if
+    # the employer explicitly requested ONLY an application letter.
+    cv_requested = bool(re.search(r"\b(?:cv|resume|curriculum vitae)\b", text))
+    cover_requested = "cover letter" in text or "application letter" in text
+    if cv_requested:
         add("Tailored CV / resume")
-    if "cover letter" in text or "application letter" in text:
+    if cover_requested:
         add("Tailored cover letter / application letter")
+    if not cv_requested and not cover_requested:
+        add("Tailored CV / resume")
     if "application form" in text:
         add("Organization application form, completed if required")
     if "reference" in text or "referee" in text:
@@ -1894,7 +1945,6 @@ def _attachment_labels(required_documents: list[str], generated_paths: dict[str,
             add(doc)
     if not labels:
         add(generated_paths.get("tailored_cv") or "Tailored CV / resume")
-        add(generated_paths.get("cover_letter") or "Tailored cover letter / application letter")
     return labels
 
 

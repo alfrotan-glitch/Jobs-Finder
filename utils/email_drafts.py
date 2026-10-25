@@ -13,7 +13,7 @@ from email.message import EmailMessage
 from email.policy import SMTP
 from pathlib import Path
 
-from utils.medical_requirements import is_valid_email
+from utils.medical_requirements import canonical_source_fields, is_valid_email
 from utils.paths import PROJECT_ROOT
 
 MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
@@ -32,11 +32,18 @@ def _attachment_kinds(required: list[str]) -> tuple[bool, bool, list[str]]:
     for value in required:
         label = str(value).strip()
         lower = label.lower()
-        if "cv" in lower or "resume" in lower:
+        # One combined checklist line can explicitly request both files.
+        # Avoid treating optional or later-requested certificates as real
+        # attachments that the app should manufacture today.
+        if any(marker in lower for marker in ("only if", "if later", "if selected", "if requested")):
+            continue
+        is_cv = bool(re.search(r"\b(?:cv|resume|curriculum vitae)\b", lower))
+        is_cover = "cover letter" in lower or "application letter" in lower
+        if is_cv:
             cv = True
-        elif "cover letter" in lower or "application letter" in lower:
+        if is_cover:
             cover = True
-        elif label:
+        if not is_cv and not is_cover and label:
             other.append(label)
     return cv, cover, other
 
@@ -48,14 +55,28 @@ def build_email_draft(job: dict, *, project_root: Path = PROJECT_ROOT) -> tuple[
     additional certificates) are not synthesised. The user must supply them.
     """
     package = job.get("package") or {}
-    if job.get("is_expired") or package.get("route_type") != "email":
-        raise EmailDraftError("This posting has no active verified email application route.")
+    if job.get("is_expired") or job.get("status") == "APPLIED_MANUALLY" or package.get("route_type") != "email":
+        raise EmailDraftError("This posting cannot be applied to by email: expired, already submitted, or not an email route.")
+    metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
+    requested_method = str(job.get("application_method") or metadata.get("application_method") or "").upper()
+    # A stored historical email draft cannot override a newly corrected
+    # official WEB form route. This must fail before composing attachments.
+    if requested_method in {"WEB", "ONLINE_FORM"}:
+        raise EmailDraftError("This employer requires an online form, not an email application.")
     if package.get("package_status") != "READY_FOR_REVIEW" or package.get("missing_items"):
         raise EmailDraftError("Complete the outstanding eligibility and document checks before opening the email draft.")
     draft = package.get("email_draft") or {}
     recipient = str(draft.get("to") or "").strip()
     if not is_valid_email(recipient) or "\n" in recipient or "\r" in recipient:
         raise EmailDraftError("The advertised application email address is not valid.")
+    # For a tracked vacancy with canonical source fields, protect against a
+    # stale or manipulated saved package going to a different recruiter.
+    canonical = canonical_source_fields(job)
+    if canonical.get("application_method") == "WEB":
+        raise EmailDraftError("The current official route is a web form; never email this application.")
+    verified_email = canonical.get("apply_email")
+    if verified_email and str(verified_email).casefold() != recipient.casefold():
+        raise EmailDraftError("Draft recipient no longer matches the verified vacancy email.")
     subject = str(draft.get("subject") or "").strip()
     body = str(draft.get("body") or "").strip()
     if not subject or any(c in subject for c in "\r\n") or not body:

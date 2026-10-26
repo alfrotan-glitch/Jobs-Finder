@@ -6,7 +6,7 @@ from docx import Document
 from utils.document_design import render_professional_document_artifacts
 
 CV_MODEL = {
-    "name": "Jane Doe",
+    "name": "Sample Clinician",
     "headline": "Medical Doctor and Nutrition Specialist",
     "application_focus": "Provincial Medical Coordinator",
     "contact_lines": ["Kabul, Afghanistan", "jane@example.org"],
@@ -37,7 +37,7 @@ def test_each_cv_palette_produces_searchable_text_and_matching_word_title(tmp_pa
     for style in ("clinical", "executive"):
         model = {**CV_MODEL, "cv_style": style, "cv_layout": "comfortable"}
         result = render_professional_document_artifacts(
-            "Jane Doe\nMEDICAL DOCTOR", tmp_path / style / "tailored_cv",
+            "Sample Clinician\nMEDICAL DOCTOR", tmp_path / style / "tailored_cv",
             document_type="cv", canonical_cv_model=model,
         )
         document = Document(result["docx"])
@@ -58,7 +58,7 @@ def test_cover_letter_and_cv_selected_theme_match(tmp_path):
         "Dear Hiring Committee,\n\n"
         "I am applying to coordinate verified health programming.\n\n"
         "I have documented clinical assessment and monitoring experience.\n\n"
-        "Sincerely,\nJane Doe\n"
+        "Sincerely,\nSample Clinician\n"
     )
     result = render_professional_document_artifacts(
         source, tmp_path / "cover_letter", document_type="cover_letter",
@@ -68,6 +68,6 @@ def test_cover_letter_and_cv_selected_theme_match(tmp_path):
     assert str(document.styles["JF Title"].font.color.rgb).upper() == "8A632D"
     with pdfplumber.open(result["pdf"]) as pdf:
         text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-        assert "Jane Doe" in text
+        assert "Sample Clinician" in text
         assert "Provincial Medical Coordinator" in text
         assert "I am applying" in text

@@ -245,6 +245,40 @@ def apply_editor_change(profile: dict[str, Any], patch: dict[str, Any]) -> dict[
             raise ProfileEditError("The work-history list is full or invalid.")
         roles.append({**values, "verified": bool(confirmed), "responsibilities": []})
         return profile
+    if action == "verify_record":
+        section = patch.get("section")
+        index = patch.get("index")
+        group = patch.get("group")
+        if not confirmed:
+            raise ProfileEditError("Personally confirm this fact before making it CV evidence.")
+        required = {
+            "work_history": ("title", "organization"),
+            "medical_education": ("degree", "institution"),
+            "languages": ("name", "level"),
+            "certificates": ("name",),
+            "skills": ("name",),
+        }
+        if section not in required or type(index) is not int:
+            raise ProfileEditError("Choose a valid record for verification.")
+        if section == "skills":
+            skills = profile.get("skills") or {}
+            if not isinstance(group, str) or group not in skills:
+                raise ProfileEditError("Select an existing skill group.")
+            records = skills[group]
+        else:
+            records = profile.get(section) or []
+        if not isinstance(records, list) or index < 0 or index >= len(records):
+            raise ProfileEditError("Record does not exist.")
+        record = records[index]
+        if not isinstance(record, dict) or any(
+            not isinstance(record.get(field), str)
+            or not record[field].strip()
+            or is_unresolved_value(record[field])
+            for field in required[section]
+        ):
+            raise ProfileEditError("Fill in the required factual details before confirming.")
+        record["verified"] = True
+        return profile
     if action == "record":
         section = patch.get("section")
         key = patch.get("field")
@@ -332,6 +366,17 @@ def apply_editor_change(profile: dict[str, Any], patch: dict[str, Any]) -> dict[
             return profile
         if type(bullet_idx) is not int or not 0 <= bullet_idx < len(bullets):
             raise ProfileEditError("Select a valid responsibility.")
+        if operation == "verify":
+            if not confirmed:
+                raise ProfileEditError("Personal confirmation is required for this duty.")
+            record = bullets[bullet_idx]
+            if not isinstance(record, dict):
+                raise ProfileEditError("Invalid work detail.")
+            factual_text = _text(record.get("text"), maximum=1200, allow_empty=False)
+            if len(factual_text) < 20:
+                raise ProfileEditError("Provide a substantive responsibility before verifying it.")
+            record["verified"] = True
+            return profile
         if operation == "delete":
             bullets.pop(bullet_idx)
             return profile

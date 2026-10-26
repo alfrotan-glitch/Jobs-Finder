@@ -606,6 +606,7 @@ function renderProfileEditor() {
         <div class="editorDuty"><p>${escapeHtml(item.text)}</p>
           <span class="sectionHelp">${item.verified ? "Verified" : "Needs verification"}</span>
           <button class="secondary smallButton" data-action="edit-duty" data-role-index="${role.index}" data-duty-index="${item.index}">Edit</button>
+          ${!item.verified ? `<button class="secondary smallButton" data-action="verify-duty" data-role-index="${role.index}" data-duty-index="${item.index}">Confirm factual duty</button>` : ""}
           <button class="textButton" data-action="delete-duty" data-role-index="${role.index}" data-duty-index="${item.index}">Remove</button>
         </div>`).join("")}
       ${(role.pending || []).map((item) => `
@@ -630,6 +631,10 @@ function renderProfileEditor() {
       ${entries.map((item) => `
         <div class="editorRecord">
           <span class="sectionHelp">${item.verified ? "Verified" : "Needs confirmation"} ${item.group ? "· " + escapeHtml(item.group) : ""}</span>
+          ${!item.verified && ["work_history","medical_education","languages","certificates","skills"].includes(section)
+            ? `<button class="secondary smallButton" data-action="verify-record" data-section="${section}"
+               data-record-index="${item.index}" data-record-group="${escapeAttr(item.group || "")}">
+               Confirm this record</button>` : ""}
           ${fields.map((field) => `<div class="editorRecordField">
             <strong>${escapeHtml(field.replace(/_/g," "))}:</strong> ${escapeHtml(item[field] || "Not supplied")}
             <button class="secondary smallButton" data-action="edit-record" data-section="${section}"
@@ -743,6 +748,16 @@ async function saveEditorPatch(change) {
   }
 }
 
+async function verifyProfileRecord(target) {
+  const section = target.dataset.section;
+  const index = Number(target.dataset.recordIndex);
+  const group = target.dataset.recordGroup || "";
+  if (!window.confirm("I personally confirm this entire record is accurate, belongs to me, and is supported by my own evidence. Verified facts may be included in future applications.")) return;
+  await saveEditorPatch({
+    action:"verify_record", section, index, group, confirmation:OWNER_CONFIRMATION,
+  });
+}
+
 async function createWorkRole() {
   const title = window.prompt("Professional role title:")?.trim();
   if (!title) return;
@@ -801,6 +816,13 @@ async function editProfileDuty(action, roleIndex, dutyIndex) {
     value = window.prompt("Edit the actual responsibility (minimum 20 characters):", item.text) ?? "";
     if (!value) return;
     operation = "update";
+  } else if (action === "verify-duty") {
+    if (!item || item.verified || !window.confirm("I personally confirm this existing work detail as true and relevant to this exact position.")) return;
+    await saveEditorPatch({
+      action:"responsibility", role_index:Number(roleIndex), bullet_index:Number(dutyIndex),
+      operation:"verify", confirmation:OWNER_CONFIRMATION,
+    });
+    return;
   } else if (action === "delete-duty") {
     if (!item || !window.confirm("Remove this responsibility from future CVs?")) return;
     operation = "delete";
@@ -1508,9 +1530,10 @@ function handleAction(event) {
   if (action === "save-profile-editor") saveProfileEditor();
   if (action === "new-work-role") createWorkRole();
   if (action === "accept-imported-duty") acceptImportedDuty(target.dataset.candidateIndex);
+  if (action === "verify-record") verifyProfileRecord(target);
   if (action === "edit-record") editProfileRecord(target);
   if (action === "new-record") editProfileRecord(target, true);
-  if (["new-duty", "edit-duty", "delete-duty", "approve-duty"].includes(action)) {
+  if (["new-duty", "edit-duty", "verify-duty", "delete-duty", "approve-duty"].includes(action)) {
     editProfileDuty(action, target.dataset.roleIndex, target.dataset.dutyIndex);
   }
   if (action === "review-package") openJobById(id, "package");

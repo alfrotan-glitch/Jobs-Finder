@@ -223,3 +223,55 @@ def test_new_role_requires_employer_and_does_not_assume_verification(owner):
     roles = yaml.safe_load(path.read_text(encoding="utf-8"))["work_history"]
     assert len(roles) == before + 1
     assert roles[-1]["verified"] is False
+
+
+def test_unverified_added_work_role_can_be_confirmed_without_text_changes(owner):
+    client, path = owner
+    first = _save(client, _get(client)["version"], {
+        "action": "work_role", "title": "Nutrition Officer",
+        "organization": "Example Health NGO", "location": "Bamyan",
+    })
+    assert first.status_code == 200
+    editor = _get(client)
+    assert editor["experience"][-1]["verified"] is False
+    confirmed = _save(client, editor["version"], {
+        "action": "verify_record", "section": "work_history", "index": 1,
+        "confirmation": CONFIRMATION,
+    })
+    assert confirmed.status_code == 200
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["work_history"][-1]["verified"] is True
+
+
+def test_missing_evidence_record_cannot_be_confirmed(owner):
+    client, path = owner
+    assert _save(client, _get(client)["version"], {
+        "action": "work_role", "title": "Medical Officer", "organization": "Needs verification",
+    }).status_code == 200
+    original = path.read_bytes()
+    confirm = _save(client, _get(client)["version"], {
+        "action": "verify_record", "section": "work_history", "index": 1,
+        "confirmation": CONFIRMATION,
+    })
+    assert confirm.status_code == 409
+    assert path.read_bytes() == original
+
+
+def test_unverified_edited_duty_can_be_explicitly_verified_later(owner):
+    client, path = owner
+    change = _save(client, _get(client)["version"], {
+        "action": "responsibility", "role_index":0, "bullet_index":0,
+        "operation":"update", "value":"Supported referrals and direct patient assessment according to clinical protocols.",
+    })
+    assert change.status_code == 200
+    before = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert before["work_history"][0]["responsibilities"][0]["verified"] is False
+    bad = _save(client, _get(client)["version"], {
+        "action":"responsibility", "role_index":0, "bullet_index":0, "operation":"verify",
+    })
+    assert bad.status_code == 409
+    good = _save(client, _get(client)["version"], {
+        "action":"responsibility", "role_index":0, "bullet_index":0, "operation":"verify",
+        "confirmation":CONFIRMATION,
+    })
+    assert good.status_code == 200
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["work_history"][0]["responsibilities"][0]["verified"] is True

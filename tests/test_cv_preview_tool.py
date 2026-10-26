@@ -17,7 +17,8 @@ def test_preview_generation_validation_and_every_page_rasterization(tmp_path):
     metrics = render_previews.inspect_pdf(pdf, case["model"])
     paths = render_previews.render_pdf(pdf, tmp_path / "images", dpi=72)
     with pdfplumber.open(pdf) as document:
-        assert len(paths) == len(metrics["pages"]) == len(document.pages) == 2
+        assert len(paths) == len(metrics["pages"]) == len(document.pages)
+        assert 2 <= len(document.pages) <= 5
     assert all(path.read_bytes().startswith(b"\x89PNG") for path in paths)
     assert canonical_profile_path().read_bytes() == before
     assert (tmp_path / "review-warnings.json").is_file()

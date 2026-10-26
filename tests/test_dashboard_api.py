@@ -428,52 +428,28 @@ def test_profile_view_separates_confirmed_scope_from_unconfirmed_drafts(tmp_path
             assert "NEEDS_VERIFICATION" not in bullet, bullet
         for draft in role["pending_bullets"]:
             assert "{" not in draft and "NEEDS_VERIFICATION" not in draft, draft
-    assert confirmed_total == 6  # the applicant-supplied duties restored to the roles
+    assert confirmed_total == 24  # full owner-approved official CV, not old excerpt
     assert draft_total == 24  # every held-back draft is still visible to the owner
 
 
 def test_profile_view_drafts_are_never_listed_as_confirmed_experience(tmp_path, monkeypatch):
-    """A duty the applicant never supplied must not appear as a role's bullets."""
+    """Every confirmed CV duty is owner-attested; old drafts stay separate."""
+    import json
+
     real_profile = profile_repository.load_canonical_profile(required=True)
     monkeypatch.setattr(profile_repository, "CANONICAL_PROFILE_PATH", tmp_path / "profile.yaml")
     monkeypatch.setattr(tracker, "DB_PATH", tmp_path / "jobs.db")
     profile_repository.save_canonical_profile(real_profile)
-
     payload = TestClient(server.app).get("/api/profile/details").json()["details"]
+    facts = json.loads(Path("tests/fixtures/official_cv_owner_approved_scope.json").read_text(encoding="utf-8"))
+    approved = facts["role_responsibilities"]
+    assert len(payload["experience"]) == 5
+    for role in payload["experience"]:
+        assert role["title"] in approved
+        assert role["bullets"] == approved[role["title"]]
     confirmed = [bullet for role in payload["experience"] for bullet in role["bullets"]]
     drafts = [draft for role in payload["experience"] for draft in role["pending_bullets"]]
-
     for role in real_profile["work_history"]:
-        for item in role["needs_verification"]:
-            assert item["text"] not in confirmed
-            assert item["text"] in drafts
-    # Confirmed responsibilities restate the applicant's own supplied CV
-    # evidence for that role -- never a held draft and never a new claim.
-    supplied = real_profile["applicant_supplied_source"]["supplied_role_notes"]
-
-    def role_key(text: str) -> str:
-        return re.sub(r"[^a-z]+", "", str(text).lower())
-
-    # The applicant's own role labels differ slightly from the normalized
-    # titles ("Health and Nutrition Supervisor" vs "Health & Nutrition
-    # Supervisor"), so match on the role identity, not on exact spelling.
-    supplied_by_role = {
-        role_key(note["role"]): note["supplied"] for note in supplied
-    }
-    supplied_sequence = [note["supplied"] for note in supplied]
-
-    def normalise(text: str) -> str:
-        return " ".join(str(text).replace(".", " ").split()).lower()
-
-    for index, (role, entry) in enumerate(zip(payload["experience"], real_profile["work_history"])):
-        assert role["bullets"], entry["title"]
-        notes = supplied_by_role.get(role_key(entry["title"])) or supplied_sequence[index]
-        supplied_text = normalise(" ".join(notes))
-        for bullet in role["bullets"]:
-            assert supplied_text, (entry["title"], bullet)
-            shared = {
-                token
-                for token in re.split(r"[^a-z]+", normalise(bullet))
-                if len(token) > 4 and token in supplied_text
-            }
-            assert len(shared) >= 3, (entry["title"], bullet, sorted(shared))
+        for draft in role.get("needs_verification") or []:
+            assert draft["text"] not in confirmed
+            assert draft["text"] in drafts

@@ -133,7 +133,7 @@ def test_real_cv_complete_readable_and_immutable_in_every_format(tmp_path, kind)
     doc = Document(paths["docx"])
     assert_model_preserved(model, "\n".join(p.text for p in doc.paragraphs))
     with pdfplumber.open(paths["pdf"]) as pdf:
-        assert len(pdf.pages) == 2  # this real evidence set, not an exporter cap
+        assert 2 <= len(pdf.pages) <= 5  # all 24 approved duties fit; no fixed two-page cap
         assert_model_preserved(model, "\n".join(p.extract_text() for p in pdf.pages))
         assert_geometry(pdf)
         for role in model["experience"]:

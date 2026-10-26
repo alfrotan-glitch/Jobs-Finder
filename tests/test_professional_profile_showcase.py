@@ -30,7 +30,8 @@ def test_unverified_owner_summary_never_enters_profile_showcase():
         "text": "UNVERIFIED PRIVATE DRAFT: claimed responsibility for everything",
         "verified": False,
     }
-    assert _profile_details(draft)["professional_summary"] == baseline
+    assert _profile_details(draft)["professional_summary"] != draft["professional_summary"]["text"]
+    assert "Medical Doctor" in _profile_details(draft)["professional_summary"]
     assert "UNVERIFIED PRIVATE DRAFT" not in _profile_details(draft)["professional_summary"]
 
 

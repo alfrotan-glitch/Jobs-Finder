@@ -1063,11 +1063,9 @@ def _experience_coverage_clauses(evidence, rank_key=None) -> list[str]:
     add("public-health service delivery", "public_health_experience")
     add("team supervision and capacity building", "supervision_management")
     add("programme coordination", "program_coordination")
-    # The applicant supplied "HMIS/DHIS2 reporting and data quality" as one
-    # competency. The earlier clause pair split it into a reporting clause that
-    # added "field monitoring" -- a duty this profile explicitly holds as
-    # unsupported -- and a rephrased HMIS clause. The reporting evidence now
-    # carries the applicant's own wording, and nothing more, exactly once.
+    # Retain the precise applicant-supplied HMIS/DHIS2 competency wording.
+    # Field monitoring is independently verified in the owner-approved full
+    # CV, not inferred from the HMIS skill.
     if evidence.has_verified("hmis"):
         clauses.append("HMIS/DHIS2 reporting and data quality")
     elif evidence.has_verified("reporting"):
@@ -1117,7 +1115,11 @@ def _supervisory_letter_highlights(items: list[str], *, limit: int) -> list[str]
     def key(pair: tuple[int, str]) -> tuple[bool, int, int]:
         index, text = pair
         is_experience = "|" in text
-        return (not is_experience, _supervisory_tier(text), index)
+        # A role attribution such as "(Health & Nutrition Supervisor | ACF)"
+        # must not make an otherwise unrelated clinical statement rank as a
+        # supervision/nutrition duty. Rank the attested action itself.
+        factual_clause = text.split(" (", 1)[0]
+        return (not is_experience, _supervisory_tier(factual_clause), index)
 
     return [text for _, text in sorted(enumerate(items), key=key)][:limit]
 

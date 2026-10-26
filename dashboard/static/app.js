@@ -1218,7 +1218,9 @@ function renderPackage(job) {
   if (!pkg.package_status && !paths.tailored_cv) {
     return `<section class="detailSection"><h3>Your application package</h3><p class="sectionHelp">NOT CREATED — no package has been prepared yet.</p></section>`;
   }
-  const packageState = friendlyStatus(pkg.package_status || job.package_status || "NOT_CREATED");
+  const packageState = outdated
+    ? "REGENERATION REQUIRED"
+    : friendlyStatus(pkg.package_status || job.package_status || "NOT_CREATED");
   const stateNote = pkg.package_status === "NEEDS_USER_INPUT" ? "Required user input or verification remains." : pkg.package_status === "BLOCKED" ? "The authoritative eligibility state blocks this package." : "Generated files remain for human review only.";
   return `<section class="detailSection"><h3>Your application package</h3>
     <p class="sectionHelp"><strong>Package state: ${escapeHtml(packageState)}</strong> — ${escapeHtml(stateNote)}</p>
@@ -1230,11 +1232,12 @@ function renderPackage(job) {
       Use Regenerate to replace this draft before applying. Previously submitted applications cannot be regenerated.</p>` : ""}
     <div class="packageStatus"><span>${escapeHtml(artifactStatusLabel(cvPath))}: Tailored CV</span><span>${escapeHtml(artifactStatusLabel(coverPath))}: Cover letter</span>${email ? `<span>${emailDraftReady(job) ? "READY FOR REVIEW" : "NOT READY"}: Email draft</span>` : ""}</div>
     <div class="documentGrid">
-      ${documentBundleCard("Tailored CV", cvFormats)}
-      ${documentBundleCard("Cover letter", coverFormats)}
-      ${email ? `<div class="documentCard"><div><strong>Email application</strong><span>${emailDraftReady(job) ? "Review the unsent draft and employer-requested PDFs." : "This draft is not ready to use. Check the official route, deadline and outstanding requirements."}</span></div>${emailDraftReady(job) ? `<button class="primary" data-action="apply-email" data-job-id="${escapeAttr(job.id)}">Apply — Open email</button>` : ""}<button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Preview</button></div>` : ""}
-      ${packagePath ? documentCard("Application instructions", packagePath) : ""}
-      ${paths.application_data_checklist ? documentCard("Application checklist", paths.application_data_checklist) : ""}
+      ${outdated
+        ? '<p class="sectionHelp">Historical PDF/Word files are retained locally, but downloads are hidden here until a fresh package is regenerated from the current approved CV.</p>'
+        : documentBundleCard("Tailored CV", cvFormats) + documentBundleCard("Cover letter", coverFormats)}
+      ${!outdated && email ? `<div class="documentCard"><div><strong>Email application</strong><span>${emailDraftReady(job) ? "Review the unsent draft and employer-requested PDFs." : "This draft is not ready to use. Check the official route, deadline and outstanding requirements."}</span></div>${emailDraftReady(job) ? `<button class="primary" data-action="apply-email" data-job-id="${escapeAttr(job.id)}">Apply — Open email</button>` : ""}<button class="secondary" data-action="show-email-draft" data-job-id="${escapeAttr(job.id)}">Preview</button></div>` : ""}
+      ${!outdated && packagePath ? documentCard("Application instructions", packagePath) : ""}
+      ${!outdated && paths.application_data_checklist ? documentCard("Application checklist", paths.application_data_checklist) : ""}
     </div>
     ${reviewNotes.length ? `<div class="applicationReviewNotes" role="note"><strong>Review before applying</strong><ul>${reviewNotes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul></div>` : ""}
   </section>`;

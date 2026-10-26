@@ -1119,14 +1119,15 @@ def _supervisory_letter_highlights(items: list[str], *, limit: int) -> list[str]
     decides, and the vacancy ranking order breaks ties.
     """
 
-    def key(pair: tuple[int, str]) -> tuple[bool, int, int]:
+    def key(pair: tuple[int, str]) -> tuple[bool, int, int, int]:
         index, text = pair
         is_experience = "|" in text
-        # A role attribution such as "(Health & Nutrition Supervisor | ACF)"
-        # must not make an otherwise unrelated clinical statement rank as a
-        # supervision/nutrition duty. Rank the attested action itself.
+        # Evaluate the factual action rather than the role attribution.
         factual_clause = text.split(" (", 1)[0]
-        return (not is_experience, _supervisory_tier(factual_clause), index)
+        # Among several genuinely supervisory duties, foreground direct
+        # mobile health/nutrition team leadership for supervisory vacancies.
+        mobile_team = "mobile health and nutrition teams" in factual_clause.lower()
+        return (not is_experience, _supervisory_tier(factual_clause), 0 if mobile_team else 1, index)
 
     ranked = sorted(enumerate(items), key=key)
     # A long verified official CV can contain many clinically related lines.

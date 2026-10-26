@@ -160,3 +160,19 @@ def test_medical_coordinator_highlights_real_supervision_without_reducing_roles_
         assert all(line.rstrip(".") in {x.rstrip(".") for x in approved} for line in role["bullets"])
     assert document["tailored_cv_model"]["full_verified_duty_count"] == 24
     assert select_employer_facing_experience([], "Medical Coordinator") == ([], 0)
+
+
+def test_employer_cv_curates_competencies_while_master_retains_every_skill():
+    from utils.documents import generate_master_cv
+
+    profile = load_canonical_profile(required=True)
+    job = {"title":"Medical Coordinator",
+           "description":"Medical staff supervision, MoPH health services coordination, HMIS, quality."}
+    tailored = generate_tailored_documents(job, profile, {"facts":{}})["tailored_cv_model"]
+    master = generate_master_cv(profile)["master_cv_model"]
+    shown = {item for group in tailored["expertise"] for item in group["items"]}
+    comprehensive = {item for group in master["expertise"] for item in group["items"]}
+    assert shown <= comprehensive
+    assert len(shown) <= 12
+    assert len(tailored["expertise"]) <= 5
+    assert len(comprehensive) > len(shown)

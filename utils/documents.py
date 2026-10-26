@@ -1608,6 +1608,20 @@ def generate_tailored_documents(
     focus_rank_key = _focus_rank_key(_focus_terms(job, match_report), _job_title_terms(job))
     skills_bullets = sorted(verified_skills, key=focus_rank_key)
     expertise = build_expertise_groups(verified_skills, rank_key=focus_rank_key)
+    if (profile.get("official_cv_approval") or {}).get("owner_approved") is True:
+        # The comprehensive Master CV retains every verified skill. The
+        # employer-facing CV surfaces just the highest-priority categories
+        # instead of repeating a long inventory before/after work experience.
+        relevant = []
+        remaining = 12
+        for group in expertise[:5]:
+            selected_items = list(group["items"])[:min(3, remaining)]
+            if selected_items:
+                relevant.append({**group, "items": selected_items})
+                remaining -= len(selected_items)
+            if not remaining:
+                break
+        expertise = relevant
 
     # Languages: only explicitly verified languages (name + resolved level +
     # verified: true) may be listed as factual CV content. Unverified mentions

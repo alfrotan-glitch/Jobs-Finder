@@ -943,8 +943,13 @@ def test_each_vacancy_family_leads_with_its_own_competency_group():
         model = generate_tailored_documents(job, profile, report)["tailored_cv_model"]
         groups = model["expertise"]
         assert groups[0]["group"] == expected_lead, (description, [group["group"] for group in groups])
-        # Emphasis changes; the evidence set never does.
-        assert {item for group in groups for item in group["items"]} == verified
+        # Targeted CVs curate the most relevant verified groups; the Master
+        # CV retains the full original competency inventory.
+        shown = {item for group in groups for item in group["items"]}
+        assert shown <= verified
+        assert len(shown) <= 12
+        assert len(groups) <= 5
+        assert len(shown) >= 4
         assert len(model["experience"]) == len(profile["work_history"])
 
 

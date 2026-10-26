@@ -1,7 +1,7 @@
 """Both employer-facing formats preserve content and owner-selected visual identity."""
 
-from docx import Document
 import pdfplumber
+from docx import Document
 
 from utils.document_design import render_professional_document_artifacts
 

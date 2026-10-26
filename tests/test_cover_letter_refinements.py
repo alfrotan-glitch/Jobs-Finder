@@ -272,3 +272,13 @@ def test_medical_doctor_bullets_keep_their_established_order():
     # selected lines remain grounded and the clinical scope is represented.
     assert bullets, bullets
     assert any("clinical" in text.lower() or "HMIS" in text or "health" in text.lower() for text in bullets), bullets
+
+
+def test_supervisory_letter_preserves_supply_evidence_after_full_official_cv():
+    """A complete CV must not bury the verified supply-management scope."""
+    docs = _documents(_constructed_health_nutrition())
+    selected = [_without_attribution(text) for text in docs["selected_vacancy_fit_evidence"][:3]]
+    assert any("mobile health and nutrition teams" in text.lower() for text in selected)
+    assert any("supply" in text.lower() or "stock" in text.lower() for text in selected)
+    rendered = _bullets(docs["cover_letter"].splitlines())
+    assert any("supply" in text.lower() or "stock" in text.lower() for text in rendered)

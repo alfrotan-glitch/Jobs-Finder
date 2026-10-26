@@ -1130,18 +1130,43 @@ def _supervisory_letter_highlights(items: list[str], *, limit: int) -> list[str]
         return (not is_experience, _supervisory_tier(factual_clause), 0 if mobile_team else 1, index)
 
     ranked = sorted(enumerate(items), key=key)
-    # A long verified official CV can contain many clinically related lines.
-    # Represent each relevant supervisory dimension before repeating one:
-    # team leadership, supplies/logistics, coordination, HMIS. This avoids a
-    # letter containing six variations of supervision and omitting equally
-    # verified management/field-monitoring evidence.
+    # Source attributions carry job titles containing "nutrition" and
+    # "supervisor". Only evaluate the attested action, not those labels.
+    # Also preserve legitimate medical acronyms in the action, such as
+    # (SAM)/(TFU), instead of truncating at the first parenthesis.
+    def action(line: str) -> str:
+        return _without_attribution(line)
+
+    def category(line: str) -> int:
+        clause = action(line).lower()
+        if re.search(r"\\bsupervis(?:ed|ion|or|ing)?\\b", clause) or "coaching" in clause or "mentoring" in clause:
+            return 0
+        if any(word in clause for word in ("supply", "stock", "logistic", "procure")):
+            return 1
+        if any(word in clause for word in ("coordinat", "stakeholder", "liaison", "ministry of public health")):
+            return 2
+        if any(word in clause for word in ("monitor", "hmis", "dhis2", "report")):
+            return 3
+        return 4
+
     diversified: list[str] = []
-    for tier in range(len(_SUPERVISORY_TIER_TERMS)):
-        for _, line in ranked:
-            clause = line.split(" (", 1)[0]
-            if _supervisory_tier(clause) == tier:
-                diversified.append(line)
-                break
+    # Select the most directly relevant *role-backed* assertion in each
+    # distinct management domain before picking another supervisory line.
+    for bucket in range(4):
+        candidates = [(index, line) for index, line in ranked if category(line) == bucket]
+        if not candidates:
+            continue
+        # Prefer mobile-team supervision when explicitly documented, not
+        # inpatient line management when the vacancy is a mobile/field role.
+        if bucket == 0:
+            candidates.sort(key=lambda pair: (
+                "mobile health and nutrition teams" not in action(pair[1]).lower(),
+                "|" not in pair[1],
+                pair[0],
+            ))
+        elif bucket == 1:
+            candidates.sort(key=lambda pair: ("|" not in pair[1], pair[0]))
+        diversified.append(candidates[0][1])
     for _, line in ranked:
         if line not in diversified:
             diversified.append(line)

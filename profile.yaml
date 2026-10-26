@@ -146,20 +146,32 @@ applicant_supplied_source:
 # evidence. A verified entry may restate only what the applicant actually
 # supplied for that role.
 #
-# The duties below were rebuilt from `applicant_supplied_source` by the
-# evidence-recovery audit (docs/evidence_recovery_audit.md, section 6): a line is restored
-# only where the applicant's own supplied CV documents it, and only the
-# supported portion of a partly supported draft is kept. Draft wording that no
-# applicant evidence supports (for example infection-prevention measures, audit
-# and case review, liaison, coordination meetings, filing, or payment records)
-# stays in `needs_verification`, excluded from every generated document, until
-# the owner supplies it.
+# The earlier evidence-recovery audit covered only a brief SOURCE_CV_EXCERPT.
+# On 2026-10-26 the owner explicitly approved the complete official Word/PDF CV.
+# The verified duties below reflect that fuller primary source, including TFU
+# clinical audits and supervisory field monitoring. Previously system-authored
+# speculative expansions remain separate in needs_verification and are never
+# treated as verified unless also stated in the official CV below.
 #
 # The two ACF-International roles carry the dates the applicant supplied for
 # them (TFU May 2023 - Jul 2025, Supervisor Feb 2022 - Dec 2022), restored by
 # the same audit from the applicant's own CV. No current employer, current
 # role, or unsupported responsibility is implied by either entry, and no
 # dated precision beyond the supplied month is invented for them.
+# The owner explicitly approved the full official DOCX/PDF CV on 2026-10-26.
+# Every role-specific duty below reproduces an attested CV statement; historical
+# system-generated needs_verification drafts remain excluded from applications.
+official_cv_approval:
+  owner_approved: true
+  source: "Dr_Allah_Yar_Frotan_CV-1.docx and Dr_Allah_Yar_Frotan-CV.pdf"
+  approved_date: "2026-10-26"
+  verified_role_count: 5
+  verified_responsibility_count: 24
+professional_summary:
+  text: "Medical Doctor with over three years of frontline experience delivering health and nutrition programs across remote and complex humanitarian settings in Afghanistan, including three years with Action Against Hunger (ACF-International). Skilled in managing Therapeutic Feeding Unit (TFU) operations under WHO, IMAM, and CMAM protocols, and in supervising mobile health teams implementing BPHS/EPHS services at district level. Experienced in HMIS/DHIS2 reporting, quality improvement, medical supply coordination, and safeguarding — having served as a designated PSEA and child protection focal point. Proven track record coordinating with Ministry of Public Health authorities, provincial government offices, and NGO partners during both routine programming and emergency response, including the COVID-19 public health emergency."
+  verified: true
+  basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+
 work_history:
   - title: "TFU Medical Doctor & Safeguarding Focal Point"
     organization: "ACF-International"
@@ -167,12 +179,27 @@ work_history:
     start: "2023-05"
     end: "2025-07"
     responsibilities:
-      - text: "Delivered clinical assessment, diagnosis, treatment, and follow-up care for children with SAM applying WHO, IMAM/CMAM, and national clinical protocols"
+      - text: "Delivered clinical assessment, diagnosis, treatment, and follow-up care for children with Severe Acute Malnutrition (SAM) and associated medical complications, applying WHO, IMAM/CMAM, and national clinical protocols."
         verified: true
-        basis: "applicant-supplied CV (source-CV excerpt): TFU role duty"
-      - text: "Maintained accurate HMIS records and served as Safeguarding Focal Point supporting PSEA and child protection"
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Led day-to-day Therapeutic Feeding Unit (TFU) operations, coordinating closely with nursing staff, nutrition teams, and auxiliary personnel to ensure continuity of inpatient care."
         verified: true
-        basis: "applicant-supplied CV (source-CV excerpt): TFU role duty"
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Supervised healthcare team performance and provided technical guidance to strengthen the quality of inpatient care."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Maintained accurate HMIS records and contributed to regular health and nutrition program reporting."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Coordinated medical supply forecasting and stock monitoring to safeguard uninterrupted availability of essential medical items."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Participated in monitoring visits, case reviews, clinical audits, and quality improvement activities to strengthen service delivery standards."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Served as Safeguarding Focal Point, supporting implementation of PSEA and child protection standards and upholding confidentiality across program activities."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
     needs_verification:
       - text: "Monitored clinical progress, documented inpatient care, and prepared patients for continued outpatient follow-up through OTP services"
         verified: false
@@ -208,9 +235,27 @@ work_history:
     start: "2022-02"
     end: "2022-12"
     responsibilities:
-      - text: "Supervised mobile health and nutrition teams delivering community-based BPHS/EPHS-related services and IMAM/CMAM services"
+      - text: "Supervised mobile health and nutrition teams delivering community-based BPHS/EPHS-related services across remote and vulnerable areas."
         verified: true
-        basis: "applicant-supplied CV (source-CV excerpt): supervisor role duty and professional profile"
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Monitored field-level program activities, identified service gaps, and supported corrective actions to improve program quality and coverage."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Supported nutrition activities including SAM/MAM screening, referral systems, and Outpatient Therapeutic Program (OTP) services."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Provided coaching, mentoring, and technical support to frontline health workers."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Assisted health and nutrition program management through activity updates, reporting, and performance monitoring."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Conducted field monitoring visits and ensured adherence to organizational procedures and health protocols."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Supported coordination between field teams, health facilities, and program management."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
     needs_verification:
       - text: "Supported IMAM/CMAM implementation, including SAM/MAM case identification, OTP service linkage, and adherence to national nutrition treatment protocols"
         verified: false
@@ -248,9 +293,18 @@ work_history:
     start: "2020-10"
     end: "2020-12"
     responsibilities:
-      - text: "Coordinated with Ministry of Public Health representatives, provincial health authorities, and partner organizations"
+      - text: "Supported provincial COVID-19 emergency response activities including case investigation, contact tracing, isolation guidance, and community awareness."
         verified: true
-        basis: "applicant-supplied CV (source-CV excerpt): COVID-19 response role duty"
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Coordinated with Ministry of Public Health representatives, provincial health authorities, and partner organizations."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Supported emergency reporting, response planning, and coordination activities."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Trained community health workers and volunteers on prevention measures and referral procedures."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
     needs_verification:
       - text: "Provided clinical assessment, medical guidance, and case-management support for COVID-19 patients, in line with national protocols and infection prevention and control measures"
         verified: false
@@ -282,9 +336,15 @@ work_history:
     start: "2020-12"
     end: "2021-08"
     responsibilities:
-      - text: "Supported communication and coordination between provincial government departments, NGOs, communities, and development partners"
+      - text: "Supported communication and coordination between provincial government departments, NGOs, communities, and development partners."
         verified: true
-        basis: "applicant-supplied CV (source-CV excerpt): Governor’s Office role duty"
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Managed official correspondence, information flow, and reporting processes."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Strengthened stakeholder engagement and coordination activities at provincial level."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
     needs_verification:
       - text: "Advised the Governor’s Office on public relations and communications and prepared official communications and public information materials"
         verified: false
@@ -306,9 +366,15 @@ work_history:
     start: "2019-05"
     end: "2019-09"
     responsibilities:
-      - text: "Supported administrative operations, procurement processes, financial documentation, and program logistics"
+      - text: "Supported administrative operations, procurement processes, financial documentation, and program logistics."
         verified: true
-        basis: "applicant-supplied CV (source-CV excerpt): TBT role duty"
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Maintained administrative records and supported organizational reporting requirements."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
+      - text: "Assisted project implementation through operational and coordination support."
+        verified: true
+        basis: "Owner-approved official CV (PDF/DOCX, supplied 2026-10-26)"
     needs_verification:
       - text: "Supported day-to-day administrative operations, office documentation, and filing for programme activities"
         verified: false
@@ -356,19 +422,14 @@ skills:
     # spelled out because that is how the applicant writes it.
     - name: "Provincial & Ministry of Public Health Stakeholder Coordination"
       verified: true
-    # Held: "clinical audit" and "quality improvement" appear nowhere in the
-    # applicant-supplied CV, its competencies, or its certificates; the wording
-    # originated in the system-authored draft vocabulary. Kept out of every
-    # generated document until the applicant supplies it.
+    # Explicitly attested in the complete owner-approved official CV, TFU role.
     - name: "Clinical audit/quality improvement"
-      verified: false
+      verified: true
     - name: "Emergency/outbreak/COVID response"
       verified: true
-    # Held: the applicant supplied HMIS/DHIS2 reporting and data quality, and
-    # three years of combined field experience, but no monitoring duty. Held
-    # rather than inferred from the profession.
+    # Explicitly attested in the complete owner-approved official CV, supervisory role.
     - name: "Field monitoring/reporting"
-      verified: false
+      verified: true
     # Consolidated: the standalone "Stakeholder coordination" entry duplicated
     # the applicant's own "Provincial & Ministry of Public Health Stakeholder
     # Coordination", so it is not listed as a separate competency.

@@ -128,3 +128,30 @@ test("saved packages expose actual regeneration instead of stale PDF downloads o
   const applied = {...job, status:"APPLIED_MANUALLY"};
   assert.doesNotMatch(get("renderPackage")(applied), /Regenerate CV, cover letter/);
 });
+
+
+test("outdated employer CVs show regeneration required and hide old downloads", () => {
+  const job = {
+    id: "old-medical-coordinator",
+    title: "Medical Coordinator",
+    metadata: {application_method: "EMAIL", apply_email: "recruiting@example.org"},
+    package_freshness: {current: false, reason: "old_cv_generator"},
+    package: {
+      package_status: "READY_FOR_REVIEW", route_type: "email", missing_items: [],
+      email_draft: {to: "recruiting@example.org", body: "Old text"}
+    },
+    documents: {
+      generated_paths: {
+        tailored_cv: {pdf: "documents/applications/old.pdf"},
+        cover_letter: {pdf: "documents/applications/old-letter.pdf"},
+      },
+    },
+  };
+  assert.equal(get("emailDraftReady")(job), false);
+  const html = get("renderPackage")(job);
+  assert.match(html, /REGENERATION REQUIRED/);
+  assert.match(html, /OUTDATED DOCUMENTS/);
+  assert.match(html, /Regenerate CV, cover letter & email/);
+  assert.doesNotMatch(html, /Download PDF/);
+  assert.doesNotMatch(html, /data-action="apply-email"/);
+});

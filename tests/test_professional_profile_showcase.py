@@ -24,7 +24,6 @@ def test_profile_uses_real_verified_master_cv_summary_when_no_override():
 
 def test_unverified_owner_summary_never_enters_profile_showcase():
     profile = load_canonical_profile(required=True)
-    baseline = _profile_details(profile)["professional_summary"]
     draft = deepcopy(profile)
     draft["professional_summary"] = {
         "text": "UNVERIFIED PRIVATE DRAFT: claimed responsibility for everything",

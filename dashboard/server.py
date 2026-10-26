@@ -51,6 +51,11 @@ from utils.email_drafts import (
 )
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
 from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
+from utils.private_references import (
+    PrivateReferenceError,
+    read_private_reference_editor,
+    save_private_reference_editor,
+)
 from utils.profile import (
     PERSONAL_VERIFICATION_FIELDS,
     CanonicalProfileError,
@@ -64,11 +69,6 @@ from utils.profile_builder import (
     candidate_responsibilities_from_cv,
 )
 from utils.profile_editor import ProfileEditError, editor_snapshot, update_profile
-from utils.private_references import (
-    PrivateReferenceError,
-    read_private_reference_editor,
-    save_private_reference_editor,
-)
 from utils.recommendations import evaluate_scan_jobs
 from utils.resume_parser import extract_resume_text
 from utils.scan_guard import ScanAlreadyRunning, exclusive_scan

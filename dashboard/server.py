@@ -719,18 +719,19 @@ async def api_import_cv(file: UploadFile = File(...)):
 
 @app.get("/api/settings")
 def api_settings():
-    """Truthful, read-only view of current system configuration.
-
-    Nothing here is an editable toggle: these values reflect the actual
-    current discovery budget and active sources. If a value is not actually
-    configurable from the UI, it is presented as current configuration, not
-    as a control.
-    """
+    """Read current source configuration, now editable in the profile editor."""
     profile = _runtime_profile(False)
     acbar_cfg = ((profile.get("job_sources") or {}).get("acbar") or {}) if isinstance(profile, dict) else {}
     reliefweb_cfg = ((profile.get("job_sources") or {}).get("reliefweb") or {}) if isinstance(profile, dict) else {}
+    sources = source_registry_for_settings()
+    selected = (profile.get("sources") or {}).get("enabled") or [
+        item["id"] for item in sources if item["active"]
+    ]
+    disabled = set((profile.get("sources") or {}).get("disabled") or [])
+    for item in sources:
+        item["active"] = item["id"] in selected and item["id"] not in disabled
     return {
-        "sources": source_registry_for_settings(),
+        "sources": sources,
         "acbar": {
             "max_detail_concurrency": acbar_cfg.get("max_detail_concurrency", ACBAR_DEFAULT_DETAIL_CONCURRENCY),
             "timeout_seconds": acbar_cfg.get("timeout_seconds", ACBAR_DEFAULT_TIMEOUT_SECONDS),

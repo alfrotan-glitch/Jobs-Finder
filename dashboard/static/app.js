@@ -622,6 +622,21 @@ function renderProfileEditor() {
       <textarea id="editorSummary" maxlength="2400" rows="5">${escapeHtml(editor.professional_summary || "")}</textarea></label>
     <label class="editorField"><span>Preferred job titles (one per line)</span>
       <textarea id="editorRoles" maxlength="3000" rows="3">${escapeHtml((editor.roles || []).join("\n"))}</textarea></label>
+    <label class="editorField"><span>Preferred locations (one per line; new locations must be confirmed)</span>
+      <textarea id="editorLocations" maxlength="2000" rows="3">${escapeHtml((editor.locations || []).join("\n"))}</textarea></label>
+    <div class="profileEditorGrid">
+      ${(editor.sources.available || []).map((source) => `
+        <label class="editorConfirm"><input type="checkbox" data-editor-source="${escapeAttr(source)}" ${(editor.sources.enabled || []).includes(source) ? "checked" : ""}>
+          Search ${escapeHtml(source === "acbar" ? "ACBAR" : source === "reliefweb" ? "ReliefWeb" : source)}</label>`).join("")}
+      <label class="editorField"><span>ACBAR parallel detail requests (1–10)</span>
+        <input id="editorAcbarConcurrency" type="number" min="1" max="10" value="${escapeAttr(editor.sources.acbar_concurrency)}"></label>
+      <label class="editorField"><span>ACBAR request timeout (5–90 sec)</span>
+        <input id="editorAcbarTimeout" type="number" min="5" max="90" value="${escapeAttr(editor.sources.acbar_timeout)}"></label>
+      <label class="editorField"><span>ReliefWeb visible result limit (1–100)</span>
+        <input id="editorReliefwebLimit" type="number" min="1" max="100" value="${escapeAttr(editor.sources.reliefweb_limit)}"></label>
+      <label class="editorField"><span>ReliefWeb request timeout (5–90 sec)</span>
+        <input id="editorReliefwebTimeout" type="number" min="5" max="90" value="${escapeAttr(editor.sources.reliefweb_timeout)}"></label>
+    </div>
     <div class="profileEditorGrid">
       <label class="editorField"><span>CV page density</span>
         <select id="editorCvLayout"><option value="comfortable" ${editor.documents.cv_layout !== "compact" ? "selected" : ""}>Editorial — comfortable</option>
@@ -654,7 +669,21 @@ async function saveProfileEditor() {
     changes.push({action: "summary", value: summary, confirmation: confirmed ? OWNER_CONFIRMATION : ""});
   }
   const roles = ($("editorRoles")?.value || "").split(/\r?\n/).map((v) => v.trim()).filter(Boolean);
-  if (JSON.stringify(roles) !== JSON.stringify(editor.roles)) changes.push({action: "preferences", roles});
+  const locations = ($("editorLocations")?.value || "").split(/\r?\n/).map((v) => v.trim()).filter(Boolean);
+  const enabled_sources = [...document.querySelectorAll("[data-editor-source]:checked")].map((input) => input.dataset.editorSource);
+  const sourceSettings = {
+    acbar_concurrency: Number($("editorAcbarConcurrency").value),
+    acbar_timeout: Number($("editorAcbarTimeout").value),
+    reliefweb_limit: Number($("editorReliefwebLimit").value),
+    reliefweb_timeout: Number($("editorReliefwebTimeout").value),
+  };
+  if (JSON.stringify(roles) !== JSON.stringify(editor.roles) ||
+      JSON.stringify(locations) !== JSON.stringify(editor.locations) ||
+      JSON.stringify(enabled_sources) !== JSON.stringify(editor.sources.enabled) ||
+      Object.entries(sourceSettings).some(([key, value]) => value !== Number(editor.sources[key]))) {
+    changes.push({action:"search", roles, locations, enabled_sources, ...sourceSettings,
+      confirmation: confirmed ? OWNER_CONFIRMATION : ""});
+  }
   const cv_layout = $("editorCvLayout").value;
   const letter_depth = $("editorLetterDepth").value;
   if (cv_layout !== editor.documents.cv_layout || letter_depth !== editor.documents.letter_depth) {
@@ -760,7 +789,7 @@ function renderSettings() {
     ${renderSimpleList(summary.roles || [])}`;
   $("settingsApplications").innerHTML = `
     <p>CV and cover letters are generated for review only.</p>
-    <p class="sectionHelp">No email or form is submitted automatically.</p>`;
+    <p class="sectionHelp">Edit preferred roles, locations, scan limits and document presets in <strong>My Profile → Edit & save</strong>. No email or form is submitted automatically.</p>`;
   $("settingsSources").innerHTML = renderSimpleList((settings.sources || []).map((source) => `${source.name} — ${source.active ? "Enabled" : "Disabled"}`));
   $("settingsPrivacy").innerHTML = `
     <p><strong>Check GitHub privacy before adding personal details.</strong> Your canonical profile is Git-tracked. If the repository is Public, profile.yaml and its Git history may be visible to anyone.</p>

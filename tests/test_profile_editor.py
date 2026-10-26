@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from dashboard import server
 from utils import profile as profile_repository
-from utils.profile_editor import CONFIRMATION, apply_editor_change, editor_snapshot
+from utils.profile_editor import CONFIRMATION
 
 
 @pytest.fixture
@@ -154,3 +154,46 @@ def test_shipped_editor_is_wired_into_real_html_and_js():
     assert "/api/profile/editor" in script
     assert 'if (action === "save-profile-editor")' in script
     assert "function renderProfileEditor()" in script
+
+
+def test_search_configuration_is_editable_and_bounded(owner):
+    client, path = owner
+    patch = {
+        "action": "search",
+        "roles": ["Nutrition Specialist", "Medical Officer"],
+        "locations": ["Kabul", "Bamyan"],
+        "enabled_sources": ["reliefweb"],
+        "acbar_concurrency": 3,
+        "acbar_timeout": 35,
+        "reliefweb_limit": 45,
+        "reliefweb_timeout": 30,
+    }
+    response = _save(client, _get(client)["version"], patch)
+    assert response.status_code == 200
+    saved = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert saved["sources"]["enabled"] == ["reliefweb"]
+    assert saved["sources"]["disabled"] == ["acbar"]
+    assert saved["preferences"]["roles"] == ["Nutrition Specialist", "Medical Officer"]
+    assert saved["preferences"]["locations"][-1]["verified"] is False
+    assert saved["job_sources"]["reliefweb"]["limit"] == 45
+    current = client.get("/api/settings").json()
+    assert next(src for src in current["sources"] if src["id"] == "acbar")["active"] is False
+    assert next(src for src in current["sources"] if src["id"] == "reliefweb")["active"] is True
+
+
+def test_search_setting_invalid_patch_does_not_overwrite_canonical_profile(owner):
+    client, path = owner
+    previous = path.read_bytes()
+    patch = {
+        "action": "search",
+        "roles": ["Doctor"],
+        "locations": ["Kabul"],
+        "enabled_sources": ["reliefweb"],
+        "acbar_concurrency": 500,
+        "acbar_timeout": 25,
+        "reliefweb_limit": 20,
+        "reliefweb_timeout": 25,
+    }
+    response = _save(client, _get(client)["version"], patch)
+    assert response.status_code == 409
+    assert path.read_bytes() == previous

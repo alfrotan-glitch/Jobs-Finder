@@ -531,3 +531,23 @@ The scanner accepts a stated Gregorian closing date only when the vacancy
 actually supplies its year. It does **not** turn a yearless "30 September"
 into "30 September next year" when a page is stale. Those cases remain
 unverified and should be checked on the employer's current official page.
+
+## Editing profile and search settings in Windows
+
+Open **My Profile → Edit & save your professional profile** to update name,
+contact information, professional title and summary, target roles, preferred
+locations, enabled sources, scan timeouts/concurrency, CV layout, and cover
+letter length. You can review, add, edit or remove the verified duty lines
+under each work history; source-free draft duties only enter employer-facing
+documents after explicit owner confirmation. Saving updates the one canonical
+`profile.yaml` and future CVs, never a second hidden draft or the existing
+packages. Edits automatically revoke old evidence flags for changed factual
+fields unless the owner re-confirms them. This local profile is Git-tracked;
+do not push personal changes to a public GitHub repository.
+
+The professionally written older reference CV provides useful factual
+candidates (TFU/SAM clinical care, field supervision, HMIS, safeguarding,
+COVID-19 response and stakeholder coordination), but source statements and
+references must be owner-confirmed before use. The bundled PDF/DOCX renderer
+remains ATS-friendly single-column; visual designs should never invent
+achievement figures or republish private referee contacts.

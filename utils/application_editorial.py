@@ -92,9 +92,9 @@ def rank_attested_statements(
 def target_verified_summary(summary: str, vacancy_title: str, description: str = "") -> str:
     """Focus a long *owner-verified* CV paragraph without adding a single claim.
 
-    Keep the first identity sentence and select up to two more original
-    sentences ranked by the target role. Compact or owner-written short
-    summaries pass through unchanged. Never summarize by paraphrasing.
+    Keep the first identity sentence and rank all remaining original
+    attested sentences for the target role. No factual scope is lost just
+    to satisfy arbitrary page-count targets. Never paraphrase.
     """
     original = str(summary or "").strip()
     if len(original) <= 270 or not vacancy_title:
@@ -108,7 +108,7 @@ def target_verified_summary(summary: str, vacancy_title: str, description: str =
         return original
     # Preserve the applicant's identity/experience lead unchanged.
     identity = sentences[0]
-    selected = rank_attested_statements(sentences[1:], vacancy_title, description)[:2]
+    selected = rank_attested_statements(sentences[1:], vacancy_title, description)
     return " ".join([identity, *selected])
 
 

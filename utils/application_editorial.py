@@ -12,35 +12,35 @@ import re
 # "nutrition" from occurring inside "malnutrition".
 _ROLE_SIGNALS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     (
-        re.compile(r"\b(?:coordinator|coordination|manager|management|director|programme officer|program officer)\b", re.I),
+        re.compile(r"\b(?:coordinator|coordination|manager|management|director|programme officer|program officer)\b", re.IGNORECASE),
         ("coordinat", "stakeholder", "authority", "ministry", "provincial", "supervis", "monitor",
          "report", "program", "programme", "team", "implementation", "management"),
     ),
     (
-        re.compile(r"\b(?:supervisor|supervision|team lead|team leader|head)\b", re.I),
+        re.compile(r"\b(?:supervisor|supervision|team lead|team leader|head)\b", re.IGNORECASE),
         ("supervis", "team", "staff", "coach", "mentor", "capacity", "operat",
          "coordinat", "quality", "monitor", "supply"),
     ),
     (
-        re.compile(r"\b(?:tfu|sam|nutrition|feeding|imam|cmam|tsfp|otp)\b", re.I),
+        re.compile(r"\b(?:tfu|sam|nutrition|feeding|imam|cmam|tsfp|otp)\b", re.IGNORECASE),
         ("tfu", "sam", "nutrition", "feeding", "therapeutic", "clinical", "imam",
          "cmam", "otp", "stock", "supply", "referral"),
     ),
     (
-        re.compile(r"\b(?:physician|medical doctor|clinician|clinical|medical officer|doctor)\b", re.I),
+        re.compile(r"\b(?:physician|medical doctor|clinician|clinical|medical officer|doctor)\b", re.IGNORECASE),
         ("clinical", "patient", "diagnos", "treatment", "referral", "medical",
          "inpatient", "health", "hmis"),
     ),
     (
-        re.compile(r"\b(?:safeguarding|psea|protection|child protection)\b", re.I),
+        re.compile(r"\b(?:safeguarding|psea|protection|child protection)\b", re.IGNORECASE),
         ("safeguarding", "psea", "protection", "confidential", "policy", "child"),
     ),
     (
-        re.compile(r"\b(?:emergency|outbreak|covid|response)\b", re.I),
+        re.compile(r"\b(?:emergency|outbreak|covid|response)\b", re.IGNORECASE),
         ("emergency", "outbreak", "covid", "response", "contact trac", "provincial", "health"),
     ),
     (
-        re.compile(r"\b(?:administration|administrative|finance|procurement|logistics)\b", re.I),
+        re.compile(r"\b(?:administration|administrative|finance|procurement|logistics)\b", re.IGNORECASE),
         ("administ", "finance", "procure", "record", "report", "logistic", "stock"),
     ),
 )

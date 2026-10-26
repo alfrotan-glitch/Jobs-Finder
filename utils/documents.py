@@ -42,6 +42,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
+from utils.application_editorial import (
+    concise_attested_highlights,
+    factual_relevance_score,
+    rank_attested_statements,
+    target_verified_summary,
+)
 from utils.medical_matcher import MET, NEEDS_VERIFICATION, NOT_ELIGIBLE_STATUS, NOT_MET
 from utils.paths import project_path
 from utils.profile import (
@@ -382,6 +388,11 @@ def _entry_bullets_for_job(
     if not bullets:
         return []
     ranked = _rank_strings_for_job(bullets, job, match_report, limit=len(bullets))
+    # A head/coordinator/clinician sees the duties most directly applicable
+    # to that position first. Preserve the full verified set (no omissions).
+    ranked = rank_attested_statements(
+        ranked, str(job.get("title") or ""), str(job.get("description") or "")
+    )
     ordered: list[str] = []
     for bullet in ranked + bullets:
         if bullet not in ordered:
@@ -1625,6 +1636,12 @@ def generate_tailored_documents(
         lead_scopes.append("safeguarding focal-point responsibilities")
     if lead_scopes and not _verified_profile_summary(profile):
         summary = "Relevant experience includes " + _join_and(lead_scopes[:3]) + ". " + summary
+    elif _verified_profile_summary(profile):
+        # Owner's summary is already verified; reorder/select original factual
+        # sentences for each vacancy, never paraphrase or create credentials.
+        summary = target_verified_summary(
+            summary, str(job.get("title") or ""), str(job.get("description") or "")
+        )
 
     canonical_cv_model = {
         "name": name,
@@ -1719,6 +1736,14 @@ def generate_tailored_documents(
     relevant_roles = sorted(
         enumerate(ordered_work),
         key=lambda pair: (
+            -factual_relevance_score(
+                " ".join([
+                    str(pair[1].get("role") or ""),
+                    " ".join(str(x) for x in pair[1].get("bullets") or []),
+                ]),
+                str(job.get("title") or ""),
+                str(job.get("description") or ""),
+            ),
             -len(_focus_term_hits(
                 " ".join([
                     str(pair[1].get("role") or ""),
@@ -1730,8 +1755,10 @@ def generate_tailored_documents(
         ),
     )
     letter_depth = (profile.get("document_preferences") or {}).get("letter_depth", "detailed")
-    max_roles = 3 if letter_depth == "detailed" else 2
-    max_duties_per_role = 3 if letter_depth == "detailed" else 2
+    # Employer-facing letters are selective, not a second three-page CV.
+    # All supporting evidence remains available in the attached full CV.
+    max_roles = 2 if letter_depth == "detailed" else 1
+    max_duties_per_role = 2 if letter_depth == "detailed" else 1
     detailed_roles = 0
     for _, role_info in relevant_roles:
         role_name = str(role_info.get("role") or "").strip()
@@ -2036,29 +2063,39 @@ def _email_body(
     background_sentence: str = "",
     signature_title: str = "",
 ) -> str:
+    """Concise, factual employer correspondence rather than a duplicate letter.
+
+    A CV-only application carries two verified proof points; when the
+    vacancy also asks for a separate cover letter, only one is shown here.
+    Full work-history evidence remains in the attached CV.
+    """
     organization = _known_organization(company)
     position = f"the {title} position" if title else "the advertised position"
     where = f" in {location}" if location else ""
     at_org = f" at {organization}" if organization else ""
-    intro = f"I am writing to apply for {position}{where}{at_org}."
+    intro = f"I am applying for {position}{where}{at_org}."
     lines = ["Dear Hiring Committee,", "", intro]
     if background_sentence:
         lines.extend(["", background_sentence])
-    if highlights:
-        lines.extend(["", "Relevant experience I would bring to this role includes:"])
-        lines.extend(f"- {item}" for item in highlights)
-    else:
-        lines.extend(["", "I would welcome consideration for this role based on the qualifications described in my CV."])
-    attachment_sentence = "I have prepared my CV for your review"
-    if include_cover_letter:
-        attachment_sentence += ", along with a separate cover letter"
-    attachment_sentence += "."
+
+    selected = concise_attested_highlights(
+        highlights, has_cover_letter=include_cover_letter
+    )
+    if selected:
+        lines.extend([
+            "",
+            "A relevant example of my experience is:" if include_cover_letter
+            else "Relevant experience from my verified work history includes:",
+        ])
+        lines.extend(f"- {item.rstrip('.')}" for item in selected)
+
+    documents = "my CV and cover letter" if include_cover_letter else "my CV"
     lines.extend([
         "",
-        attachment_sentence,
-        "Thank you for considering my application. I would welcome the opportunity to discuss my suitability for the position.",
+        f"I have prepared {documents} for your consideration.",
+        "Thank you for reviewing my application.",
         "",
-        "Sincerely,",
+        "Kind regards,",
         name,
     ])
     if signature_title:

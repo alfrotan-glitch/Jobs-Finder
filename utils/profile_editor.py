@@ -86,6 +86,15 @@ def apply_editor_change(profile: dict[str, Any], patch: dict[str, Any]) -> dict[
     if not isinstance(patch, dict):
         raise ProfileEditError("An editor change must be an object.")
     action = patch.get("action")
+    if action == "bulk":
+        changes = patch.get("changes")
+        if not isinstance(changes, list) or not 1 <= len(changes) <= 20:
+            raise ProfileEditError("Save between 1 and 20 validated fields per request.")
+        for change in changes:
+            if not isinstance(change, dict) or change.get("action") == "bulk":
+                raise ProfileEditError("Nested bulk edits are not supported.")
+            apply_editor_change(profile, change)
+        return profile
     confirmed = patch.get("confirmation") == CONFIRMATION
     if action == "personal":
         key = patch.get("field")

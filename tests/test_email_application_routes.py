@@ -1,6 +1,8 @@
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from utils.documents import prepare_application_bundle
 from utils.medical_matcher import match_job_against_profile
 from utils.medical_requirements import canonical_source_fields, has_actionable_source

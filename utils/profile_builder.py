@@ -142,6 +142,6 @@ def build_profile_from_cv_file(cv_path: str) -> dict[str, Any]:
     text = extract_resume_text(cv_path)
     if not text:
         path = Path(cv_path)
-        if path.exists():
+        if path.exists() and path.suffix.lower() not in {".pdf", ".docx"}:
             text = path.read_text(encoding="utf-8", errors="replace")
     return build_profile_from_cv_text(text)

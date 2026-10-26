@@ -690,11 +690,11 @@ async def api_import_cv(file: UploadFile = File(...)):
     backup, a draft profile, ``resumes/``, or a resume cache.  Consequently an
     imported sample CV can never become the production applicant.
     """
-    allowed_suffixes = {".pdf", ".txt", ".md", ".markdown", ".rst", ".csv"}
+    allowed_suffixes = {".pdf", ".docx", ".txt", ".md", ".markdown", ".rst", ".csv"}
     suffix = Path(file.filename or "cv.txt").suffix.lower() or ".txt"
     try:
         if suffix not in allowed_suffixes:
-            raise HTTPException(status_code=400, detail="Unsupported file type. Upload a PDF or plain-text CV.")
+            raise HTTPException(status_code=400, detail="Unsupported CV type. Upload Word (.docx), PDF or plain text.")
         content = await _read_bounded_cv_upload(file)
     finally:
         # Starlette normally cleans this up after the request, but closing it
@@ -707,7 +707,10 @@ async def api_import_cv(file: UploadFile = File(...)):
         uploaded_path.write_bytes(content)
         # An empty path is intentional: no temporary upload location can be
         # retained in a profile-shaped preview or canonical applicant record.
-        preview = build_profile_from_cv_file(str(uploaded_path))
+        try:
+            preview = build_profile_from_cv_file(str(uploaded_path))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return {
         "ok": True,

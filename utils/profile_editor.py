@@ -71,6 +71,23 @@ def editor_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
     job_sources = profile.get("job_sources") or {}
     acbar = job_sources.get("acbar") or {}
     reliefweb = job_sources.get("reliefweb") or {}
+    def safe_records(section: str, fields: tuple[str, ...]) -> list[dict[str, Any]]:
+        return [
+            {"index": index, "verified": item.get("verified") is True,
+             **{key: item.get(key) or "" for key in fields}}
+            for index, item in enumerate(profile.get(section) or [])
+            if isinstance(item, dict)
+        ]
+    skill_records = []
+    for group, items in (profile.get("skills") or {}).items():
+        if isinstance(items, list):
+            skill_records.extend(
+                {"group": group, "index": index, "name": item.get("name") or "",
+                 "verified": item.get("verified") is True}
+                for index, item in enumerate(items) if isinstance(item, dict)
+            )
+    registration = profile.get("license_registration") or {}
+    exam = profile.get("medical_exit_exam") or {}
     return {
         "version": canonical_profile_fingerprint(profile),
         "personal": {key: personal.get(key) or "" for key in IDENTITY_FIELDS},
@@ -92,6 +109,13 @@ def editor_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
             "reliefweb_timeout": reliefweb.get("timeout_seconds", 25),
         },
         "experience": experience,
+        "education": safe_records("medical_education", ("degree", "field", "institution", "start", "end")),
+        "certificates": safe_records("certificates", ("name",)),
+        "languages": safe_records("languages", ("name", "level")),
+        "skills": skill_records,
+        "registration": {key: registration.get(key) or "" for key in
+                         ("status", "authority", "number", "issue_date", "expiry_date")},
+        "exam": {"status": exam.get("status") or ""},
         "documents": {
             "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
             "cv_style": (profile.get("document_preferences") or {}).get("cv_style", "clinical"),
@@ -206,6 +230,58 @@ def apply_editor_change(profile: dict[str, Any], patch: dict[str, Any]) -> dict[
         if layout not in DOCUMENT_LAYOUTS or depth not in LETTER_DEPTHS or style not in CV_STYLES:
             raise ProfileEditError("Select a supported CV layout and letter depth.")
         profile["document_preferences"] = {"cv_layout": layout, "letter_depth": depth, "cv_style": style}
+        return profile
+    if action == "record":
+        section = patch.get("section")
+        key = patch.get("field")
+        index = patch.get("index")
+        create = patch.get("create") is True
+        allowed = {
+            "medical_education": {"degree", "field", "institution", "start", "end"},
+            "work_history": {"title", "organization", "location", "start", "end"},
+            "languages": {"name", "level"},
+            "certificates": {"name"},
+            "skills": {"name"},
+            "license_registration": {"status", "authority", "number", "issue_date", "expiry_date"},
+            "medical_exit_exam": {"status"},
+        }
+        if section not in allowed or key not in allowed[section]:
+            raise ProfileEditError("This profile record or field is not editable.")
+        value = _text(patch.get("value"), maximum=250, allow_empty=not create)
+        if section in {"license_registration", "medical_exit_exam"}:
+            if create or index is not None:
+                raise ProfileEditError("This credential is a single profile record.")
+            record = profile.setdefault(section, {})
+        elif section == "skills":
+            group = patch.get("group")
+            skills = profile.get("skills") or {}
+            if not isinstance(group, str) or group not in skills or not isinstance(skills[group], list):
+                raise ProfileEditError("Select a supported skill category.")
+            records = skills[group]
+            if create:
+                records.append({"name": value, "verified": confirmed})
+                return profile
+            if type(index) is not int or not 0 <= index < len(records):
+                raise ProfileEditError("Invalid skill index.")
+            record = records[index]
+        else:
+            records = profile.setdefault(section, [])
+            if not isinstance(records, list):
+                raise ProfileEditError("Unsupported record list.")
+            if create:
+                if len(records) >= 100:
+                    raise ProfileEditError("This list has reached its safe maximum.")
+                record = {key: value, "verified": confirmed}
+                records.append(record)
+                return profile
+            if type(index) is not int or not 0 <= index < len(records):
+                raise ProfileEditError("Invalid record index.")
+            record = records[index]
+        if not isinstance(record, dict):
+            raise ProfileEditError("Unsupported profile record.")
+        if str(record.get(key) or "") != value:
+            record[key] = value
+            record["verified"] = bool(confirmed and value and not is_unresolved_value(value))
         return profile
     if action == "responsibility":
         idx = patch.get("role_index")

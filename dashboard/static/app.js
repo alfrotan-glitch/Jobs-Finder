@@ -701,7 +701,8 @@ function jobById(id) {
   return (String(state.selectedJob?.id) === String(id) ? state.selectedJob : null)
     || state.jobs.find((job) => String(job.id) === String(id))
     || state.applications.find((job) => String(job.id) === String(id))
-    || state.recommended.find((job) => String(job.id) === String(id));
+    || state.recommended.find((job) => String(job.id) === String(id))
+    || null;
 }
 
 async function openJobById(id, mode = "details") {

@@ -734,9 +734,10 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> dict[str, float]:
     applies the same chosen scale to DOCX. No facts, font sizes or ordering
     change, and no fixed page count is imposed.
     """
-    scale = CV_PDF_LAYOUTS["comfortable"]
+    preferred = model.get("cv_layout", "comfortable")
+    scale = CV_PDF_LAYOUTS.get(preferred, CV_PDF_LAYOUTS["comfortable"])
     pages = _build_cv_pdf(model, path, scale)
-    if pages > 1 and _pdf_last_page_fill_ratio(path) < 0.4:
+    if preferred != "compact" and pages > 1 and _pdf_last_page_fill_ratio(path) < 0.4:
         compact_pages = _build_cv_pdf(model, path, CV_PDF_LAYOUTS["compact"])
         if compact_pages < pages:
             return CV_PDF_LAYOUTS["compact"]

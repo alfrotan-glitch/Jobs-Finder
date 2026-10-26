@@ -60,6 +60,7 @@ from utils.profile import (
     save_canonical_profile,
 )
 from utils.profile_builder import build_profile_from_cv_file
+from utils.profile_editor import ProfileEditError, editor_snapshot, update_profile
 from utils.recommendations import evaluate_scan_jobs
 from utils.scan_guard import ScanAlreadyRunning, exclusive_scan
 from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
@@ -536,6 +537,27 @@ def api_generated_file(path: str, download: bool = False):
     # by browsers); a user may explicitly download any of the three formats.
     disposition = "attachment" if download or resolved.suffix.lower() == ".docx" else "inline"
     return FileResponse(str(resolved), filename=resolved.name, content_disposition_type=disposition)
+
+
+@app.get("/api/profile/editor")
+def api_profile_editor():
+    """Owner-facing editable subset; no raw private YAML or unverified auto-import."""
+    return editor_snapshot(_runtime_profile(True))
+
+
+@app.post("/api/profile/editor")
+async def api_save_profile_editor(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Provide a JSON profile edit.") from None
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="A profile edit must be an object.")
+    try:
+        updated = update_profile(payload)
+    except ProfileEditError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"ok": True, "editor": updated, "message": "Saved in the canonical profile; future CVs use these changes."}
 
 
 @app.get("/api/profile/review")

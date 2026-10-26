@@ -1404,6 +1404,7 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
         "certifications": _safe_bullets(certs_verified),
         "languages": _language_pairs(languages),
         "references": _cv_references_section(),
+        "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
     }
     warnings: list[str] = []
     undated = [item["role"] for item in experience if not item.get("dates")]
@@ -1584,6 +1585,7 @@ def generate_tailored_documents(
         "certifications": certs,
         "languages": _language_pairs(languages),
         "references": _cv_references_section(),
+        "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
     }
     cv_text = _render_canonical_cv_text(canonical_cv_model)
 
@@ -1670,6 +1672,9 @@ def generate_tailored_documents(
             pair[0],
         ),
     )
+    letter_depth = (profile.get("document_preferences") or {}).get("letter_depth", "detailed")
+    max_roles = 3 if letter_depth == "detailed" else 2
+    max_duties_per_role = 3 if letter_depth == "detailed" else 2
     detailed_roles = 0
     for _, role_info in relevant_roles:
         role_name = str(role_info.get("role") or "").strip()
@@ -1692,10 +1697,10 @@ def generate_tailored_documents(
             opening += f" with {employer}"
         # Preserve each duty's exact substantiated wording; do not transform
         # a general competency into a claim of managerial achievement.
-        narrative = opening + ", responsibilities included " + "; ".join(verified_duties[:2]) + "."
+        narrative = opening + ", responsibilities included " + "; ".join(verified_duties[:max_duties_per_role]) + "."
         cover_lines.append(narrative)
         detailed_roles += 1
-        if detailed_roles == 2:
+        if detailed_roles == max_roles:
             break
     if vacancy_highlights:
         strongest = [_without_attribution(item) for item in vacancy_highlights[:3]]

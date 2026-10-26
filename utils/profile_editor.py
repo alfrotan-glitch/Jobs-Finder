@@ -8,13 +8,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from utils.source_registry import SOURCE_REGISTRY
 from utils.profile import (
     canonical_profile_fingerprint,
     is_unresolved_value,
     load_canonical_profile,
     save_canonical_profile,
 )
+from utils.source_registry import SOURCE_REGISTRY
 
 IDENTITY_FIELDS = ("first_name", "last_name", "email", "phone", "location", "professional_title")
 CONFIRMATION = "I confirm this is true and based on my own records"

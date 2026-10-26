@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import ipaddress
+import json
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -588,6 +589,32 @@ def api_private_reference_editor():
         return read_private_reference_editor()
     except PrivateReferenceError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/profile/references/export")
+def api_private_reference_export():
+    """Explicit user-only download; never adds referee PII to normal backups.
+
+    This is a separate plaintext archive because the application's standard
+    backup deliberately excludes private contacts, and a later Windows
+    reinstall must not silently discard those user-controlled details.
+    """
+    try:
+        snapshot = read_private_reference_editor()
+    except PrivateReferenceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    data = {"format": "jobs-finder-private-references", "version": 1,
+            "entries": snapshot["entries"]}
+    body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": 'attachment; filename="Jobs-Finder-Private-References.json"',
+            "Cache-Control": "no-store, max-age=0, private",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @app.post("/api/profile/references")

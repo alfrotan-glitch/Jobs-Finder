@@ -104,3 +104,10 @@ test("one preparation action is offered per vacancy and incompatible roles are b
   assert.doesNotMatch(get("jobCard")(blocked), /data-action="mark-applied"/);
   assert.doesNotMatch(get("jobCard")(blocked), /data-action="prepare-job"/);
 });
+
+
+test("private-reference backup link remains separate from public profile export", () => {
+  assert.match(script, /\/api\/profile\/references\/export/);
+  assert.match(script, /Download private references backup/);
+  assert.match(script, /main ZIP backup and GitHub/);
+});

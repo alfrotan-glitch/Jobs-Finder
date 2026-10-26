@@ -616,12 +616,13 @@ function renderPrivateReferences() {
     <div class="cardActions">
       <button class="secondary" data-action="add-private-reference">Add professional reference</button>
       <button class="primary subtle" data-action="save-private-references">Save references locally</button>
+      <a class="secondary smallButton" href="/api/profile/references/export" download="Jobs-Finder-Private-References.json">Download private references backup</a>
     </div>
     <div class="importRow"><label class="editorField"><span>Import owner-approved official references (JSON)</span>
       <input id="privateReferencesImport" type="file" accept=".json,application/json"></label>
       <button class="secondary" data-action="import-private-references">Import contacts into private store</button>
     </div>
-    <p class="sectionHelp">Private references are excluded from ordinary profile exports and GitHub commits. Keep a separate confidential backup of these contacts.</p>`;
+    <p class="sectionHelp">Private references are excluded from the main ZIP backup and GitHub. Download the separate JSON backup after saving changes, and store it privately on a second drive. The JSON is not encrypted; anyone holding it can read the contact details. Import it here after restoring Jobs-Finder.</p>`;
 }
 
 function collectPrivateReferenceForm() {

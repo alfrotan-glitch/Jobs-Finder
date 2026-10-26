@@ -99,7 +99,13 @@ a private ZIP containing:
 - `manifest.json` with the SHA-256 checksum and size of each file.
 
 Export never changes or deletes originals, never publishes data, and includes
-no external private-reference files. It has conservative per-file, total-size
+no external private-reference files. **To protect your private referees from
+loss, also open My Profile → Professional references → Download private
+references backup, and keep that second JSON file separately on your local
+backup drive.** The file is plaintext (not encrypted): treat it as
+confidential. Following a reinstall or recovery, import that file back into
+My Profile. Restoring the main ZIP alone does not recover referee contacts.
+The main backup has conservative per-file, total-size
 and file-count limits and fails clearly if the export cannot be complete.
 Keep the ZIP on a separate local drive or other trusted private storage; it
 contains personal details and potentially sensitive application documents.
@@ -567,4 +573,8 @@ removed or imported in one action from a private JSON list. Their names,
 phone numbers and emails are saved **outside** the public Git checkout:
 `%LOCALAPPDATA%\\Jobs-Finder\\private_references.yaml` on Windows.
 Neither CVs nor email drafts automatically contain private referee contacts.
-Never push the private contact file or paste it into the tracked profile.
+The private JSON export can be imported back after a Windows replacement or
+backup recovery. **The main Jobs-Finder backup ZIP intentionally does not
+include private references.** Download this separate JSON file after edits,
+and keep it confidential on a second local drive. Never push the private
+contact file or paste it into the tracked profile.

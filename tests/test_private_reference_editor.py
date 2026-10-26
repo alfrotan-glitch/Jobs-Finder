@@ -95,3 +95,49 @@ def test_external_reference_file_defaults_outside_repository(tmp_path, monkeypat
     path = references.private_reference_editor_path()
     assert path.parent == tmp_path / "windows-appdata" / "Jobs-Finder"
     assert references.PROJECT_ROOT not in path.parents
+
+
+def test_private_reference_export_reimports_all_contacts_without_git_exposure(secure_store):
+    import json
+
+    client = TestClient(server.app)
+    old = client.get("/api/profile/references").json()["version"]
+    source = [_sample_reference(), {
+        "name": "Example Public Health Referee",
+        "role": "Program Manager",
+        "organization": "Example Health NGO",
+        "phone": "+93 700 333 222",
+        "email": "second.referee@example.org",
+        "relationship": "Direct supervisor",
+    }]
+    assert client.post("/api/profile/references", json={
+        "version": old, "entries": source,
+    }).status_code == 200
+    response = client.get("/api/profile/references/export")
+    assert response.status_code == 200
+    assert "attachment" in response.headers["content-disposition"]
+    assert response.headers["cache-control"].startswith("no-store")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    body = json.loads(response.content.decode("utf-8"))
+    assert body["format"] == "jobs-finder-private-references"
+    assert body["entries"] == source
+    assert not (references.PROJECT_ROOT / "Jobs-Finder-Private-References.json").exists()
+    assert "second.referee@example.org" not in str(client.get("/api/profile/editor").json())
+    clear = client.post("/api/profile/references", json={
+        "version": client.get("/api/profile/references").json()["version"],
+        "entries": [],
+    })
+    assert clear.status_code == 200
+    restore = client.post("/api/profile/references", json={
+        "version": clear.json()["version"], "entries": body["entries"],
+    })
+    assert restore.status_code == 200
+    assert restore.json()["entries"] == source
+
+
+def test_empty_references_can_be_exported_without_creating_a_private_file(secure_store):
+    client = TestClient(server.app)
+    response = client.get("/api/profile/references/export")
+    assert response.status_code == 200
+    assert response.json()["entries"] == []
+    assert not secure_store.exists()

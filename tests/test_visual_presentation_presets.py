@@ -5,7 +5,6 @@ from docx import Document
 
 from utils.document_design import render_professional_document_artifacts
 
-
 CV_MODEL = {
     "name": "Jane Doe",
     "headline": "Medical Doctor and Nutrition Specialist",

@@ -7,6 +7,9 @@ No application is sent automatically.
 """
 from __future__ import annotations
 
+import hashlib
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from utils.profile import canonical_profile_fingerprint
@@ -14,10 +17,27 @@ from utils.profile import canonical_profile_fingerprint
 GENERATOR_REVISION = "2026-10-27-role-curated-official-cv-v2"
 
 
+@lru_cache(maxsize=1)
+def _engine_sha256() -> str:
+    """Hash actual code affecting PDF, Word and evidence selection.
+
+    Cache lasts for this process; a normal update restarts the Windows app.
+    A code change now invalidates old packages even if a developer forgets
+    to manually bump the human-readable generator version.
+    """
+    root = Path(__file__).resolve().parent
+    digest = hashlib.sha256()
+    for filename in ("application_editorial.py", "documents.py", "document_design.py", "package_freshness.py"):
+        digest.update(filename.encode("ascii"))
+        digest.update((root / filename).read_bytes())
+    return digest.hexdigest()
+
+
 def generation_stamp(profile: dict[str, Any], documents: dict[str, Any]) -> dict[str, Any]:
     cv = documents.get("tailored_cv_model") or {}
     return {
         "revision": GENERATOR_REVISION,
+        "engine_sha256": _engine_sha256(),
         "profile_sha256": canonical_profile_fingerprint(profile),
         "full_verified_duty_count": int(cv.get("full_verified_duty_count") or 0),
         "selected_duty_count": int(cv.get("selected_duty_count") or 0),
@@ -30,6 +50,8 @@ def package_freshness(package: dict[str, Any] | None, profile: dict[str, Any]) -
     stamp = package.get("generation") or {}
     if not isinstance(stamp, dict) or stamp.get("revision") != GENERATOR_REVISION:
         return {"current": False, "reason": "old_cv_generator"}
+    if stamp.get("engine_sha256") != _engine_sha256():
+        return {"current": False, "reason": "generator_code_changed"}
     if not profile or stamp.get("profile_sha256") != canonical_profile_fingerprint(profile):
         return {"current": False, "reason": "profile_changed"}
     if int(stamp.get("selected_duty_count") or 0) < 1:

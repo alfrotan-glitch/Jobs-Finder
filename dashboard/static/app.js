@@ -197,6 +197,11 @@ function emailDraftReady(job) {
     Boolean(applyEmail(job));
 }
 
+function canPrepareJob(job) {
+  return readinessValue(job) !== "NOT_ELIGIBLE" &&
+    !job.is_expired && job.status !== "APPLIED_MANUALLY";
+}
+
 function packageExists(job) {
   return ["PACKAGE_READY", "PACKAGE_NEEDS_INPUT", "APPLIED_MANUALLY"].includes(job.status) || Boolean(job.package?.package_status);
 }
@@ -221,8 +226,7 @@ function jobCard(job, {compact = false} = {}) {
   const id = escapeAttr(job.id);
   const org = compactText(job.company, "Organization not listed");
   const location = compactText(job.location, "Location not listed");
-  const isNotEligible = readiness === "NOT_ELIGIBLE";
-  const canPrepare = !isNotEligible && !job.is_expired && job.status !== "APPLIED_MANUALLY";
+  const canPrepare = canPrepareJob(job);
   return `
     <article class="jobCard ${compact ? "compact" : ""}">
       <div class="jobCardHeader">
@@ -246,7 +250,7 @@ function jobCard(job, {compact = false} = {}) {
         <button class="secondary" data-action="view-job" data-job-id="${id}">View details</button>
         ${canPrepare && directApplicationRouteAvailable(job) ? `<button class="primary subtle" data-action="${method === "EMAIL" && emailDraftReady(job) ? "apply-email" : "prepare-job"}" data-job-id="${id}">${method === "EMAIL" && emailDraftReady(job) ? "Apply · Attached email" : method === "EMAIL" ? "Prepare email + PDFs" : "Prepare application"}</button>` : ""}
         ${packageExists(job) ? `<button class="secondary" data-action="review-package" data-job-id="${id}">Review package</button>` : ""}
-        ${packageReadyForReview(job) && job.status !== "APPLIED_MANUALLY" ? `<button class="secondary" data-action="mark-applied" data-job-id="${id}">Mark applied</button>` : ""}
+        ${packageReadyForReview(job) && canPrepareJob(job) ? `<button class="secondary" data-action="mark-applied" data-job-id="${id}">Mark applied</button>` : ""}
       </div>
     </article>`;
 }
@@ -755,8 +759,11 @@ function renderApplicationMethod(job) {
   if (job.status === "APPLIED_MANUALLY") {
     return `<div class="routePanel"><h3>Already recorded as applied</h3><p>Your manual application has been preserved. You can still review its prepared documents below.</p>${page ? `<a class="button secondary" href="${escapeAttr(page)}" target="_blank" rel="noopener">View official vacancy</a>` : ""}</div>`;
   }
+  if (!canPrepareJob(job)) {
+    return `<div class="routePanel unavailable"><h3>Application requires review</h3><p>The verified profile does not meet this vacancy's critical requirements. You can still inspect the official posting.</p>${page ? `<a class="button secondary" href="${escapeAttr(page)}" target="_blank" rel="noopener">View official vacancy</a>` : ""}</div>`;
+  }
   if (method === "EMAIL" && email) {
-    return `<div class="routePanel"><p class="microLabel">Apply by email</p><h3>${escapeHtml(email)}</h3><div class="cardActions">${emailDraftReady(job) ? `<button class="primary subtle" data-action="apply-email" data-job-id="${escapeAttr(job.id)}">Apply · Email with attachments</button>` : `<button class="primary subtle" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare email and files</button>`}<button class="secondary" data-action="copy-email" data-email="${escapeAttr(email)}">Copy email</button><button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare email</button></div></div>`;
+    return `<div class="routePanel"><p class="microLabel">Apply by email</p><h3>${escapeHtml(email)}</h3><div class="cardActions">${emailDraftReady(job) ? `<button class="primary subtle" data-action="apply-email" data-job-id="${escapeAttr(job.id)}">Apply · Email with attachments</button>` : `<button class="primary subtle" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare email and files</button>`}<button class="secondary" data-action="copy-email" data-email="${escapeAttr(email)}">Copy email</button></div></div>`;
   }
   if (method === "WEB" && web) {
     return `<div class="routePanel"><p class="microLabel">Apply online</p><h3>Web application</h3><div class="cardActions"><a class="button primary subtle" href="${escapeAttr(web)}" target="_blank" rel="noopener">Open application</a><button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">Prepare package</button></div></div>`;

@@ -572,17 +572,6 @@ def _requirement_matches(match_report: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in match_report.get("requirement_matches", []) if isinstance(item, dict)]
 
 
-def _requirement_met(match_report: dict[str, Any], key: str) -> bool:
-    """True only when the authoritative matcher marked this requirement MET.
-
-    MET is only produced by the matcher from genuinely verified evidence, so
-    this is the single safe source of truth for "did we actually meet this
-    requirement" -- document generation must not reconstruct this itself from
-    raw evidence presence.
-    """
-    return any(item.get("key") == key and item.get("status") == MET for item in _requirement_matches(match_report))
-
-
 def _verified_dict_items(items: list[Any]) -> list[Any]:
     """Keep only dict entries explicitly confirmed with ``verified: true``.
 
@@ -731,11 +720,6 @@ def _job_focus_phrases(job: dict[str, Any], match_report: dict[str, Any] | None 
             if len(phrases) >= limit:
                 break
     return phrases[:limit]
-
-def _requirement_summary_phrase(match_report: dict[str, Any]) -> str:
-    labels = _focus_labels(match_report, limit=5)
-    return ", ".join(labels) if labels else "the advertised health requirements"
-
 
 def _max_verified_years(evidence, key: str) -> float | None:
     values: list[float] = []

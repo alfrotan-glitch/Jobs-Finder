@@ -982,4 +982,13 @@ async def api_mark_applied(job_id: str, request: Request):
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
+    """Never expose the unauthenticated applicant dashboard to the network.
+
+    Windows launcher, CLI and direct Python callers share this boundary.
+    Host-header checks do not replace network-layer access control.
+    """
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("Jobs-Finder is private: the dashboard must bind only to localhost.")
+    if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+        raise ValueError("Dashboard port must be in the range 1-65535.")
     uvicorn.run("dashboard.server:app", host=host, port=port, reload=False)

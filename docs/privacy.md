@@ -38,7 +38,7 @@ log.
 ## Local artifacts and dashboard
 
 Generated application artifacts and SQLite data are ignored by Git. The local
-dashboard uses no-store response headers and is loopback-first; it is not an
+dashboard uses no-store response headers and strictly enforces a loopback-only listening address; it is not an
 authenticated public service. Do not expose it to a shared/public network
 without access control and TLS.
 

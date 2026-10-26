@@ -144,3 +144,29 @@ def test_duplicate_scan_request_is_rejected_without_starting_discovery(client, m
     response = asyncio.run(during_scan())
     assert response.status_code == 409
     assert "already running" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("unsafe_host", ["0.0.0.0", "192.168.1.5", "10.0.0.1", "", "local.example"])
+def test_dashboard_refuses_non_loopback_binding_even_from_cli(monkeypatch, unsafe_host):
+    def should_never_start(*args, **kwargs):
+        raise AssertionError("Unauthenticated server must never start on an external interface")
+
+    monkeypatch.setattr(server.uvicorn, "run", should_never_start)
+    with pytest.raises(ValueError, match="localhost"):
+        server.run_server(host=unsafe_host)
+
+
+@pytest.mark.parametrize("loopback", ["127.0.0.1", "localhost", "::1"])
+def test_dashboard_accepts_only_explicit_loopback_host(monkeypatch, loopback):
+    observed = {}
+    monkeypatch.setattr(server.uvicorn, "run", lambda *args, **kwargs: observed.update(kwargs))
+    server.run_server(host=loopback, port=8081)
+    assert observed["host"] == loopback
+    assert observed["port"] == 8081
+
+
+@pytest.mark.parametrize("bad_port", [0, -1, 65536, True])
+def test_dashboard_refuses_invalid_port(monkeypatch, bad_port):
+    monkeypatch.setattr(server.uvicorn, "run", lambda *a, **k: pytest.fail("Server started on an invalid port"))
+    with pytest.raises(ValueError, match="port"):
+        server.run_server(port=bad_port)

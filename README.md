@@ -59,7 +59,7 @@ Python support is intentionally conservative: Python 3.11 and 3.12. The full tes
 
 ## Manual setup
 
-The Windows launcher always binds to `127.0.0.1` (regardless of `JOBS_FINDER_HOST`) and is not exposed to the LAN. Because it contains applicant information and has no user authentication, it also rejects untrusted HTTP `Host` headers (including domains pointing to localhost). Supported browser addresses are `localhost`, `127.0.0.1`, and `[::1]`; the in-process test suite additionally uses `testserver`. **Do not bind or publish this dashboard on a LAN or the public internet.** Use a separately designed authenticated deployment if remote access is required.
+The Windows launcher and the Python server entry point accept only loopback host addresses (`127.0.0.1`, `localhost`, or `::1`), regardless of `JOBS_FINDER_HOST`. The dashboard is never exposed to the LAN. Because it contains applicant information and has no user authentication, it also rejects untrusted HTTP `Host` headers (including domains pointing to localhost). Supported browser addresses are `localhost`, `127.0.0.1`, and `[::1]`; the in-process test suite additionally uses `testserver`. **Do not bind or publish this dashboard on a LAN or the public internet.** Use a separately designed authenticated deployment if remote access is required.
 
 
 ```bash

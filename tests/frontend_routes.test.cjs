@@ -92,3 +92,15 @@ test("refreshed drawer data wins over an older cached listing for Apply actions"
   assert.equal(get("jobById")("old-392").title, "Refreshed current job");
   assert.equal(get("applicationMethod")(get("jobById")("old-392")), "WEB");
 });
+
+test("one preparation action is offered per vacancy and incompatible roles are blocked", () => {
+  const base = {id: "medical-1", readiness: "READY_TO_APPLY",
+    metadata: {application_method: "EMAIL", apply_email: "hr@example.org"}};
+  const route = get("renderApplicationMethod")(base);
+  assert.equal((route.match(/data-action="prepare-job"/g) || []).length, 1);
+  const blocked = {...base, readiness: "NOT_ELIGIBLE"};
+  assert.equal(get("canPrepareJob")(blocked), false);
+  assert.doesNotMatch(get("renderApplicationMethod")(blocked), /data-action="prepare-job"/);
+  assert.doesNotMatch(get("jobCard")(blocked), /data-action="mark-applied"/);
+  assert.doesNotMatch(get("jobCard")(blocked), /data-action="prepare-job"/);
+});

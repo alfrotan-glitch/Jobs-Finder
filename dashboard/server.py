@@ -62,10 +62,10 @@ from utils.recommendations import evaluate_scan_jobs
 from utils.scan_guard import ScanAlreadyRunning, exclusive_scan
 from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
 from utils.tracker import (
+    get_actionable_jobs_by_ids,
     get_job_by_id,
     get_latest_scan,
     get_recommended_jobs,
-    get_actionable_jobs_by_ids,
     list_actionable_jobs_page,
     list_recent_scans,
     log_medical_match,

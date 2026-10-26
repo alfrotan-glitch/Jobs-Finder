@@ -272,11 +272,11 @@ executed by CI.
 
 Important rules:
 
-- Change the one tracked `profile.yaml` directly; commit and push it to synchronize the authorized canonical record between checkouts.
+- **Use My Profile → Edit & save** to update the one canonical `profile.yaml`. The official Word/PDF CV was approved by the owner, so the attested original responsibilities need no second approval. A newly entered or materially changed factual claim requires owner confirmation. **Do not push local personal changes to a public GitHub repository.** Git synchronization is only appropriate after the repository is made Private and past public exposure is considered.
 - Leave missing facts blank or marked `Needs verification`.
 - Every claim, including experience duration, location preference, and deployment preference, needs its own adjacent literal `verified: true` before it is verified evidence.
 - Do not invent license numbers, issue dates, expiry dates, document paths, credentials, or language levels.
-- Professional reference contact data is **not stored in the tracked canonical profile or repository**. The canonical profile holds only a private-reference boundary. If the owner keeps a private reference file, it must be outside the repository, explicitly selected with `JOBS_FINDER_PRIVATE_REFERENCES_PATH`, and can only be read for a vacancy that explicitly requires references **and** after vacancy-specific owner approval. References are never matching evidence and are never automatically serialized into a CV, cover letter, dashboard response, SQLite record, or normal package.
+- Professional reference contact data is **not stored in the tracked canonical profile or repository**. The canonical profile holds only a private-reference boundary. Private references are stored outside the Git checkout, normally in `%LOCALAPPDATA%\\Jobs-Finder\\private_references.yaml` on Windows, and may be redirected with `JOBS_FINDER_PRIVATE_REFERENCES_PATH`. Contact release to an employer still requires a vacancy-specific owner decision. References are never matching evidence and are never automatically serialized into a CV, cover letter, dashboard response, SQLite record, or normal package.
 - The database stores vacancies, scans, match outputs, and packages — never a second applicant profile.
 - Resume extraction caches are not used. A CV is not runtime applicant evidence.
 
@@ -299,7 +299,7 @@ CV import is a transient **preview only**; it cannot write or replace `profile.y
 python main.py import-cv path/to/cv.pdf
 ```
 
-Review the output, then manually add only facts you personally confirm to canonical `profile.yaml` before scanning or preparing documents.
+The approved official CV is already entered into the canonical profile. If importing a **different** Word/PDF CV, review any new duties and add only confirmed facts through **My Profile → Edit & save**, without rewriting the official profile or requiring reapproval of already accepted facts.
 
 ### Position-neutral Master CV
 
@@ -578,3 +578,43 @@ backup recovery. **The main Jobs-Finder backup ZIP intentionally does not
 include private references.** Download this separate JSON file after edits,
 and keep it confidential on a second local drive. Never push the private
 contact file or paste it into the tracked profile.
+
+
+## Final release handover: local acceptance required
+
+GitHub CI checks the matching, application safety, profile evidence, security
+regressions, Windows/Linux Python compatibility, and document rendering. A
+green pipeline **does not** prove that this particular user's Windows PC,
+installed email application, file associations, profile changes, backup drive,
+or live recruitment sources work correctly.
+
+After safely updating the existing desktop checkout, double-click
+`Check_Jobs_Finder_Readiness.bat` (Python 3.11/3.12 and the normal .venv
+from `run_jobs_finder.bat` are required). It reports the health of the
+canonical owner profile, existing SQLite database, local Git edits, and
+synthetic Word/PDF output without scans, submissions, or changes to actual
+application documents. The report is written to the ignored
+`generated/release_readiness.json` as non-PII status metadata only.
+A PASS means **ready for Windows user acceptance**, not production approval.
+Red conditions must be fixed. Manual gates are always shown separately:
+GitHub repository visibility, local application/UI behavior, and actual
+unsent email handling.
+
+Before using real recruitment workflows:
+1. Set the GitHub repository to **Private**; historical exposure of the
+   Git-tracked personal profile is not removed just by changing visibility.
+2. Confirm the saved profile, professional history and all approved facts
+   in My Profile. Do **not** reset the existing local profile when git reports
+   changes. A plain git pull can conflict with locally edited profile.yaml.
+3. Test opening three *synthetic* application packages (Provincial
+   Coordinator, TFU Medical Doctor, Health & Nutrition Supervisor) and their
+   actual DOCX/PDF outputs, plus the unsent `.eml` route.
+4. Download and verify the standard data-backup ZIP. **Separately** export the
+   private-reference JSON from My Profile, keep both on a trusted second local
+   drive, and prove that you can import the referee JSON again. It is
+   plaintext; do not email or publicly share it.
+5. Do not declare the entire installation customer-ready until the Windows
+   tests and actual scan/source availability are confirmed on that computer.
+
+All prepared emails remain **UNSENT**. No vacancy application is submitted,
+and private references are not automatically released.

@@ -63,6 +63,10 @@ def editor_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
                 {"index": i, "text": item.get("text") or ""}
                 for i, item in enumerate(role.get("needs_verification") or [])
                 if isinstance(item, dict) and item.get("verified") is not True
+                and not (
+                    (profile.get("official_cv_approval") or {}).get("owner_approved") is True
+                    and "system-authored scope draft" in str(item.get("basis") or "")
+                )
             ],
         })
     locations = preferences.get("locations") or []

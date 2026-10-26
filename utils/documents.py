@@ -349,6 +349,10 @@ def _split_substantive_bullets(values: list[str]) -> list[str]:
                 continue
             norm = _normalized_phrase(part)
             if norm and all(norm != _normalized_phrase(existing) for existing in bullets):
+                # One complete, owner-authored duty is preserved verbatim.
+                # Avoid stripping the trailing full stop from the approved CV.
+                if len(parts) == 1 and str(value).strip().endswith("."):
+                    part += "."
                 bullets.append(part)
     return bullets
 

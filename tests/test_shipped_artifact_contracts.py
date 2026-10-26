@@ -86,3 +86,10 @@ def test_python_version_contract_is_consistent_across_docs_and_ci():
     # Bootstrap probing must only accept 3.11 <= version < 3.13.
     assert launcher.count("(3, 11) <= sys.version_info[:2] < (3, 13)") >= 1
     assert "< (3, 14)" not in launcher
+
+
+def test_privacy_settings_surface_git_exposure_before_new_personal_data():
+    script = Path("dashboard/static/app.js").read_text(encoding="utf-8")
+    assert "Check GitHub privacy before adding personal details." in script
+    assert "If the repository is Public" in script
+    assert "Set your GitHub repository to Private" in script

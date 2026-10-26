@@ -629,8 +629,9 @@ function renderSettings() {
     <p class="sectionHelp">No email or form is submitted automatically.</p>`;
   $("settingsSources").innerHTML = renderSimpleList((settings.sources || []).map((source) => `${source.name} — ${source.active ? "Enabled" : "Disabled"}`));
   $("settingsPrivacy").innerHTML = `
-    <p>Your canonical profile is stored locally and is Git-tracked in the source repository; the dashboard does not publish changes automatically.</p>
-    <p class="sectionHelp">Generated documents are kept locally for review and are not submitted by the system.</p>`;
+    <p><strong>Check GitHub privacy before adding personal details.</strong> Your canonical profile is Git-tracked. If the repository is Public, profile.yaml and its Git history may be visible to anyone.</p>
+    <p class="sectionHelp">Set your GitHub repository to Private and review earlier published copies. The local-only dashboard does not undo GitHub exposure.</p>
+    <p class="sectionHelp">Generated documents remain local and are not submitted automatically.</p>`;
 }
 
 function renderScanRecommendations(scan) {

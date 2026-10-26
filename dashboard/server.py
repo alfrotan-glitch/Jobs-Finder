@@ -60,9 +60,9 @@ from utils.profile import (
     save_canonical_profile,
 )
 from utils.profile_builder import build_profile_from_cv_text, candidate_responsibilities_from_cv
-from utils.resume_parser import extract_resume_text
 from utils.profile_editor import ProfileEditError, editor_snapshot, update_profile
 from utils.recommendations import evaluate_scan_jobs
+from utils.resume_parser import extract_resume_text
 from utils.scan_guard import ScanAlreadyRunning, exclusive_scan
 from utils.source_registry import SOURCE_REGISTRY, source_registry_for_settings
 from utils.tracker import (

@@ -59,7 +59,10 @@ from utils.profile import (
     load_canonical_profile,
     save_canonical_profile,
 )
-from utils.profile_builder import build_profile_from_cv_text, candidate_responsibilities_from_cv
+from utils.profile_builder import (
+    build_profile_from_cv_text,
+    candidate_responsibilities_from_cv,
+)
 from utils.profile_editor import ProfileEditError, editor_snapshot, update_profile
 from utils.recommendations import evaluate_scan_jobs
 from utils.resume_parser import extract_resume_text

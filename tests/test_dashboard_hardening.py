@@ -177,7 +177,18 @@ def test_opening_email_twice_replaces_same_local_unsent_draft(client, tmp_path, 
     from pathlib import Path
 
     monkeypatch.setattr(server, "ROOT", tmp_path)
-    monkeypatch.setattr(server, "get_job_by_id", lambda job_id: {"id": job_id})
+    from utils.package_freshness import generation_stamp
+
+    profile = server._runtime_profile(False)
+    current_package = {
+        "package_status": "READY_FOR_REVIEW",
+        "generation": generation_stamp(
+            profile, {"tailored_cv_model": {"selected_duty_count": 2, "full_verified_duty_count": 24}},
+        ),
+    }
+    monkeypatch.setattr(
+        server, "get_job_by_id", lambda job_id: {"id": job_id, "package": current_package},
+    )
     monkeypatch.setattr(server, "is_expired", lambda job: False)
     counter = {"n": 0}
 

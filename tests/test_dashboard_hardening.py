@@ -179,7 +179,10 @@ def test_opening_email_twice_replaces_same_local_unsent_draft(client, tmp_path, 
     monkeypatch.setattr(server, "ROOT", tmp_path)
     from utils.package_freshness import generation_stamp
 
-    profile = server._runtime_profile(False)
+    # The fixture normally contains no profile. Create only fictional,
+    # locally isolated evidence so the freshness gate can be tested honestly.
+    profile = {"personal": {"first_name": "Example", "last_name": "Candidate"}}
+    profile_repository.save_canonical_profile(profile)
     current_package = {
         "package_status": "READY_FOR_REVIEW",
         "generation": generation_stamp(

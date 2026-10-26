@@ -530,7 +530,7 @@ CV_PDF_LAYOUTS: dict[str, dict[str, float]] = {
         "role": 11, "meta": 9.5, "body": 10.5, "leading": 14.4,
         "bullets": 9, "bullet_leading": 14.4, "section_before": 14,
         "section_after": 6, "role_before": 10, "meta_after": 4,
-        "group_after": 3, "bullet_after": 4,
+        "group_after": 3, "bullet_after": 4.6,
     },
 }
 CV_PDF_LAYOUTS["compact"] = {

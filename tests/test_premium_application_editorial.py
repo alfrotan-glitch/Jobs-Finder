@@ -25,8 +25,10 @@ def test_job_title_controls_attested_evidence_order_without_dropping_facts():
     assert clinician[0].startswith("Delivered")
     assert set(coordinator) == set(clinician) == set(original)
     assert len(coordinator) == len(original)
-    assert factual_relevance_score("malnutrition", "Nutrition Supervisor") > 0
-    assert factual_relevance_score("malnutrition", "Medical Coordinator") == 0
+    assert factual_relevance_score("nutrition screening", "Nutrition Supervisor") > 0
+    # A substring inside MALNUTRITION must not count as an exact match for
+    # nutrition. It can still be matched by other clinical/nutrition signals.
+    assert factual_relevance_score("malnutrition", "Nutrition Supervisor") == 0
 
 
 def test_long_verified_summary_is_vacancy_specific_and_claim_preserving():

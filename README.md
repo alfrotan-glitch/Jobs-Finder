@@ -551,3 +551,20 @@ COVID-19 response and stakeholder coordination), but source statements and
 references must be owner-confirmed before use. The bundled PDF/DOCX renderer
 remains ATS-friendly single-column; visual designs should never invent
 achievement figures or republish private referee contacts.
+
+
+### Professionally verified source CV and private references
+
+On October 26, 2026 the owner approved **the complete official CV** (Word
+and PDF), not just the shorter previous resume excerpt. All 24 directly
+attested responsibilities across five verified positions are recorded in
+`profile.yaml` with `verified: true` and source provenance; seven
+certificates and three languages are verified. Unrelated older assistant-
+generated draft duties remain excluded from employer-facing applications.
+
+In **My Profile → Professional references**, referees can be added, edited,
+removed or imported in one action from a private JSON list. Their names,
+phone numbers and emails are saved **outside** the public Git checkout:
+`%LOCALAPPDATA%\\Jobs-Finder\\private_references.yaml` on Windows.
+Neither CVs nor email drafts automatically contain private referee contacts.
+Never push the private contact file or paste it into the tracked profile.

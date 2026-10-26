@@ -64,6 +64,11 @@ from utils.profile_builder import (
     candidate_responsibilities_from_cv,
 )
 from utils.profile_editor import ProfileEditError, editor_snapshot, update_profile
+from utils.private_references import (
+    PrivateReferenceError,
+    read_private_reference_editor,
+    save_private_reference_editor,
+)
 from utils.recommendations import evaluate_scan_jobs
 from utils.resume_parser import extract_resume_text
 from utils.scan_guard import ScanAlreadyRunning, exclusive_scan
@@ -562,6 +567,31 @@ async def api_save_profile_editor(request: Request):
     except ProfileEditError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"ok": True, "editor": updated, "message": "Saved in the canonical profile; future CVs use these changes."}
+
+
+@app.get("/api/profile/references")
+def api_private_reference_editor():
+    """Private local reference contacts, never merged into tracked profile.yaml."""
+    try:
+        return read_private_reference_editor()
+    except PrivateReferenceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/profile/references")
+async def api_private_reference_save(request: Request):
+    if int(request.headers.get("content-length") or "0") > 100_000:
+        raise HTTPException(status_code=413, detail="Reference data exceeds local safety limit.")
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Provide a JSON reference list.") from None
+    if not isinstance(payload, dict) or not isinstance(payload.get("version"), str):
+        raise HTTPException(status_code=400, detail="A versioned reference list is required.")
+    try:
+        return save_private_reference_editor(payload.get("entries"), expected_version=payload["version"])
+    except PrivateReferenceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/profile/review")

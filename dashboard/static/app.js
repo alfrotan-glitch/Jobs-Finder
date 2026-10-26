@@ -10,6 +10,7 @@ const state = {
   profileDetails: {},
   profileReview: {},
   profileEditor: null,
+  privateReferences: null,
   importedDuties: [],
   settings: {},
   lastScan: null,
@@ -587,6 +588,99 @@ const EDITOR_IDENTITY_LABELS = {
   phone: "Phone", location: "Current location", professional_title: "Professional title",
 };
 
+const PRIVATE_REFERENCE_FIELDS = {
+  name: "Full name", role: "Position/title", organization: "Organization",
+  phone: "Phone", email: "Email", relationship: "Professional relationship",
+};
+
+function renderPrivateReferences() {
+  const holder = $("privateReferences");
+  if (!holder) return;
+  const stateOfRefs = state.privateReferences;
+  if (!stateOfRefs) {
+    holder.innerHTML = '<p class="sectionHelp">Private local references could not be loaded.</p>';
+    return;
+  }
+  const entries = stateOfRefs.entries || [];
+  holder.innerHTML = `
+    ${entries.map((ref, index) => `<div class="editorRole">
+      <strong>Reference ${index + 1}</strong>
+      <div class="profileEditorGrid">
+        ${Object.entries(PRIVATE_REFERENCE_FIELDS).map(([field, label]) => `<label class="editorField">
+           <span>${escapeHtml(label)}</span>
+           <input data-private-index="${index}" data-private-field="${field}" maxlength="300"
+             value="${escapeAttr(ref[field] || "")}"></label>`).join("")}
+      </div>
+      <button class="textButton" data-action="remove-private-reference" data-private-index="${index}">Remove reference</button>
+    </div>`).join("") || '<p class="sectionHelp">No referees saved locally yet.</p>'}
+    <div class="cardActions">
+      <button class="secondary" data-action="add-private-reference">Add professional reference</button>
+      <button class="primary subtle" data-action="save-private-references">Save references locally</button>
+    </div>
+    <div class="importRow"><label class="editorField"><span>Import owner-approved official references (JSON)</span>
+      <input id="privateReferencesImport" type="file" accept=".json,application/json"></label>
+      <button class="secondary" data-action="import-private-references">Import contacts into private store</button>
+    </div>
+    <p class="sectionHelp">Private references are excluded from ordinary profile exports and GitHub commits. Keep a separate confidential backup of these contacts.</p>`;
+}
+
+function collectPrivateReferenceForm() {
+  const entries = (state.privateReferences?.entries || []).map((record) => ({...record}));
+  for (const input of document.querySelectorAll("[data-private-index][data-private-field]")) {
+    const index = Number(input.dataset.privateIndex);
+    const field = input.dataset.privateField;
+    if (entries[index] && Object.hasOwn(PRIVATE_REFERENCE_FIELDS, field)) entries[index][field] = input.value.trim();
+  }
+  return entries;
+}
+
+async function savePrivateReferences(entries) {
+  try {
+    const saved = await apiJson("/api/profile/references", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({version:state.privateReferences.version, entries}),
+    });
+    state.privateReferences = saved;
+    renderPrivateReferences();
+    setStatus("Private professional reference contacts saved outside the Git checkout.", "ok");
+  } catch(error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
+async function managePrivateReferences(action, index) {
+  if (!state.privateReferences) return;
+  if (action === "save-private-references") {
+    await savePrivateReferences(collectPrivateReferenceForm());
+  } else if (action === "add-private-reference") {
+    state.privateReferences.entries = collectPrivateReferenceForm();
+    state.privateReferences.entries.push({name:"",role:"",organization:"",phone:"",email:"",relationship:""});
+    renderPrivateReferences();
+  } else if (action === "remove-private-reference") {
+    if (!window.confirm("Remove this professional referee from your private contact list?")) return;
+    const entries = collectPrivateReferenceForm();
+    entries.splice(Number(index),1);
+    await savePrivateReferences(entries);
+  } else if (action === "import-private-references") {
+    const file = $("privateReferencesImport")?.files?.[0];
+    if (!file || file.size > 100_000) {
+      setStatus("Select the approved private reference JSON file (under 100 KB).", "warn");
+      return;
+    }
+    try {
+      const data = JSON.parse(await file.text());
+      const entries = Array.isArray(data) ? data : data?.entries;
+      if (!Array.isArray(entries) || entries.length > 30 || entries.some(x => typeof x !== "object" || !x?.name)) {
+        throw new Error("The imported file must contain an entries list with named referees.");
+      }
+      if (!window.confirm(`Import ${entries.length} contacts from your approved CV into the private Windows store? Existing private references will be replaced. Contacts will NOT be shared with employers.`)) return;
+      await savePrivateReferences(entries);
+    } catch(error) {
+      setStatus("Could not import private references: " + String(error.message), "error");
+    }
+  }
+}
+
 function renderProfileEditor() {
   const holder = $("profileEditor");
   const editor = state.profileEditor;
@@ -957,6 +1051,7 @@ function renderAll() {
   renderApplications();
   renderProfileDetails();
   renderProfileEditor();
+  renderPrivateReferences();
   renderProfileReview(state.profileReview);
   renderSettings();
   renderAdvanced();
@@ -1175,7 +1270,7 @@ async function apiJson(url, options = {}) {
 
 async function refresh() {
   setLoadingLists();
-  const [recommended, jobs, applications, profile, details, review, editor, settings, latestScan, alerts, monitorSchedule] = await Promise.all([
+  const [recommended, jobs, applications, profile, details, review, editor, privateReferences, settings, latestScan, alerts, monitorSchedule] = await Promise.all([
     apiJson("/api/recommended"),
     apiJson("/api/jobs?limit=100&offset=0"),
     apiJson("/api/applications?limit=100&offset=0"),
@@ -1183,6 +1278,7 @@ async function refresh() {
     apiJson("/api/profile/details"),
     apiJson("/api/profile/review"),
     apiJson("/api/profile/editor"),
+    apiJson("/api/profile/references"),
     apiJson("/api/settings"),
     apiJson("/api/scan/latest"),
     apiJson("/api/alerts"),
@@ -1199,6 +1295,7 @@ async function refresh() {
   state.profileDetails = details;
   state.profileReview = review;
   state.profileEditor = editor;
+  state.privateReferences = privateReferences;
   state.settings = settings;
   state.lastScan = latestScan.scan || state.lastScan;
   state.alerts = alerts;
@@ -1528,6 +1625,9 @@ function handleAction(event) {
   if (action === "apply-email") applyByEmail(id);
   if (action === "add-responsibility") addVerifiedResponsibility(target.dataset.roleIndex);
   if (action === "save-profile-editor") saveProfileEditor();
+  if (["add-private-reference","save-private-references","remove-private-reference","import-private-references"].includes(action)) {
+    managePrivateReferences(action, target.dataset.privateIndex);
+  }
   if (action === "new-work-role") createWorkRole();
   if (action === "accept-imported-duty") acceptImportedDuty(target.dataset.candidateIndex);
   if (action === "verify-record") verifyProfileRecord(target);

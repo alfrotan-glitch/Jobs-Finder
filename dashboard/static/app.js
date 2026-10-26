@@ -9,6 +9,7 @@ const state = {
   profile: {},
   profileDetails: {},
   profileReview: {},
+  profileEditor: null,
   settings: {},
   lastScan: null,
   alerts: {alerts: [], unread_count: 0},
@@ -579,6 +580,139 @@ function renderProfileDetails() {
   $("profileLanguagesBox").innerHTML = renderSimpleList((details.languages || []).map((item) => `${item.name}${item.level ? ` — ${item.level}` : ""}`));
 }
 
+const OWNER_CONFIRMATION = "I confirm this is true and based on my own records";
+const EDITOR_IDENTITY_LABELS = {
+  first_name: "First name", last_name: "Last name", email: "Email",
+  phone: "Phone", location: "Current location", professional_title: "Professional title",
+};
+
+function renderProfileEditor() {
+  const holder = $("profileEditor");
+  const editor = state.profileEditor;
+  if (!editor) {
+    holder.innerHTML = '<p class="sectionHelp">No editable profile is loaded.</p>';
+    return;
+  }
+  const controls = Object.entries(EDITOR_IDENTITY_LABELS).map(([key, label]) => `
+    <label class="editorField"><span>${escapeHtml(label)} ${editor.personal_verified[key] ? "✓ Verified" : "· Not verified"}</span>
+    <input type="text" data-editor-field="${escapeAttr(key)}" maxlength="250" value="${escapeAttr(editor.personal[key] || "")}"></label>
+  `).join("");
+  const roles = (editor.experience || []).map((role) => `
+    <div class="editorRole">
+      <strong>${escapeHtml(role.title)} <span class="sectionHelp">· ${escapeHtml(role.organization)}</span></strong>
+      <p class="sectionHelp">Your confirmed experience, not automatically generated achievements:</p>
+      ${(role.responsibilities || []).map((item) => `
+        <div class="editorDuty"><p>${escapeHtml(item.text)}</p>
+          <span class="sectionHelp">${item.verified ? "Verified" : "Needs verification"}</span>
+          <button class="secondary smallButton" data-action="edit-duty" data-role-index="${role.index}" data-duty-index="${item.index}">Edit</button>
+          <button class="textButton" data-action="delete-duty" data-role-index="${role.index}" data-duty-index="${item.index}">Remove</button>
+        </div>`).join("")}
+      ${(role.pending || []).map((item) => `
+        <div class="editorDuty pendingDuty"><p>${escapeHtml(item.text)}</p>
+          <span class="sectionHelp">Draft — excluded from job applications until you personally confirm it</span>
+          <button class="secondary smallButton" data-action="approve-duty" data-role-index="${role.index}" data-duty-index="${item.index}">Confirm as factual</button>
+        </div>`).join("")}
+      <label class="editorField"><span>Add a real responsibility for this position</span>
+      <textarea rows="2" id="new-duty-${role.index}" maxlength="1200" placeholder="Describe work you personally performed — methods, scope and a genuine outcome where known."></textarea></label>
+      <button class="secondary smallButton" data-action="new-duty" data-role-index="${role.index}">Add responsibility</button>
+    </div>`).join("");
+  holder.innerHTML = `
+    <div class="profileEditorGrid">${controls}</div>
+    <label class="editorField"><span>Professional summary (owner-authored)</span>
+      <textarea id="editorSummary" maxlength="2400" rows="5">${escapeHtml(editor.professional_summary || "")}</textarea></label>
+    <label class="editorField"><span>Preferred job titles (one per line)</span>
+      <textarea id="editorRoles" maxlength="3000" rows="3">${escapeHtml((editor.roles || []).join("\n"))}</textarea></label>
+    <div class="profileEditorGrid">
+      <label class="editorField"><span>CV page density</span>
+        <select id="editorCvLayout"><option value="comfortable" ${editor.documents.cv_layout !== "compact" ? "selected" : ""}>Editorial — comfortable</option>
+        <option value="compact" ${editor.documents.cv_layout === "compact" ? "selected" : ""}>Compact — ATS friendly</option></select></label>
+      <label class="editorField"><span>Cover letter detail</span>
+        <select id="editorLetterDepth"><option value="detailed" ${editor.documents.letter_depth !== "standard" ? "selected" : ""}>Detailed — up to 3 relevant roles</option>
+        <option value="standard" ${editor.documents.letter_depth === "standard" ? "selected" : ""}>Standard — concise</option></select></label>
+    </div>
+    <label class="editorConfirm"><input type="checkbox" id="editorConfirmFacts">
+      I personally confirm changed facts are true and supported by my records (otherwise changes remain unverified).</label>
+    <button class="primary subtle" data-action="save-profile-editor">Save profile & document preferences</button>
+    <p class="sectionHelp">Privacy: your profile.yaml is tracked by Git. Do not push private details to a public GitHub repository.</p>
+    <h4>Review and improve individual work histories</h4>
+    ${roles || '<p class="sectionHelp">No verified work history found.</p>'}`;
+}
+
+async function saveProfileEditor() {
+  const editor = state.profileEditor;
+  if (!editor) return;
+  const confirmed = Boolean($("editorConfirmFacts")?.checked);
+  const changes = [];
+  for (const key of Object.keys(EDITOR_IDENTITY_LABELS)) {
+    const value = document.querySelector(`[data-editor-field="${key}"]`)?.value?.trim() ?? "";
+    if (value !== String(editor.personal[key] ?? "")) {
+      changes.push({action: "personal", field: key, value, confirmation: confirmed ? OWNER_CONFIRMATION : ""});
+    }
+  }
+  const summary = $("editorSummary")?.value?.trim() || "";
+  if (summary !== editor.professional_summary) {
+    changes.push({action: "summary", value: summary, confirmation: confirmed ? OWNER_CONFIRMATION : ""});
+  }
+  const roles = ($("editorRoles")?.value || "").split(/\r?\n/).map((v) => v.trim()).filter(Boolean);
+  if (JSON.stringify(roles) !== JSON.stringify(editor.roles)) changes.push({action: "preferences", roles});
+  const cv_layout = $("editorCvLayout").value;
+  const letter_depth = $("editorLetterDepth").value;
+  if (cv_layout !== editor.documents.cv_layout || letter_depth !== editor.documents.letter_depth) {
+    changes.push({action: "documents", cv_layout, letter_depth});
+  }
+  if (!changes.length) {
+    setStatus("No changes to save.", "warn");
+    return;
+  }
+  if (confirmed && !window.confirm("Confirm that EVERY changed factual field is accurate and supported by your own records?")) return;
+  await saveEditorPatch({action:"bulk", changes});
+}
+
+async function saveEditorPatch(change) {
+  try {
+    await apiJson("/api/profile/editor", {
+      method:"POST", headers: {"Content-Type":"application/json"},
+      body:JSON.stringify({version:state.profileEditor.version, ...change}),
+    });
+    await refresh();
+    setStatus("Changes saved in your canonical profile. Generate a new CV to use the updated information.", "ok");
+  } catch(error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
+async function editProfileDuty(action, roleIndex, dutyIndex) {
+  const editor = state.profileEditor;
+  const role = editor?.experience?.find((entry) => entry.index === Number(roleIndex));
+  if (!role) return;
+  const item = (role.responsibilities || []).find((entry) => entry.index === Number(dutyIndex));
+  const pending = (role.pending || []).find((entry) => entry.index === Number(dutyIndex));
+  let operation, value = "";
+  if (action === "edit-duty") {
+    if (!item) return;
+    value = window.prompt("Edit the actual responsibility (minimum 20 characters):", item.text) ?? "";
+    if (!value) return;
+    operation = "update";
+  } else if (action === "delete-duty") {
+    if (!item || !window.confirm("Remove this responsibility from future CVs?")) return;
+    operation = "delete";
+  } else if (action === "approve-duty") {
+    if (!pending || !window.confirm("Have you PERSONALLY performed this exact responsibility in this specific role? Approval publishes it as verified evidence in future CVs.")) return;
+    operation = "approve";
+  } else if (action === "new-duty") {
+    value = $("new-duty-" + roleIndex)?.value?.trim() || "";
+    if (!value) return;
+    operation = "add";
+  } else return;
+  const confirmFact = operation === "delete" ? false : window.confirm(
+    "Confirm that this responsibility is factual and supported by your own records? If not, it will stay unverified.");
+  if (operation === "approve" && !confirmFact) return;
+  await saveEditorPatch({
+    action:"responsibility", role_index:Number(roleIndex), bullet_index:Number(dutyIndex),
+    operation, value, confirmation:confirmFact ? OWNER_CONFIRMATION : "",
+  });
+}
+
 function renderSimpleList(items) {
   return items && items.length ? `<ul class="cleanList">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : `<p class="sectionHelp">Not listed.</p>`;
 }
@@ -692,6 +826,7 @@ function renderAll() {
   renderJobLists();
   renderApplications();
   renderProfileDetails();
+  renderProfileEditor();
   renderProfileReview(state.profileReview);
   renderSettings();
   renderAdvanced();
@@ -910,13 +1045,14 @@ async function apiJson(url, options = {}) {
 
 async function refresh() {
   setLoadingLists();
-  const [recommended, jobs, applications, profile, details, review, settings, latestScan, alerts, monitorSchedule] = await Promise.all([
+  const [recommended, jobs, applications, profile, details, review, editor, settings, latestScan, alerts, monitorSchedule] = await Promise.all([
     apiJson("/api/recommended"),
     apiJson("/api/jobs?limit=100&offset=0"),
     apiJson("/api/applications?limit=100&offset=0"),
     apiJson("/api/profile"),
     apiJson("/api/profile/details"),
     apiJson("/api/profile/review"),
+    apiJson("/api/profile/editor"),
     apiJson("/api/settings"),
     apiJson("/api/scan/latest"),
     apiJson("/api/alerts"),
@@ -932,6 +1068,7 @@ async function refresh() {
   state.profile = profile;
   state.profileDetails = details;
   state.profileReview = review;
+  state.profileEditor = editor;
   state.settings = settings;
   state.lastScan = latestScan.scan || state.lastScan;
   state.alerts = alerts;
@@ -1203,6 +1340,10 @@ function handleAction(event) {
   if (action === "prepare-job") prepareJob(id);
   if (action === "apply-email") applyByEmail(id);
   if (action === "add-responsibility") addVerifiedResponsibility(target.dataset.roleIndex);
+  if (action === "save-profile-editor") saveProfileEditor();
+  if (["new-duty", "edit-duty", "delete-duty", "approve-duty"].includes(action)) {
+    editProfileDuty(action, target.dataset.roleIndex, target.dataset.dutyIndex);
+  }
   if (action === "review-package") openJobById(id, "package");
   if (action === "show-email-draft") {
     const job = jobById(id);

@@ -503,3 +503,24 @@ input[type="file"] { max-width: 100%; padding: .72rem; border-radius: 12px; bord
 /* Ledger pagination is intentionally explicit: archived history is not silently truncated. */
 .loadMoreRow { display: flex; flex-wrap: wrap; align-items: center; gap: .9rem; padding: 1rem .25rem; justify-content: center; }
 .loadMoreRow p { margin: 0; }
+
+/* Canonical profile editing: coherent native form controls, no script-generated CSS. */
+.profileEditSection { margin-block: 1.2rem; }
+.profileEditorGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:1rem; margin:1rem 0; }
+.editorField { display:flex; flex-direction:column; gap:.45rem; margin:1rem 0; font-size:.88rem; font-weight:600; }
+.editorField input, .editorField select, .editorField textarea {
+  width:100%; min-height:42px; padding:.7rem .8rem; border:1px solid #c4d2d8;
+  background:var(--surface,#fff); border-radius:8px; color:var(--ink,#243742);
+  font:inherit; font-weight:400;
+}
+.editorField textarea { line-height:1.5; min-height:85px; resize:vertical; }
+.editorField input:focus-visible, .editorField textarea:focus-visible, .editorField select:focus-visible {
+  outline:2px solid #147f81; outline-offset:2px;
+}
+.editorConfirm { display:flex; align-items:flex-start; gap:.65rem; margin:1rem 0; line-height:1.5; }
+.editorConfirm input { width:17px; height:17px; flex:0 0 17px; margin-top:.15rem; }
+.editorRole { border-top:1px solid #dbe6e9; padding:1.1rem 0; }
+.editorDuty { padding:.75rem; margin:.6rem 0; border-left:3px solid #147f81; background:#f7f9f9; border-radius:4px; }
+.editorDuty p { margin:0 0 .5rem; }
+.editorDuty button { margin:.25rem .45rem .15rem 0; }
+.pendingDuty { border-left-color:#a88449; background:#fcf9f2; }

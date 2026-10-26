@@ -1373,26 +1373,49 @@ def _render_canonical_cv_text(model: dict[str, Any]) -> str:
         lines.append("APPLICATION FOR: " + str(model["application_focus"]))
     lines.extend(["", "PROFESSIONAL SUMMARY", str(model.get("profile") or ""), ""])
 
-    expertise = [group for group in (model.get("expertise") or []) if group.get("items")]
-    if expertise:
-        lines.append("CORE PROFESSIONAL COMPETENCIES")
-        for group in expertise:
-            items = "; ".join(str(item) for item in group.get("items") or [])
-            lines.append(f"{group.get('group')}: {items}")
-        lines.append("")
-    elif model.get("strengths"):
-        lines.extend(["CORE PROFESSIONAL COMPETENCIES", *[f"- {item}" for item in model["strengths"]], ""])
+    if model.get("is_employer_curated"):
+        if model.get("experience"):
+            lines.append("PROFESSIONAL EXPERIENCE")
+            for item in model["experience"]:
+                if item.get("role"):
+                    lines.append(str(item["role"]))
+                metadata = " | ".join(str(value) for value in [item.get("org"), item.get("loc"), item.get("dates")] if value)
+                if metadata:
+                    lines.append(metadata)
+                lines.extend(f"- {bullet}" for bullet in item.get("bullets") or [])
+                lines.append("")
 
-    if model.get("experience"):
-        lines.append("PROFESSIONAL EXPERIENCE")
-        for item in model["experience"]:
-            if item.get("role"):
-                lines.append(str(item["role"]))
-            metadata = " | ".join(str(value) for value in [item.get("org"), item.get("loc"), item.get("dates")] if value)
-            if metadata:
-                lines.append(metadata)
-            lines.extend(f"- {bullet}" for bullet in item.get("bullets") or [])
+        expertise = [group for group in (model.get("expertise") or []) if group.get("items")]
+        if expertise:
+            lines.append("CORE PROFESSIONAL COMPETENCIES")
+            for group in expertise:
+                items = "; ".join(str(item) for item in group.get("items") or [])
+                lines.append(f"{group.get('group')}: {items}")
             lines.append("")
+        elif model.get("strengths"):
+            lines.extend(["CORE PROFESSIONAL COMPETENCIES", *[f"- {item}" for item in model["strengths"]], ""])
+
+    else:
+        expertise = [group for group in (model.get("expertise") or []) if group.get("items")]
+        if expertise:
+            lines.append("CORE PROFESSIONAL COMPETENCIES")
+            for group in expertise:
+                items = "; ".join(str(item) for item in group.get("items") or [])
+                lines.append(f"{group.get('group')}: {items}")
+            lines.append("")
+        elif model.get("strengths"):
+            lines.extend(["CORE PROFESSIONAL COMPETENCIES", *[f"- {item}" for item in model["strengths"]], ""])
+
+        if model.get("experience"):
+            lines.append("PROFESSIONAL EXPERIENCE")
+            for item in model["experience"]:
+                if item.get("role"):
+                    lines.append(str(item["role"]))
+                metadata = " | ".join(str(value) for value in [item.get("org"), item.get("loc"), item.get("dates")] if value)
+                if metadata:
+                    lines.append(metadata)
+                lines.extend(f"- {bullet}" for bullet in item.get("bullets") or [])
+                lines.append("")
 
     for title, values in [
         ("EDUCATION", model.get("education") or []),

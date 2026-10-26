@@ -672,36 +672,69 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
         add_section("PROFESSIONAL SUMMARY")
         story.append(Paragraph(esc(model.get("profile")), body_style))
 
-    groups = _cv_expertise_groups(model)
-    if groups:
-        add_section("CORE PROFESSIONAL COMPETENCIES")
-        for group in groups:
-            items = "&nbsp;· ".join(esc(item) for item in group.get("items") or [])
-            label = esc(group.get("group") or "")
-            paragraph = Paragraph(
-                f'<font color="{palette.teal}"><b>{label}:</b></font> {items}'
-                if label else items,
-                group_style,
-            )
-            # A group label must never be left stranded at the foot of a page
-            # with its competencies continuing overleaf.
-            story.append(KeepTogether(paragraph))
+    if model.get("is_employer_curated"):
+        experience = list(model.get("experience") or [])
+        if experience:
+            add_section("PROFESSIONAL EXPERIENCE")
+            for item in experience:
+                story.append(Paragraph(esc(item.get("role") or ""), role_style))
+                meta = " | ".join(value for value in [
+                    f"<b>{esc(item['org'])}</b>" if item.get("org") else "",
+                    esc(item.get("dates")),
+                ] if value)
+                if meta:
+                    story.append(Paragraph(meta, meta_style))
+                if item.get("loc"):
+                    story.append(Paragraph(esc(item["loc"]), meta_style))
+                for bullet in item.get("bullets") or []:
+                    story.append(Paragraph(esc(bullet), bullet_style, bulletText=_cv_bullet_glyph()))
 
-    experience = list(model.get("experience") or [])
-    if experience:
-        add_section("PROFESSIONAL EXPERIENCE")
-        for item in experience:
-            story.append(Paragraph(esc(item.get("role") or ""), role_style))
-            meta = " | ".join(value for value in [
-                f"<b>{esc(item['org'])}</b>" if item.get("org") else "",
-                esc(item.get("dates")),
-            ] if value)
-            if meta:
-                story.append(Paragraph(meta, meta_style))
-            if item.get("loc"):
-                story.append(Paragraph(esc(item["loc"]), meta_style))
-            for bullet in item.get("bullets") or []:
-                story.append(Paragraph(esc(bullet), bullet_style, bulletText=_cv_bullet_glyph()))
+        groups = _cv_expertise_groups(model)
+        if groups:
+            add_section("CORE PROFESSIONAL COMPETENCIES")
+            for group in groups:
+                items = "&nbsp;· ".join(esc(item) for item in group.get("items") or [])
+                label = esc(group.get("group") or "")
+                paragraph = Paragraph(
+                    f'<font color="{palette.teal}"><b>{label}:</b></font> {items}'
+                    if label else items,
+                    group_style,
+                )
+                # A group label must never be left stranded at the foot of a page
+                # with its competencies continuing overleaf.
+                story.append(KeepTogether(paragraph))
+
+    else:
+        groups = _cv_expertise_groups(model)
+        if groups:
+            add_section("CORE PROFESSIONAL COMPETENCIES")
+            for group in groups:
+                items = "&nbsp;· ".join(esc(item) for item in group.get("items") or [])
+                label = esc(group.get("group") or "")
+                paragraph = Paragraph(
+                    f'<font color="{palette.teal}"><b>{label}:</b></font> {items}'
+                    if label else items,
+                    group_style,
+                )
+                # A group label must never be left stranded at the foot of a page
+                # with its competencies continuing overleaf.
+                story.append(KeepTogether(paragraph))
+
+        experience = list(model.get("experience") or [])
+        if experience:
+            add_section("PROFESSIONAL EXPERIENCE")
+            for item in experience:
+                story.append(Paragraph(esc(item.get("role") or ""), role_style))
+                meta = " | ".join(value for value in [
+                    f"<b>{esc(item['org'])}</b>" if item.get("org") else "",
+                    esc(item.get("dates")),
+                ] if value)
+                if meta:
+                    story.append(Paragraph(meta, meta_style))
+                if item.get("loc"):
+                    story.append(Paragraph(esc(item["loc"]), meta_style))
+                for bullet in item.get("bullets") or []:
+                    story.append(Paragraph(esc(bullet), bullet_style, bulletText=_cv_bullet_glyph()))
 
     for title, values in [
         ("EDUCATION", model.get("education") or []),
@@ -879,33 +912,63 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
         add_section("PROFESSIONAL SUMMARY")
         doc.add_paragraph(model.get("profile") or "", style="CV Body")
 
-    groups = _cv_expertise_groups(model)
-    if groups:
-        add_section("CORE PROFESSIONAL COMPETENCIES")
-        for group in groups:
-            p = doc.add_paragraph(style="CV Competency Group")
-            label = str(group.get("group") or "")
-            if label:
-                run = p.add_run(f"{label}: ")
-                run.bold = True
-                run.font.color.rgb = RGBColor.from_string(palette.teal[1:])
-            p.add_run("\u00a0· ".join(str(item) for item in group.get("items") or []))
+    if model.get("is_employer_curated"):
+        experience = list(model.get("experience") or [])
+        if experience:
+            add_section("PROFESSIONAL EXPERIENCE")
+            for item in experience:
+                doc.add_paragraph(item.get("role") or "", style="CV Role")
+                if item.get("org") or item.get("dates"):
+                    p = doc.add_paragraph(style="CV Meta")
+                    if item.get("org"):
+                        p.add_run(str(item["org"])).bold = True
+                    if item.get("dates"):
+                        p.add_run((" | " if item.get("org") else "") + str(item["dates"]))
+                if item.get("loc"):
+                    doc.add_paragraph(str(item["loc"]), style="CV Meta")
+                for bullet in item.get("bullets") or []:
+                    add_bullet(bullet)
 
-    experience = list(model.get("experience") or [])
-    if experience:
-        add_section("PROFESSIONAL EXPERIENCE")
-        for item in experience:
-            doc.add_paragraph(item.get("role") or "", style="CV Role")
-            if item.get("org") or item.get("dates"):
-                p = doc.add_paragraph(style="CV Meta")
-                if item.get("org"):
-                    p.add_run(str(item["org"])).bold = True
-                if item.get("dates"):
-                    p.add_run((" | " if item.get("org") else "") + str(item["dates"]))
-            if item.get("loc"):
-                doc.add_paragraph(str(item["loc"]), style="CV Meta")
-            for bullet in item.get("bullets") or []:
-                add_bullet(bullet)
+        groups = _cv_expertise_groups(model)
+        if groups:
+            add_section("CORE PROFESSIONAL COMPETENCIES")
+            for group in groups:
+                p = doc.add_paragraph(style="CV Competency Group")
+                label = str(group.get("group") or "")
+                if label:
+                    run = p.add_run(f"{label}: ")
+                    run.bold = True
+                    run.font.color.rgb = RGBColor.from_string(palette.teal[1:])
+                p.add_run("\u00a0· ".join(str(item) for item in group.get("items") or []))
+
+    else:
+        groups = _cv_expertise_groups(model)
+        if groups:
+            add_section("CORE PROFESSIONAL COMPETENCIES")
+            for group in groups:
+                p = doc.add_paragraph(style="CV Competency Group")
+                label = str(group.get("group") or "")
+                if label:
+                    run = p.add_run(f"{label}: ")
+                    run.bold = True
+                    run.font.color.rgb = RGBColor.from_string(palette.teal[1:])
+                p.add_run("\u00a0· ".join(str(item) for item in group.get("items") or []))
+
+        experience = list(model.get("experience") or [])
+        if experience:
+            add_section("PROFESSIONAL EXPERIENCE")
+            for item in experience:
+                doc.add_paragraph(item.get("role") or "", style="CV Role")
+                if item.get("org") or item.get("dates"):
+                    p = doc.add_paragraph(style="CV Meta")
+                    if item.get("org"):
+                        p.add_run(str(item["org"])).bold = True
+                    if item.get("dates"):
+                        p.add_run((" | " if item.get("org") else "") + str(item["dates"]))
+                if item.get("loc"):
+                    doc.add_paragraph(str(item["loc"]), style="CV Meta")
+                for bullet in item.get("bullets") or []:
+                    add_bullet(bullet)
 
     for title, values in [
         ("EDUCATION", model.get("education") or []),

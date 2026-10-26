@@ -10,6 +10,7 @@ const state = {
   profileDetails: {},
   profileReview: {},
   profileEditor: null,
+  importedDuties: [],
   settings: {},
   lastScan: null,
   alerts: {alerts: [], unread_count: 0},
@@ -1373,6 +1374,60 @@ async function confirmField(field) {
   }
 }
 
+function renderImportedDuties() {
+  const target = $("cvImportCandidates");
+  if (!target) return;
+  const duties = state.importedDuties || [];
+  if (!duties.length) {
+    target.innerHTML = '<p class="sectionHelp">No clearly marked work-responsibility bullets were found. You can still add actual duties manually in My Profile.</p>';
+    return;
+  }
+  const roles = (state.profileEditor?.experience || []).filter((x) => x.verified);
+  if (!roles.length) {
+    target.innerHTML = '<p class="sectionHelp">Confirm your work-history roles in My Profile before importing responsibilities.</p>';
+    return;
+  }
+  target.innerHTML = `<h4>Review ${duties.length} candidate responsibilities — no automatic approval</h4>
+    <p class="sectionHelp">Each line comes from your uploaded CV. Choose the exact job where you performed it and confirm it is factual. Contacts and references are never imported here.</p>
+    ${duties.map((duty, i) => `
+      <div class="editorDuty importCandidate"><p>${escapeHtml(duty)}</p>
+        <label class="editorField"><span>Which verified position did you perform this in?</span>
+          <select id="importCandidateRole-${i}">
+            <option value="">Choose a role</option>
+            ${roles.map((role) => `<option value="${role.index}">${escapeHtml(role.title + " — " + role.organization)}</option>`).join("")}
+          </select>
+        </label>
+        <button class="secondary smallButton" data-action="accept-imported-duty" data-candidate-index="${i}">
+          Confirm & add to selected role</button>
+      </div>`).join("")}`;
+}
+
+async function acceptImportedDuty(index) {
+  const duty = state.importedDuties?.[Number(index)];
+  const roleIndex = Number($("importCandidateRole-" + index)?.value);
+  if (!duty || !$("importCandidateRole-" + index)?.value) {
+    setStatus("Choose the correct verified professional role first.", "warn");
+    return;
+  }
+  if (!window.confirm("I personally confirm this is factual work I performed in the selected position. The exact sentence will become verified CV content.")) return;
+  try {
+    await apiJson("/api/profile/editor", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        version: state.profileEditor.version,
+        action:"responsibility", operation:"add", role_index:roleIndex,
+        value:duty, confirmation:OWNER_CONFIRMATION,
+      }),
+    });
+    state.importedDuties.splice(Number(index), 1);
+    await refresh();
+    renderImportedDuties();
+    setStatus("The confirmed duty was saved. Future CVs will include it under the matching role.", "ok");
+  } catch(error) {
+    setStatus(humanizeError(error.message), "error");
+  }
+}
+
 async function importCv() {
   const input = $("cvFile");
   if (!input.files || !input.files[0]) {
@@ -1387,8 +1442,11 @@ async function importCv() {
     // Import is a request-local, unverified preview.  It must never replace
     // the canonical applicant state shown in My Profile.
     $("advancedLog").textContent = JSON.stringify(data.preview || data, null, 2);
-    setStatus(data.message, "warn");
+    state.importedDuties = Array.isArray(data.candidate_responsibilities)
+      ? data.candidate_responsibilities : [];
     await refresh();
+    renderImportedDuties();
+    setStatus("CV preview complete. Nothing was saved. Review and confirm duties individually.", "warn");
   } catch (error) {
     setStatus(humanizeError(error.message), "error");
   }
@@ -1449,6 +1507,7 @@ function handleAction(event) {
   if (action === "add-responsibility") addVerifiedResponsibility(target.dataset.roleIndex);
   if (action === "save-profile-editor") saveProfileEditor();
   if (action === "new-work-role") createWorkRole();
+  if (action === "accept-imported-duty") acceptImportedDuty(target.dataset.candidateIndex);
   if (action === "edit-record") editProfileRecord(target);
   if (action === "new-record") editProfileRecord(target, true);
   if (["new-duty", "edit-duty", "delete-duty", "approve-duty"].includes(action)) {

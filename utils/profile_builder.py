@@ -145,3 +145,32 @@ def build_profile_from_cv_file(cv_path: str) -> dict[str, Any]:
         if path.exists() and path.suffix.lower() not in {".pdf", ".docx"}:
             text = path.read_text(encoding="utf-8", errors="replace")
     return build_profile_from_cv_text(text)
+
+
+def candidate_responsibilities_from_cv(text: str, *, limit: int = 60) -> list[str]:
+    """Offer clearly delimited duties for user review, never as verified facts.
+
+    Only explicit CV bullet lines are candidates. Job titles, references,
+    contact numbers, achievements not formatted as bullets, and inferential
+    guesses are not silently promoted. The caller keeps this transient.
+    """
+    if not isinstance(text, str):
+        return []
+    items: list[str] = []
+    seen: set[str] = set()
+    for line in text.splitlines():
+        match = re.match(r"^\s*(?:[•●▪‣–—]|[-*])\s+(.+)$", line)
+        if not match:
+            continue
+        candidate = re.sub(r"\s+", " ", match.group(1)).strip()
+        if len(candidate) < 25 or len(candidate) > 1200:
+            continue
+        if re.search(r"\b(?:tel|phone|e-?mail|reference)\s*:", candidate, flags=re.IGNORECASE):
+            continue
+        normalized = candidate.casefold().rstrip(" .;")
+        if normalized not in seen:
+            items.append(candidate)
+            seen.add(normalized)
+        if len(items) >= limit:
+            break
+    return items

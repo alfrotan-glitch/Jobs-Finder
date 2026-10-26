@@ -59,7 +59,8 @@ from utils.profile import (
     load_canonical_profile,
     save_canonical_profile,
 )
-from utils.profile_builder import build_profile_from_cv_file
+from utils.profile_builder import build_profile_from_cv_text, candidate_responsibilities_from_cv
+from utils.resume_parser import extract_resume_text
 from utils.profile_editor import ProfileEditError, editor_snapshot, update_profile
 from utils.recommendations import evaluate_scan_jobs
 from utils.scan_guard import ScanAlreadyRunning, exclusive_scan
@@ -708,7 +709,9 @@ async def api_import_cv(file: UploadFile = File(...)):
         # An empty path is intentional: no temporary upload location can be
         # retained in a profile-shaped preview or canonical applicant record.
         try:
-            preview = build_profile_from_cv_file(str(uploaded_path))
+            document_text = extract_resume_text(str(uploaded_path))
+            preview = build_profile_from_cv_text(document_text)
+            candidates = candidate_responsibilities_from_cv(document_text)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -717,6 +720,8 @@ async def api_import_cv(file: UploadFile = File(...)):
         "persisted": False,
         "message": "CV import preview only. Your canonical profile.yaml was not changed; manually add only facts you confirm.",
         "preview": _profile_review_payload(preview),
+        "candidate_responsibilities": candidates,
+        "candidate_warning": "These are quotes from the uploaded CV, not independently verified facts. Select the correct employer and personally confirm each statement before adding it.",
     }
 
 

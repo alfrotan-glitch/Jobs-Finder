@@ -69,3 +69,31 @@ def test_extractor_never_decodes_invalid_binary_word_as_text(tmp_path):
     path.write_bytes(b"\x00\x01malformed binary")
     with pytest.raises(ValueError, match="Word CV"):
         extract_resume_text(str(path))
+
+
+def test_owner_review_candidate_duties_are_never_auto_verified():
+    from utils.profile_builder import candidate_responsibilities_from_cv
+    text = (
+        "PROFESSIONAL EXPERIENCE\n"
+        "TFU Medical Doctor\n"
+        "— Delivered clinical assessments and follow-up for children with malnutrition.\n"
+        "— Coordinated reporting with district health partners and nutrition colleagues.\n"
+        "References: private number\n"
+        "— Email: private@example.org\n"
+    )
+    candidates = candidate_responsibilities_from_cv(text)
+    assert len(candidates) == 2
+    assert candidates[0].startswith("Delivered clinical")
+    assert not any("private@" in text for text in candidates)
+
+
+def test_docx_preview_offers_real_text_but_does_not_persist_bullets():
+    response = TestClient(server.app).post("/api/import-cv", files={
+        "file": ("earlier_cv.docx", _sample_word(),
+                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    })
+    assert response.status_code == 200
+    assert response.json()["persisted"] is False
+    # Synthetic table layout here uses paragraph-like duties but no bullets,
+    # so no responsibilities are fabricated from unmarked prose.
+    assert isinstance(response.json()["candidate_responsibilities"], list)

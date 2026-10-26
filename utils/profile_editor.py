@@ -6,7 +6,6 @@ canonical profile stays the only source for matcher, CV, and cover letter.
 """
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from utils.profile import (

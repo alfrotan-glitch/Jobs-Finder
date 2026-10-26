@@ -1,0 +1,137 @@
+"""Evidence-preserving editorial decisions for employer-facing applications.
+
+Deliberately deterministic/offline: only reorders or selects owner-verified text.
+Never fabricates numbers, outcomes, positions, locations, or employer claims.
+"""
+from __future__ import annotations
+
+import re
+
+# Concept matches apply to real vacancy titles, not arbitrary long job pages.
+# Pattern matching is token-bounded to prevent accidental hits such as
+# "nutrition" from occurring inside "malnutrition".
+_ROLE_SIGNALS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    (
+        re.compile(r"\b(?:coordinator|coordination|manager|management|director|programme officer|program officer)\b", re.I),
+        ("coordinat", "stakeholder", "authority", "ministry", "provincial", "supervis", "monitor",
+         "report", "program", "programme", "team", "implementation", "management"),
+    ),
+    (
+        re.compile(r"\b(?:supervisor|supervision|team lead|team leader|head)\b", re.I),
+        ("supervis", "team", "staff", "coach", "mentor", "capacity", "operat",
+         "coordinat", "quality", "monitor", "supply"),
+    ),
+    (
+        re.compile(r"\b(?:tfu|sam|nutrition|feeding|imam|cmam|tsfp|otp)\b", re.I),
+        ("tfu", "sam", "nutrition", "feeding", "therapeutic", "clinical", "imam",
+         "cmam", "otp", "stock", "supply", "referral"),
+    ),
+    (
+        re.compile(r"\b(?:physician|medical doctor|clinician|clinical|medical officer|doctor)\b", re.I),
+        ("clinical", "patient", "diagnos", "treatment", "referral", "medical",
+         "inpatient", "health", "hmis"),
+    ),
+    (
+        re.compile(r"\b(?:safeguarding|psea|protection|child protection)\b", re.I),
+        ("safeguarding", "psea", "protection", "confidential", "policy", "child"),
+    ),
+    (
+        re.compile(r"\b(?:emergency|outbreak|covid|response)\b", re.I),
+        ("emergency", "outbreak", "covid", "response", "contact trac", "provincial", "health"),
+    ),
+    (
+        re.compile(r"\b(?:administration|administrative|finance|procurement|logistics)\b", re.I),
+        ("administ", "finance", "procure", "record", "report", "logistic", "stock"),
+    ),
+)
+
+
+def _preferred_terms(vacancy_title: str) -> tuple[str, ...]:
+    seen: list[str] = []
+    for pattern, terms in _ROLE_SIGNALS:
+        if pattern.search(vacancy_title or ""):
+            for term in terms:
+                if term not in seen:
+                    seen.append(term)
+    return tuple(seen)
+
+
+def _count_phrase(text: str, term: str) -> int:
+    normalized = str(text).casefold()
+    # Match word beginnings, never inside unrelated longer words.
+    return int(bool(re.search(r"(?<!\w)" + re.escape(term), normalized)))
+
+
+def factual_relevance_score(value: str, vacancy_title: str, description: str = "") -> int:
+    """Score an *existing attested sentence* without rewriting its contents."""
+    text = str(value or "")
+    title_terms = _preferred_terms(vacancy_title)
+    title_score = sum((len(title_terms) - i) * _count_phrase(text, term)
+                      for i, term in enumerate(title_terms))
+    # A real vacancy's description breaks ties, but it must not override
+    # strong title-specific relevance through sheer length or repetition.
+    description_terms = set(re.findall(r"[a-z]{5,}", str(description or "").lower()))
+    matching_words = {word for word in re.findall(r"[a-z]{5,}", text.lower())
+                      if word in description_terms}
+    description_score = min(4, len(matching_words))
+    return title_score * 2 + description_score
+
+
+def rank_attested_statements(
+    statements: list[str], vacancy_title: str, description: str = ""
+) -> list[str]:
+    """Stable ordering, preserving the original list and every exact sentence."""
+    return [
+        text for _, text in sorted(
+            enumerate(statements),
+            key=lambda pair: (-factual_relevance_score(pair[1], vacancy_title, description), pair[0]),
+        )
+    ]
+
+
+def target_verified_summary(summary: str, vacancy_title: str, description: str = "") -> str:
+    """Focus a long *owner-verified* CV paragraph without adding a single claim.
+
+    Keep the first identity sentence and select up to two more original
+    sentences ranked by the target role. Compact or owner-written short
+    summaries pass through unchanged. Never summarize by paraphrasing.
+    """
+    original = str(summary or "").strip()
+    if len(original) <= 270 or not vacancy_title:
+        return original
+    sentences = [
+        match.group().strip()
+        for match in re.finditer(r"[^.!?]+(?:[.!?]+|$)", original)
+        if match.group().strip()
+    ]
+    if len(sentences) < 3:
+        return original
+    # Preserve the applicant's identity/experience lead unchanged.
+    identity = sentences[0]
+    selected = rank_attested_statements(sentences[1:], vacancy_title, description)[:2]
+    return " ".join([identity, *selected])
+
+
+def concise_attested_highlights(
+    highlights: list[str], *, has_cover_letter: bool
+) -> list[str]:
+    """Never truncate factual sentences mid-claim for a short employer email.
+
+    A separate attached cover letter carries the full supporting argument;
+    the email is just a professional introduction and attachment hand-off.
+    """
+    max_items = 1 if has_cover_letter else 2
+    seen: set[str] = set()
+    result: list[str] = []
+    for candidate in highlights:
+        sentence = re.sub(r"\s+", " ", str(candidate or "")).strip().strip(" -•")
+        if not sentence or len(sentence) > 220:
+            continue
+        normalized = sentence.casefold().rstrip(".")
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(sentence)
+        if len(result) == max_items:
+            break
+    return result

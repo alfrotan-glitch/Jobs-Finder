@@ -63,3 +63,22 @@ test("list records are refreshed from source before showing stale details", asyn
   await get('openJobById("old-392")');
   assert.equal(state.selectedJob.title, "Updated saved vacancy");
 });
+
+test("only fully ready official email packages can show an Apply action", () => {
+  const job = {id: "x", metadata: {application_method: "EMAIL", apply_email: "jobs@example.org"},
+    package: {route_type: "email", package_status: "READY_FOR_REVIEW",
+      email_draft: {to: "jobs@example.org", body: "Application"}}};
+  assert.equal(get("emailDraftReady")(job), true);
+  assert.match(get("renderPackage")(job), /data-action="apply-email"/);
+  for (const modification of [
+    {is_expired: true},
+    {status: "APPLIED_MANUALLY"},
+    {metadata: {application_method: "WEB", apply_url: "https://example.org/apply"}},
+    {package: {...job.package, package_status: "NEEDS_USER_INPUT"}},
+    {package: {...job.package, missing_items: ["medical registration"]}},
+  ]) {
+    const unsafe = {...job, ...modification};
+    assert.equal(get("emailDraftReady")(unsafe), false);
+    assert.doesNotMatch(get("renderPackage")(unsafe), /data-action="apply-email"/);
+  }
+});

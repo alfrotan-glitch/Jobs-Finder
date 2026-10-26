@@ -38,8 +38,8 @@ def test_windows_readiness_launcher_is_explicit_and_safe():
 
 
 def test_local_readiness_detects_stale_owner_profile_without_destroying_data(monkeypatch):
-    from utils import profile as repository
     from tools import release_readiness
+    from utils import profile as repository
 
     current = repository.load_canonical_profile(required=True)
     stale = dict(current)

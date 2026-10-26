@@ -50,6 +50,7 @@ from utils.application_editorial import (
     target_verified_summary,
 )
 from utils.medical_matcher import MET, NEEDS_VERIFICATION, NOT_ELIGIBLE_STATUS, NOT_MET
+from utils.package_freshness import generation_stamp
 from utils.paths import project_path
 from utils.profile import (
     build_profile_evidence,
@@ -2427,6 +2428,7 @@ def generate_application_package(
         "user_required_actions": user_actions,
         "missing_items": missing,
         "no_submission_performed": True,
+        "generation": generation_stamp(profile, docs),
     }
     package["text"] = render_application_package(package)
     return package

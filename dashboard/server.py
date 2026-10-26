@@ -51,6 +51,7 @@ from utils.email_drafts import (
     open_windows_email_draft,
 )
 from utils.medical_matcher import NOT_ELIGIBLE_STATUS, match_job_against_profile
+from utils.package_freshness import package_freshness
 from utils.paths import CANONICAL_DB_PATH, PROJECT_ROOT
 from utils.private_references import (
     PrivateReferenceError,
@@ -1045,6 +1046,8 @@ def api_job(job_id: str):
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+    if job.get("package"):
+        job["package_freshness"] = package_freshness(job["package"], _runtime_profile(False))
     return job
 
 
@@ -1074,6 +1077,8 @@ def api_email_draft(job_id: str):
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+    if not package_freshness(job.get("package"), _runtime_profile(False))["current"]:
+        raise HTTPException(status_code=409, detail="Saved CV/letter package is outdated. Regenerate all documents from your current verified profile before opening an email draft.")
     if is_expired(job):
         raise HTTPException(status_code=409, detail="This vacancy has expired.")
     try:
@@ -1096,6 +1101,8 @@ def api_open_email(job_id: str):
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+    if not package_freshness(job.get("package"), _runtime_profile(False))["current"]:
+        raise HTTPException(status_code=409, detail="Saved CV/letter package is outdated. Regenerate all documents from your current verified profile before opening an email draft.")
     if is_expired(job):
         raise HTTPException(status_code=409, detail="This vacancy has expired.")
     try:

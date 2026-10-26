@@ -193,7 +193,7 @@ function directApplicationRouteAvailable(job) {
 // superseded email package as ready to open. The server enforces this again.
 function emailDraftReady(job) {
   const pkg = job.package || {};
-  return !job.is_expired && job.status !== "APPLIED_MANUALLY" &&
+  return job.package_freshness?.current !== false && !job.is_expired && job.status !== "APPLIED_MANUALLY" &&
     applicationMethod(job) === "EMAIL" && pkg.route_type === "email" &&
     pkg.package_status === "READY_FOR_REVIEW" &&
     !(pkg.missing_items || []).length && Boolean(pkg.email_draft) &&
@@ -1206,6 +1206,7 @@ function artifactStatusLabel(path) {
 
 function renderPackage(job) {
   const pkg = job.package || {};
+  const outdated = job.package_freshness?.current === false;
   const paths = generatedPaths(job);
   const cvFormats = paths.tailored_cv || {};
   const coverFormats = paths.cover_letter || {};
@@ -1221,6 +1222,7 @@ function renderPackage(job) {
   const stateNote = pkg.package_status === "NEEDS_USER_INPUT" ? "Required user input or verification remains." : pkg.package_status === "BLOCKED" ? "The authoritative eligibility state blocks this package." : "Generated files remain for human review only.";
   return `<section class="detailSection"><h3>Your application package</h3>
     <p class="sectionHelp"><strong>Package state: ${escapeHtml(packageState)}</strong> — ${escapeHtml(stateNote)}</p>
+    ${outdated ? '<p class="sectionHelp"><strong>OUTDATED DOCUMENTS:</strong> These saved Word/PDF files were generated with an older CV engine or a previous profile. Do not submit or email them. Select Regenerate to create an updated, evidence-rich application first.</p>' : ""}
     ${canPrepareJob(job) ? `<div class="cardActions">
       <button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">
       Regenerate CV, cover letter & email from current verified profile</button></div>

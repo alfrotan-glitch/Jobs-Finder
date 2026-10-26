@@ -166,7 +166,7 @@ def test_committed_review_document_is_in_sync_with_the_canonical_record():
     current = review.render_markdown(profile, digest, items)
     assert historical.startswith("# Historical draft review")
     assert current != historical
-    assert "98ee969a895ad64adaad03a00062f83c4bbd30b17880770b52468991d1a46891" in historical
+    assert "dcc48dcc67e686afc262f66715e155f5fc9c7ce65df96f710764c6c1d3dfd510" in historical
 
 
 def test_pre_recovery_28_item_review_is_preserved_unchanged():

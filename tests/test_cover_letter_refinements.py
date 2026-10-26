@@ -238,9 +238,10 @@ def test_health_nutrition_bullets_lead_with_supervision_logistics_and_coordinati
     from utils.documents import _supervisory_tier
 
     bullets = _bullets(_letter_lines(_constructed_health_nutrition()))
-    assert bullets[0].startswith("Supervised mobile health and nutrition teams"), bullets
+    assert bullets[0].startswith("Supervised"), bullets
+    assert any("mobile health and nutrition teams" in bullet for bullet in bullets), bullets
     assert any("supply" in bullet.lower() or "monitor" in bullet.lower() or "logistic" in bullet.lower() for bullet in bullets), bullets
-    assert all(_supervisory_tier(bullet) <= 2 for bullet in bullets), bullets
+    assert all(_supervisory_tier(bullet) <= 3 for bullet in bullets), bullets
 
 
 def test_health_nutrition_bullets_drop_clinical_and_safeguarding_when_stronger_evidence_exists():

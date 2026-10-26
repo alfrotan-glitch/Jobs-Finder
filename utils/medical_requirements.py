@@ -773,7 +773,7 @@ def is_valid_http_url(url: str | None) -> bool:
     if not isinstance(url, str):
         return False
     text = url.strip()
-    if not text or any(ord(char) <= 32 or ord(char) == 127 or char == "\\\\" for char in text):
+    if not text or any(ord(char) <= 32 or ord(char) == 127 or char == "\\" for char in text):
         return False
     try:
         parsed = urlparse(text)

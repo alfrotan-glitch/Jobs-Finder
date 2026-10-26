@@ -295,6 +295,13 @@ def _pending_responsibility_items(profile: dict[str, Any]) -> list[dict[str, str
         if not isinstance(drafts, list):
             continue
         for item in drafts:
+            # Superseded historical machine-written proposals are preserved
+            # only for the audit archive, never presented as outstanding
+            # decisions after owner approved the complete official CV.
+            if ((profile.get("official_cv_approval") or {}).get("owner_approved") is True
+                and isinstance(item, dict)
+                and "system-authored scope draft" in str(item.get("basis") or "")):
+                continue
             text = ""
             if isinstance(item, dict) and item.get("verified") is not True:
                 text = re.sub(r"\s+", " ", str(item.get("text") or "")).strip()

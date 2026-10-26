@@ -734,10 +734,9 @@ def test_unverified_responsibility_drafts_never_reach_a_document(tmp_path):
     """A draft is preserved and reported, never printed as verified experience."""
     profile = _profile()
     pending = _pending_responsibilities(profile)
-    # Every draft that no applicant evidence supports is still held: nothing was
-    # deleted when the supported responsibilities were restored.
-    assert len(pending) == 24, len(pending)
-    assert len({role for role, _ in pending}) == 5
+    # The full official CV is approved. Earlier system-authored proposals are
+    # archived in the YAML but no longer solicited as outstanding decisions.
+    assert pending == []
 
     master = write_master_cv(profile, out_dir=tmp_path / "master")
     job = _medical_job()
@@ -758,11 +757,9 @@ def test_unverified_responsibility_drafts_never_reach_a_document(tmp_path):
             # Neither a distinctive fragment nor the wording of a draft.
             assert draft[:60] not in text, (name, draft[:60])
 
-    # The owner is told, in plain terms, that the drafts are not published.
+    # No misleading reapproval warning for facts already in the approved CV.
     for warnings in (master["review_warnings"], docs["review_warnings"]):
-        joined = " ".join(warnings)
-        assert "24 detailed responsibility draft(s)" in joined
-        assert "NOT presented as verified experience" in joined
+        assert not any("24 detailed responsibility draft(s)" in text for text in warnings)
 
 
 def test_responsibility_verification_gate_is_real(tmp_path):

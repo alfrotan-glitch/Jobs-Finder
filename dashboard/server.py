@@ -351,6 +351,18 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
         gated = "responsibilities" in item or "needs_verification" in item
         verified = _verified_responsibility_texts(item.get("responsibilities"))
         pending = _pending_responsibility_texts(item)
+        # An earlier abbreviated excerpt generated obsolete draft suggestions.
+        # The owner has now approved the complete official CV, and its 24
+        # attested duties are present separately as verified responsibilities.
+        # Historical assistant drafts remain in YAML for audit, not as tasks
+        # the user is forced to reconfirm for an already approved official CV.
+        if (profile.get("official_cv_approval") or {}).get("owner_approved") is True:
+            pending = [
+                str(x.get("text") or "").strip()
+                for x in item.get("needs_verification") or []
+                if isinstance(x, dict) and x.get("verified") is not True
+                and "system-authored scope draft" not in str(x.get("basis") or "")
+            ]
         if not gated:
             # Owner-authored free-form profile shape: bullet lists carry no
             # per-item verification flag, so they are shown as supplied.

@@ -429,7 +429,7 @@ def test_profile_view_separates_confirmed_scope_from_unconfirmed_drafts(tmp_path
         for draft in role["pending_bullets"]:
             assert "{" not in draft and "NEEDS_VERIFICATION" not in draft, draft
     assert confirmed_total == 24  # full owner-approved official CV, not old excerpt
-    assert draft_total == 24  # every held-back draft is still visible to the owner
+    assert draft_total == 0  # superseded machine drafts no longer demand reapproval
 
 
 def test_profile_view_drafts_are_never_listed_as_confirmed_experience(tmp_path, monkeypatch):
@@ -452,4 +452,4 @@ def test_profile_view_drafts_are_never_listed_as_confirmed_experience(tmp_path, 
     for role in real_profile["work_history"]:
         for draft in role.get("needs_verification") or []:
             assert draft["text"] not in confirmed
-            assert draft["text"] in drafts
+            assert draft["text"] not in drafts  # held in historical YAML, not a new approval task

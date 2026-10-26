@@ -65,7 +65,7 @@ from utils.tracker import (
     get_job_by_id,
     get_latest_scan,
     get_recommended_jobs,
-    list_actionable_jobs,
+    get_actionable_jobs_by_ids,
     list_actionable_jobs_page,
     list_recent_scans,
     log_medical_match,
@@ -726,7 +726,7 @@ def api_recommended(limit: int = 200):
     latest = get_latest_scan() or {}
     entries = latest.get("recommendations")
     if isinstance(entries, list):
-        fresh = {str(job.get("id")): job for job in list_actionable_jobs(limit=500)}
+        fresh = get_actionable_jobs_by_ids([str(entry.get("id")) for entry in entries if isinstance(entry, dict) and entry.get("id")])
         merged = []
         for entry in entries:
             if not isinstance(entry, dict):

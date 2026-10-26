@@ -12,8 +12,9 @@ set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
 set "MAIN_PY=%PROJECT_DIR%main.py"
 set "REQUIREMENTS=%PROJECT_DIR%requirements.txt"
 
+rem This is an unauthenticated PRIVATE local dashboard. Never allow a
+rem shell/environment override to expose applicant data on LAN/WAN.
 set "HOST=127.0.0.1"
-if not "%JOBS_FINDER_HOST%"=="" set "HOST=%JOBS_FINDER_HOST%"
 set "PORT=8080"
 if not "%JOBS_FINDER_PORT%"=="" set "PORT=%JOBS_FINDER_PORT%"
 set "DASHBOARD_URL=http://localhost:%PORT%"

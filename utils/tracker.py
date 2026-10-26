@@ -717,6 +717,35 @@ def get_job_by_id(job_id: str) -> dict[str, Any] | None:
         _close_read_connection(conn)
 
 
+def get_actionable_jobs_by_ids(ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Load exact stored vacancies without a recent-first page cap.
+
+    Recommendation membership comes from the saved scan, but its package and
+    application status must come from today's complete ledger. Looking only at
+    the first 500 records hid older prepared packages after busy market scans.
+    SQL parameters and bounded chunks support older SQLite parameter limits.
+    """
+    keys = list(dict.fromkeys(str(value) for value in ids if value))
+    if not keys:
+        return {}
+    found: dict[str, dict[str, Any]] = {}
+    conn = _read_connection()
+    try:
+        for start in range(0, len(keys), 400):
+            batch = keys[start:start + 400]
+            placeholders = ",".join("?" for _ in batch)
+            rows = conn.execute(
+                "SELECT * FROM vacancies WHERE id IN (" + placeholders + ")", batch
+            ).fetchall()
+            for row in rows:
+                job = _to_dict(row)
+                if job is not None and _is_actionable_market_job(job):
+                    found[str(job["id"])] = job
+    finally:
+        _close_read_connection(conn)
+    return found
+
+
 def list_jobs(limit: int = 100) -> list[dict[str, Any]]:
     conn = _read_connection()
     try:

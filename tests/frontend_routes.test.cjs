@@ -82,3 +82,13 @@ test("only fully ready official email packages can show an Apply action", () => 
     assert.doesNotMatch(get("renderPackage")(unsafe), /data-action="apply-email"/);
   }
 });
+
+test("refreshed drawer data wins over an older cached listing for Apply actions", () => {
+  const state = get("state");
+  state.jobs = [{id: "old-392", title: "Cached obsolete job",
+    metadata: {application_method: "EMAIL", apply_email: "old@example.org"}}];
+  state.selectedJob = {id: "old-392", title: "Refreshed current job",
+    metadata: {application_method: "WEB", apply_url: "https://example.org/apply"}};
+  assert.equal(get("jobById")("old-392").title, "Refreshed current job");
+  assert.equal(get("applicationMethod")(get("jobById")("old-392")), "WEB");
+});

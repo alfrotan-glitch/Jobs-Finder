@@ -696,10 +696,12 @@ function renderAll() {
 }
 
 function jobById(id) {
-  return state.jobs.find((job) => String(job.id) === String(id))
+  // The selected detail drawer was refreshed from the authoritative record.
+  // Cached first-page listings may still contain a stale draft/recipient.
+  return (String(state.selectedJob?.id) === String(id) ? state.selectedJob : null)
+    || state.jobs.find((job) => String(job.id) === String(id))
     || state.applications.find((job) => String(job.id) === String(id))
-    || state.recommended.find((job) => String(job.id) === String(id))
-    || (String(state.selectedJob?.id) === String(id) ? state.selectedJob : null);
+    || state.recommended.find((job) => String(job.id) === String(id));
 }
 
 async function openJobById(id, mode = "details") {

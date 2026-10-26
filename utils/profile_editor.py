@@ -19,6 +19,7 @@ from utils.source_registry import SOURCE_REGISTRY
 IDENTITY_FIELDS = ("first_name", "last_name", "email", "phone", "location", "professional_title")
 CONFIRMATION = "I confirm this is true and based on my own records"
 DOCUMENT_LAYOUTS = ("comfortable", "compact")
+CV_STYLES = ("clinical", "executive")
 LETTER_DEPTHS = ("detailed", "standard")
 
 
@@ -93,6 +94,7 @@ def editor_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
         "experience": experience,
         "documents": {
             "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
+            "cv_style": (profile.get("document_preferences") or {}).get("cv_style", "clinical"),
             "letter_depth": (profile.get("document_preferences") or {}).get("letter_depth", "detailed"),
         },
     }
@@ -200,9 +202,10 @@ def apply_editor_change(profile: dict[str, Any], patch: dict[str, Any]) -> dict[
     if action == "documents":
         layout = patch.get("cv_layout")
         depth = patch.get("letter_depth")
-        if layout not in DOCUMENT_LAYOUTS or depth not in LETTER_DEPTHS:
+        style = patch.get("cv_style", "clinical")
+        if layout not in DOCUMENT_LAYOUTS or depth not in LETTER_DEPTHS or style not in CV_STYLES:
             raise ProfileEditError("Select a supported CV layout and letter depth.")
-        profile["document_preferences"] = {"cv_layout": layout, "letter_depth": depth}
+        profile["document_preferences"] = {"cv_layout": layout, "letter_depth": depth, "cv_style": style}
         return profile
     if action == "responsibility":
         idx = patch.get("role_index")

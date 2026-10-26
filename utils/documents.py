@@ -1405,6 +1405,7 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
         "languages": _language_pairs(languages),
         "references": _cv_references_section(),
         "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
+        "cv_style": (profile.get("document_preferences") or {}).get("cv_style", "clinical"),
     }
     warnings: list[str] = []
     undated = [item["role"] for item in experience if not item.get("dates")]
@@ -1586,6 +1587,7 @@ def generate_tailored_documents(
         "languages": _language_pairs(languages),
         "references": _cv_references_section(),
         "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
+        "cv_style": (profile.get("document_preferences") or {}).get("cv_style", "clinical"),
     }
     cv_text = _render_canonical_cv_text(canonical_cv_model)
 

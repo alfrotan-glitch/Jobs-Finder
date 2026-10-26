@@ -106,7 +106,7 @@ def test_bulk_edits_are_all_or_nothing(owner):
 def test_document_preferences_round_trip_and_future_cv_model(owner):
     client, path = owner
     response = _save(client, _get(client)["version"], {
-        "action": "documents", "cv_layout": "compact", "letter_depth": "detailed",
+        "action": "documents", "cv_layout": "compact", "cv_style": "executive", "letter_depth": "detailed",
     })
     assert response.status_code == 200
     assert response.json()["editor"]["documents"]["cv_layout"] == "compact"
@@ -114,6 +114,7 @@ def test_document_preferences_round_trip_and_future_cv_model(owner):
     from utils.documents import generate_master_cv
     model = generate_master_cv(profile_repository.load_canonical_profile(required=True))["master_cv_model"]
     assert model["cv_layout"] == "compact"
+    assert model["cv_style"] == "executive"
 
 
 def test_verified_duties_are_not_replaced_by_unverified_edits(owner):

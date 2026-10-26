@@ -451,6 +451,25 @@ class Theme:
     rule = "#D8E5E7"
 
 
+class ExecutiveTheme(Theme):
+    """Premium navy-and-warm-gold palette inspired by the owner's reference CV.
+
+    Still one-column and searchable in employer-facing PDF/Word, so it does
+    not reproduce the sidebar layout that can confuse older ATS parsers.
+    """
+    ink = "#1B2C3D"
+    deep = "#12263D"
+    teal = "#8A632D"
+    gold = "#B08A4A"
+    muted = "#516171"
+    soft = "#F9F8F5"
+    rule = "#DADFE5"
+
+
+def _cv_theme(model: dict[str, Any]):
+    return ExecutiveTheme if model.get("cv_style") == "executive" else Theme
+
+
 def _c(hex_value: str):
     from reportlab.lib import colors
 
@@ -572,6 +591,7 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
     )
 
     serif, serif_bold, sans, sans_bold = _register_fonts()
+    palette = _cv_theme(model)
     doc = BaseDocTemplate(
         str(path), pagesize=A4, rightMargin=CV_MARGIN_MM * mm, leftMargin=CV_MARGIN_MM * mm,
         topMargin=CV_TOP_MM * mm, bottomMargin=CV_BOTTOM_MM * mm,
@@ -583,27 +603,27 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height,
                   leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
     styles = getSampleStyleSheet()
-    name_style = ParagraphStyle("CVName", parent=styles["Title"], fontName=sans_bold, fontSize=scale["name"], leading=scale["name"] * 1.15, textColor=colors.HexColor(Theme.deep), spaceAfter=1, alignment=0)
-    title_style = ParagraphStyle("CVTitle", parent=styles["Normal"], fontName=sans, fontSize=scale["title"], leading=scale["title"] * 1.22, textColor=colors.HexColor(Theme.teal), spaceAfter=3)
-    contact_style = ParagraphStyle("CVContact", parent=styles["Normal"], fontName=sans, fontSize=scale["contact"], leading=scale["contact"] * 1.3, textColor=colors.HexColor(Theme.muted), spaceAfter=5)
+    name_style = ParagraphStyle("CVName", parent=styles["Title"], fontName=sans_bold, fontSize=scale["name"], leading=scale["name"] * 1.15, textColor=colors.HexColor(palette.deep), spaceAfter=1, alignment=0)
+    title_style = ParagraphStyle("CVTitle", parent=styles["Normal"], fontName=sans, fontSize=scale["title"], leading=scale["title"] * 1.22, textColor=colors.HexColor(palette.teal), spaceAfter=3)
+    contact_style = ParagraphStyle("CVContact", parent=styles["Normal"], fontName=sans, fontSize=scale["contact"], leading=scale["contact"] * 1.3, textColor=colors.HexColor(palette.muted), spaceAfter=5)
     focus_style = ParagraphStyle(
         "CVApplicationFocus", parent=styles["Normal"], fontName=sans,
-        fontSize=8.8, leading=11.5, textColor=colors.HexColor(Theme.teal),
+        fontSize=8.8, leading=11.5, textColor=colors.HexColor(palette.teal),
         spaceAfter=9, keepWithNext=True,
     )
     section_style = ParagraphStyle(
-        "CVSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=scale["section"], leading=scale["section"] * 1.2, textColor=colors.HexColor(Theme.deep),
+        "CVSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=scale["section"], leading=scale["section"] * 1.2, textColor=colors.HexColor(palette.deep),
         spaceBefore=scale["section_before"], spaceAfter=3,
         keepWithNext=True,
     )
-    group_style = ParagraphStyle("CVGroup", parent=styles["Normal"], fontName=sans, fontSize=scale["body"], leading=scale["leading"], textColor=colors.HexColor(Theme.ink), spaceAfter=scale["group_after"])
-    role_style = ParagraphStyle("CVRole", parent=styles["Heading3"], fontName=sans_bold, fontSize=scale["role"], leading=scale["role"] * 1.19, textColor=colors.HexColor(Theme.deep), spaceBefore=scale["role_before"], spaceAfter=.8, keepWithNext=True)
-    meta_style = ParagraphStyle("CVMeta", parent=styles["Normal"], fontName=sans, fontSize=scale["meta"], leading=scale["meta"] * 1.22, textColor=colors.HexColor(Theme.muted), spaceAfter=scale["meta_after"], keepWithNext=True)
-    body_style = ParagraphStyle("CVBody", parent=styles["BodyText"], fontName=sans, fontSize=scale["body"], leading=scale["leading"], textColor=colors.HexColor(Theme.ink), spaceBefore=0, spaceAfter=3.2)
+    group_style = ParagraphStyle("CVGroup", parent=styles["Normal"], fontName=sans, fontSize=scale["body"], leading=scale["leading"], textColor=colors.HexColor(palette.ink), spaceAfter=scale["group_after"])
+    role_style = ParagraphStyle("CVRole", parent=styles["Heading3"], fontName=sans_bold, fontSize=scale["role"], leading=scale["role"] * 1.19, textColor=colors.HexColor(palette.deep), spaceBefore=scale["role_before"], spaceAfter=.8, keepWithNext=True)
+    meta_style = ParagraphStyle("CVMeta", parent=styles["Normal"], fontName=sans, fontSize=scale["meta"], leading=scale["meta"] * 1.22, textColor=colors.HexColor(palette.muted), spaceAfter=scale["meta_after"], keepWithNext=True)
+    body_style = ParagraphStyle("CVBody", parent=styles["BodyText"], fontName=sans, fontSize=scale["body"], leading=scale["leading"], textColor=colors.HexColor(palette.ink), spaceBefore=0, spaceAfter=3.2)
     bullet_style = ParagraphStyle(
         "CVBullet", parent=body_style, leftIndent=11, firstLineIndent=0, bulletIndent=0,
         spaceAfter=scale["bullet_after"], leading=scale["bullet_leading"],
-        bulletFontName=sans, bulletFontSize=scale["bullets"], bulletColor=colors.HexColor(Theme.teal),
+        bulletFontName=sans, bulletFontSize=scale["bullets"], bulletColor=colors.HexColor(palette.teal),
     )
 
     def esc(value: Any) -> str:
@@ -612,11 +632,11 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
 
     def footer(canvas, document):
         canvas.saveState()
-        canvas.setStrokeColor(colors.HexColor(Theme.rule))
+        canvas.setStrokeColor(colors.HexColor(palette.rule))
         canvas.setLineWidth(0.5)
         canvas.line(CV_MARGIN_MM * mm, 11.5 * mm, A4[0] - CV_MARGIN_MM * mm, 11.5 * mm)
         canvas.setFont(sans, 7)
-        canvas.setFillColor(colors.HexColor(Theme.muted))
+        canvas.setFillColor(colors.HexColor(palette.muted))
         canvas.drawString(CV_MARGIN_MM * mm, 7.5 * mm, str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
         canvas.drawRightString(A4[0] - CV_MARGIN_MM * mm, 7.5 * mm, f"Page {document.page}")
         canvas.restoreState()
@@ -625,7 +645,7 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
         story.append(Paragraph(title, section_style))
         # borderBottomWidth is not implemented by ReportLab Paragraph. Use a
         # real flowable, chained to the heading and its first content block.
-        rule = HRFlowable(width="100%", thickness=.6, color=colors.HexColor(Theme.rule),
+        rule = HRFlowable(width="100%", thickness=.6, color=colors.HexColor(palette.rule),
                           spaceAfter=scale["section_after"])
         rule.keepWithNext = True
         story.append(rule)
@@ -642,7 +662,7 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
             "<b>APPLICATION FOR</b>&nbsp;&nbsp; " + esc(model["application_focus"]),
             focus_style,
         ))
-    header_rule = HRFlowable(width="100%", thickness=2.2, color=colors.HexColor(Theme.teal))
+    header_rule = HRFlowable(width="100%", thickness=2.2, color=colors.HexColor(palette.teal))
     header_rule.keepWithNext = True
     story.append(header_rule)
     if model.get("profile"):
@@ -656,7 +676,7 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
             items = "&nbsp;· ".join(esc(item) for item in group.get("items") or [])
             label = esc(group.get("group") or "")
             paragraph = Paragraph(
-                f'<font color="{Theme.teal}"><b>{label}:</b></font> {items}'
+                f'<font color="{palette.teal}"><b>{label}:</b></font> {items}'
                 if label else items,
                 group_style,
             )
@@ -775,6 +795,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
     from docx.shared import Mm, Pt, RGBColor
 
     scale = scale or CV_PDF_LAYOUTS["comfortable"]
+    palette = _cv_theme(model)
     font = _cv_word_font()
     doc = Document()
     doc.core_properties.title = f"{model.get('name') or 'CV'} — Curriculum Vitae"
@@ -789,7 +810,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
     styles["Normal"].font.size = Pt(scale["body"])
     styles["Normal"].paragraph_format.space_after = Pt(0)
 
-    def style(name, size, *, bold=False, color=Theme.ink, leading=None, before=0, after=0, keep=False, heading=None):
+    def style(name, size, *, bold=False, color=palette.ink, leading=None, before=0, after=0, keep=False, heading=None):
         st = styles.add_style(name, 1)
         st.base_style = styles[heading or "Normal"]
         st.font.name = font
@@ -805,18 +826,18 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
         fmt.widow_control = True
         return st
 
-    style("CV Name", scale["name"], bold=True, color=Theme.deep, leading=scale["name"] * 1.15, after=1, keep=True)
-    style("CV Professional Title", scale["title"], color=Theme.teal, after=3, keep=True)
-    style("CV Contact", scale["contact"], color=Theme.muted, leading=scale["contact"] * 1.3, after=5, keep=True)
-    style("CV Application Focus", 8.8, bold=False, color=Theme.teal, leading=11.5, after=9, keep=True)
-    style("CV Section", scale["section"], bold=True, color=Theme.deep, before=scale["section_before"], after=scale["section_after"] + 3, keep=True, heading="Heading 1")
+    style("CV Name", scale["name"], bold=True, color=palette.deep, leading=scale["name"] * 1.15, after=1, keep=True)
+    style("CV Professional Title", scale["title"], color=palette.teal, after=3, keep=True)
+    style("CV Contact", scale["contact"], color=palette.muted, leading=scale["contact"] * 1.3, after=5, keep=True)
+    style("CV Application Focus", 8.8, bold=False, color=palette.teal, leading=11.5, after=9, keep=True)
+    style("CV Section", scale["section"], bold=True, color=palette.deep, before=scale["section_before"], after=scale["section_after"] + 3, keep=True, heading="Heading 1")
     style("CV Competency Group", scale["body"], leading=scale["leading"], after=scale["group_after"])
-    style("CV Role", scale["role"], bold=True, color=Theme.deep, leading=scale["role"] * 1.19, before=scale["role_before"], after=.8, keep=True, heading="Heading 2")
-    style("CV Meta", scale["meta"], color=Theme.muted, after=scale["meta_after"], keep=True)
+    style("CV Role", scale["role"], bold=True, color=palette.deep, leading=scale["role"] * 1.19, before=scale["role_before"], after=.8, keep=True, heading="Heading 2")
+    style("CV Meta", scale["meta"], color=palette.muted, after=scale["meta_after"], keep=True)
     style("CV Body", scale["body"], leading=scale["leading"], after=3.2)
     style("CV Bullet", scale["body"], leading=scale["bullet_leading"], after=scale["bullet_after"])
 
-    style("CV Footer", 7, color=Theme.muted, leading=9)
+    style("CV Footer", 7, color=palette.muted, leading=9)
 
     def border(p, color, size, side="bottom"):
         borders = OxmlElement("w:pBdr")
@@ -829,14 +850,14 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
     def add_section(title: str) -> None:
         p = doc.add_paragraph(title, style="CV Section")
         p.paragraph_format.keep_with_next = True
-        border(p, Theme.rule, 4)
+        border(p, palette.rule, 4)
 
     def add_bullet(text: str) -> None:
         p = doc.add_paragraph(style="CV Bullet")
         p.paragraph_format.left_indent = Pt(11)
         p.paragraph_format.first_line_indent = Pt(-11)
         p.paragraph_format.tab_stops.add_tab_stop(Pt(11))
-        p.add_run(_cv_bullet_glyph() + "\t").font.color.rgb = RGBColor.from_string(Theme.teal[1:])
+        p.add_run(_cv_bullet_glyph() + "\t").font.color.rgb = RGBColor.from_string(palette.teal[1:])
         p.add_run(str(text))
 
     doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="CV Name")
@@ -849,7 +870,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
         p.add_run("APPLICATION FOR  ").bold = True
         p.add_run(str(model["application_focus"]))
 
-    border(doc.paragraphs[-1], Theme.teal, 18)
+    border(doc.paragraphs[-1], palette.teal, 18)
 
     if model.get("profile"):
         add_section("PROFESSIONAL SUMMARY")
@@ -864,7 +885,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
             if label:
                 run = p.add_run(f"{label}: ")
                 run.bold = True
-                run.font.color.rgb = RGBColor.from_string(Theme.teal[1:])
+                run.font.color.rgb = RGBColor.from_string(palette.teal[1:])
             p.add_run("\u00a0· ".join(str(item) for item in group.get("items") or []))
 
     experience = list(model.get("experience") or [])
@@ -934,8 +955,8 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
     for run in footer.runs:
         run.font.name = font
         run.font.size = Pt(7)
-        run.font.color.rgb = RGBColor.from_string(Theme.muted[1:])
-    border(footer, Theme.rule, 4, side="top")
+        run.font.color.rgb = RGBColor.from_string(palette.muted[1:])
+    border(footer, palette.rule, 4, side="top")
     update = OxmlElement("w:updateFields")
     update.set(qn("w:val"), "true")
     doc.settings.element.append(update)

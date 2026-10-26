@@ -638,6 +638,9 @@ function renderProfileEditor() {
         <input id="editorReliefwebTimeout" type="number" min="5" max="90" value="${escapeAttr(editor.sources.reliefweb_timeout)}"></label>
     </div>
     <div class="profileEditorGrid">
+      <label class="editorField"><span>CV visual design</span>
+        <select id="editorCvStyle"><option value="executive" ${editor.documents.cv_style === "executive" ? "selected" : ""}>Executive — navy & gold</option>
+        <option value="clinical" ${editor.documents.cv_style !== "executive" ? "selected" : ""}>Clinical — deep teal</option></select></label>
       <label class="editorField"><span>CV page density</span>
         <select id="editorCvLayout"><option value="comfortable" ${editor.documents.cv_layout !== "compact" ? "selected" : ""}>Editorial — comfortable</option>
         <option value="compact" ${editor.documents.cv_layout === "compact" ? "selected" : ""}>Compact — ATS friendly</option></select></label>
@@ -685,9 +688,11 @@ async function saveProfileEditor() {
       confirmation: confirmed ? OWNER_CONFIRMATION : ""});
   }
   const cv_layout = $("editorCvLayout").value;
+  const cv_style = $("editorCvStyle").value;
   const letter_depth = $("editorLetterDepth").value;
-  if (cv_layout !== editor.documents.cv_layout || letter_depth !== editor.documents.letter_depth) {
-    changes.push({action: "documents", cv_layout, letter_depth});
+  if (cv_layout !== editor.documents.cv_layout || cv_style !== editor.documents.cv_style ||
+      letter_depth !== editor.documents.letter_depth) {
+    changes.push({action: "documents", cv_layout, cv_style, letter_depth});
   }
   if (!changes.length) {
     setStatus("No changes to save.", "warn");

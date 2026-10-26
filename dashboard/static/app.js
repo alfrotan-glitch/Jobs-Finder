@@ -14,6 +14,7 @@ const state = {
   alerts: {alerts: [], unread_count: 0},
   monitorSchedule: {supported: false, enabled: false, time: "09:00"},
   currentTab: "dashboard",
+  selectedJob: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -24,6 +25,19 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value).replace(/`/g, "&#096;");
+}
+
+// Employer-provided links are untrusted even after HTML-attribute escaping.
+function safeExternalUrl(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw || /[\x00-\x20\x7f]/.test(raw)) return "";
+  try {
+    const url = new URL(raw);
+    return ["https:", "http:"].includes(url.protocol) && url.hostname &&
+      !url.username && !url.password ? url.href : "";
+  } catch (_) {
+    return "";
+  }
 }
 
 function compactText(value, fallback = "Not listed") {
@@ -71,7 +85,7 @@ function applicationMethod(job) {
 }
 
 function applyEmail(job) {
-  return job.package?.apply_email || job.metadata?.apply_email || job.match?.facts?.apply_email || job.match?.facts?.application_email || job.apply_email || "";
+  return job.metadata?.apply_email || job.match?.facts?.apply_email || job.match?.facts?.application_email || job.apply_email || job.package?.apply_email || "";
 }
 
 function webApplyUrl(job) {
@@ -79,7 +93,7 @@ function webApplyUrl(job) {
 }
 
 function vacancyPage(job) {
-  return job.package?.official_vacancy_page || job.metadata?.vacancy_url || job.match?.facts?.vacancy_url || job.url || "";
+  return job.metadata?.vacancy_url || job.match?.facts?.vacancy_url || job.url || job.package?.official_vacancy_page || "";
 }
 
 function readinessValue(job) {
@@ -169,7 +183,7 @@ function fitSummary(job) {
 
 function directApplicationRouteAvailable(job) {
   const method = applicationMethod(job);
-  return (method === "EMAIL" && Boolean(applyEmail(job))) || (method === "WEB" && Boolean(webApplyUrl(job)));
+  return (method === "EMAIL" && Boolean(applyEmail(job))) || (method === "WEB" && Boolean(safeExternalUrl(webApplyUrl(job))));
 }
 
 function packageExists(job) {
@@ -673,12 +687,14 @@ function renderAll() {
 function jobById(id) {
   return state.jobs.find((job) => String(job.id) === String(id))
     || state.applications.find((job) => String(job.id) === String(id))
-    || state.recommended.find((job) => String(job.id) === String(id));
+    || state.recommended.find((job) => String(job.id) === String(id))
+    || (String(state.selectedJob?.id) === String(id) ? state.selectedJob : null);
 }
 
 async function openJobById(id, mode = "details") {
   try {
-    const job = jobById(id) || await apiJson(`/api/jobs/${encodeURIComponent(id)}`);
+    // Always refresh the official record and support old alert-linked listings.
+    const job = await apiJson(`/api/jobs/${encodeURIComponent(id)}`);
     if (job) openDrawer(job, mode);
     else setStatus("Vacancy record not found.", "warn");
   } catch (error) {
@@ -717,8 +733,8 @@ function requirementSection(title, items, emptyText) {
 function renderApplicationMethod(job) {
   const method = applicationMethod(job);
   const email = applyEmail(job);
-  const web = webApplyUrl(job);
-  const page = vacancyPage(job);
+  const web = safeExternalUrl(webApplyUrl(job));
+  const page = safeExternalUrl(vacancyPage(job));
   if (job.is_expired) {
     return `<div class="routePanel unavailable"><h3>Vacancy deadline passed</h3><p>This saved vacancy is no longer open for new application preparation. Confirm any reopening directly with the employer.</p>${page ? `<a class="button secondary" href="${escapeAttr(page)}" target="_blank" rel="noopener">View official vacancy</a>` : ""}</div>`;
   }
@@ -788,6 +804,7 @@ function renderPackage(job) {
 }
 
 function openDrawer(job, mode = "details") {
+  state.selectedJob = job;
   const drawer = $("detailDrawer");
   const backdrop = $("drawerBackdrop");
   const met = requirementsByStatus(job, "Met");
@@ -984,8 +1001,8 @@ async function prepareJob(id) {
     $("advancedLog").textContent = JSON.stringify(data, null, 2);
     setStatus("Package prepared. Review the CV, cover letter, and instructions before applying.", "ok");
     await refresh();
-    const job = jobById(id);
-    if (job) openDrawer(job, "package");
+    // Open the newly generated package even outside the first ledger page.
+    await openJobById(id, "package");
   } catch (error) {
     setStatus(humanizeError(error.message), "error");
   }

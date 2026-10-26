@@ -26,6 +26,7 @@ jobs:
       - run: python -m ruff check .
       - run: python -m compileall -q main.py dashboard utils tests tools
       - run: node --check dashboard/static/app.js
+      - run: node --test tests/frontend_routes.test.cjs
       - run: node --check tools/render_docx.mjs
       - run: python -m pytest -q --junitxml=.pytest_cache/results.xml
       - name: Annotate test failures

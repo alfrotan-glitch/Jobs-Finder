@@ -621,7 +621,7 @@ function renderProfileEditor() {
     ["certificates", "Training and certificates", editor.certificates || [], ["name"], "name"],
     ["languages", "Languages", editor.languages || [], ["name","level"], "name"],
     ["skills", "Verified professional skills", editor.skills || [], ["name"], "name"],
-    ["work_history", "Role titles, employers and dates", editor.experience || [], ["title","organization"], "title"],
+    ["work_history", "Role titles, employers and dates", editor.experience || [], ["title","organization","location","start","end"], "title"],
     ["license_registration", "Medical license/registration", [{...editor.registration, index:-1}], ["status","authority","number","issue_date","expiry_date"], "status"],
     ["medical_exit_exam", "Medical exit examination", [{...editor.exam, index:-1}], ["status"], "status"],
   ].map(([section, label, entries, fields, creationField]) => `
@@ -635,9 +635,10 @@ function renderProfileEditor() {
               data-record-index="${item.index}" data-record-group="${escapeAttr(item.group || "")}"
               data-record-field="${field}">Edit</button></div>`).join("")}
         </div>`).join("")}
-      ${!["license_registration","medical_exit_exam"].includes(section) ? `
+      ${!["license_registration","medical_exit_exam","work_history"].includes(section) ? `
         <button class="secondary smallButton" data-action="new-record" data-section="${section}"
           data-record-field="${creationField}">Add ${escapeHtml(label.toLowerCase())} item</button>` : ""}
+      ${section === "work_history" ? '<button class="secondary smallButton" data-action="new-work-role">Add a new professional role</button>' : ""}
       </details>
   `).join("");
   holder.innerHTML = `
@@ -741,11 +742,26 @@ async function saveEditorPatch(change) {
   }
 }
 
+async function createWorkRole() {
+  const title = window.prompt("Professional role title:")?.trim();
+  if (!title) return;
+  const organization = window.prompt("Employer or organization:")?.trim();
+  if (!organization) return;
+  const location = window.prompt("Duty station/location (optional):")?.trim() || "";
+  const start = window.prompt("Start date (for example 2023-05, or leave blank):")?.trim() || "";
+  const end = window.prompt("End date (for example 2025-07, or leave blank):")?.trim() || "";
+  const confirmed = window.confirm("Confirm this role, organization, and dates are accurate and supported by your own records?");
+  await saveEditorPatch({
+    action:"work_role", title, organization, location, start, end,
+    confirmation:confirmed ? OWNER_CONFIRMATION : "",
+  });
+}
+
 async function editProfileRecord(target, create = false) {
   const section = target.dataset.section;
   const field = target.dataset.recordField;
   const index = Number(target.dataset.recordIndex);
-  const group = target.dataset.recordGroup || "";
+  let group = target.dataset.recordGroup || "";
   const editor = state.profileEditor;
   let records = [];
   if (section === "medical_education") records = editor?.education || [];
@@ -1432,6 +1448,7 @@ function handleAction(event) {
   if (action === "apply-email") applyByEmail(id);
   if (action === "add-responsibility") addVerifiedResponsibility(target.dataset.roleIndex);
   if (action === "save-profile-editor") saveProfileEditor();
+  if (action === "new-work-role") createWorkRole();
   if (action === "edit-record") editProfileRecord(target);
   if (action === "new-record") editProfileRecord(target, true);
   if (["new-duty", "edit-duty", "delete-duty", "approve-duty"].includes(action)) {

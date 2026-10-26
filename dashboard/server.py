@@ -542,7 +542,7 @@ def api_generated_file(path: str, download: bool = False):
 @app.get("/api/profile/editor")
 def api_profile_editor():
     """Owner-facing editable subset; no raw private YAML or unverified auto-import."""
-    return editor_snapshot(_runtime_profile(True))
+    return editor_snapshot(_runtime_profile(False))
 
 
 @app.post("/api/profile/editor")

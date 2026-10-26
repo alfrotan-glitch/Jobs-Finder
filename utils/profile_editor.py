@@ -50,6 +50,9 @@ def editor_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
             "index": index,
             "title": role.get("title") or "",
             "organization": role.get("organization") or "",
+            "location": role.get("location") or "",
+            "start": role.get("start") or "",
+            "end": role.get("end") or "",
             "verified": role.get("verified") is True,
             "responsibilities": [
                 {"index": i, "text": item.get("text") or "", "verified": item.get("verified") is True}
@@ -231,6 +234,17 @@ def apply_editor_change(profile: dict[str, Any], patch: dict[str, Any]) -> dict[
             raise ProfileEditError("Select a supported CV layout and letter depth.")
         profile["document_preferences"] = {"cv_layout": layout, "letter_depth": depth, "cv_style": style}
         return profile
+    if action == "work_role":
+        values = {
+            field: _text(patch.get(field), maximum=250,
+                         allow_empty=field not in {"title", "organization"})
+            for field in ("title", "organization", "location", "start", "end")
+        }
+        roles = profile.setdefault("work_history", [])
+        if not isinstance(roles, list) or len(roles) >= 100:
+            raise ProfileEditError("The work-history list is full or invalid.")
+        roles.append({**values, "verified": bool(confirmed), "responsibilities": []})
+        return profile
     if action == "record":
         section = patch.get("section")
         key = patch.get("field")
@@ -247,6 +261,8 @@ def apply_editor_change(profile: dict[str, Any], patch: dict[str, Any]) -> dict[
         }
         if section not in allowed or key not in allowed[section]:
             raise ProfileEditError("This profile record or field is not editable.")
+        if section == "work_history" and create:
+            raise ProfileEditError("Use the complete new-role form instead.")
         value = _text(patch.get("value"), maximum=250, allow_empty=not create)
         if section in {"license_registration", "medical_exit_exam"}:
             if create or index is not None:

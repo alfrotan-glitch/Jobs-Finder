@@ -198,3 +198,28 @@ def test_search_setting_invalid_patch_does_not_overwrite_canonical_profile(owner
     response = _save(client, _get(client)["version"], patch)
     assert response.status_code == 409
     assert path.read_bytes() == previous
+
+
+def test_missing_profile_editor_is_readable_without_crashing_dashboard(tmp_path, monkeypatch):
+    monkeypatch.setattr(profile_repository, "CANONICAL_PROFILE_PATH", tmp_path / "missing.yaml")
+    result = TestClient(server.app).get("/api/profile/editor")
+    assert result.status_code == 200
+    assert result.json()["personal"]["first_name"] == ""
+
+
+def test_new_role_requires_employer_and_does_not_assume_verification(owner):
+    client, path = owner
+    response = _save(client, _get(client)["version"], {
+        "action":"work_role", "title":"Medical Coordinator", "organization":"",
+    })
+    assert response.status_code == 409
+    before = len(yaml.safe_load(path.read_text(encoding="utf-8"))["work_history"])
+    response = _save(client, _get(client)["version"], {
+        "action":"work_role", "title":"Medical Coordinator",
+        "organization":"Example NGO", "location":"Bamyan",
+        "start":"", "end":"",
+    })
+    assert response.status_code == 200
+    roles = yaml.safe_load(path.read_text(encoding="utf-8"))["work_history"]
+    assert len(roles) == before + 1
+    assert roles[-1]["verified"] is False

@@ -45,6 +45,9 @@ def render_professional_document_artifacts(
     metadata = metadata or {}
     if document_type == "cover_letter":
         model = parse_cover_letter_text(text or "", metadata)
+        # The letter must use the same user-selected palette as the paired CV.
+        cv_model = (metadata.get("tailored_documents") or {}).get("tailored_cv_model") or {}
+        model["cv_style"] = cv_model.get("cv_style", "clinical")
         render_cover_letter_pdf(model, pdf)
         render_cover_letter_docx(model, docx)
     else:
@@ -987,6 +990,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
     )
 
     serif, serif_bold, sans, sans_bold = _register_fonts()
+    palette = _cv_theme(model)
     doc = SimpleDocTemplate(
         str(path), pagesize=A4, rightMargin=20 * mm, leftMargin=20 * mm,
         topMargin=14 * mm, bottomMargin=15 * mm,
@@ -1001,25 +1005,25 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
 
         return html.escape(str(value or ""))
 
-    name_style = ParagraphStyle("CLName", parent=styles["Title"], fontName=serif_bold, fontSize=20, leading=23, textColor=colors.HexColor(Theme.deep), spaceAfter=1, alignment=0)
-    headline_style = ParagraphStyle("CLHeadline", parent=styles["Normal"], fontName=sans, fontSize=10.2, leading=12.6, textColor=colors.HexColor(Theme.teal), spaceAfter=2)
-    contact_style = ParagraphStyle("CLContact", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.6, textColor=colors.HexColor(Theme.muted), spaceAfter=6)
-    target_style = ParagraphStyle("CLTarget", parent=styles["Normal"], fontName=sans_bold, fontSize=9.2, leading=11.6, textColor=colors.HexColor(Theme.deep), spaceAfter=1)
-    recipient_style = ParagraphStyle("CLRecipient", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.6, textColor=colors.HexColor(Theme.muted), spaceAfter=8)
-    section_style = ParagraphStyle("CLSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=9.4, leading=11.4, textColor=colors.HexColor(Theme.deep), spaceBefore=4, spaceAfter=3)
-    subject_style = ParagraphStyle("CLSubject", parent=styles["Normal"], fontName=sans_bold, fontSize=9.6, leading=12, textColor=colors.HexColor(Theme.ink), spaceAfter=8)
-    body_style = ParagraphStyle("CLBody", parent=styles["Normal"], fontName=sans, fontSize=9.1, leading=12.4, textColor=colors.HexColor(Theme.ink), spaceAfter=6)
-    bullet_style = ParagraphStyle("CLBullet", parent=body_style, leftIndent=12, firstLineIndent=-8, bulletIndent=0, spaceAfter=3, bulletFontName=sans, bulletFontSize=8.4, bulletColor=colors.HexColor(Theme.teal))
-    signature_style = ParagraphStyle("CLSignature", parent=styles["Normal"], fontName=serif_bold, fontSize=12, leading=14, textColor=colors.HexColor(Theme.deep), spaceBefore=4)
-    signature_meta_style = ParagraphStyle("CLSignatureMeta", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.4, textColor=colors.HexColor(Theme.muted), spaceAfter=1)
+    name_style = ParagraphStyle("CLName", parent=styles["Title"], fontName=serif_bold, fontSize=20, leading=23, textColor=colors.HexColor(palette.deep), spaceAfter=1, alignment=0)
+    headline_style = ParagraphStyle("CLHeadline", parent=styles["Normal"], fontName=sans, fontSize=10.2, leading=12.6, textColor=colors.HexColor(palette.teal), spaceAfter=2)
+    contact_style = ParagraphStyle("CLContact", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.6, textColor=colors.HexColor(palette.muted), spaceAfter=6)
+    target_style = ParagraphStyle("CLTarget", parent=styles["Normal"], fontName=sans_bold, fontSize=9.2, leading=11.6, textColor=colors.HexColor(palette.deep), spaceAfter=1)
+    recipient_style = ParagraphStyle("CLRecipient", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.6, textColor=colors.HexColor(palette.muted), spaceAfter=8)
+    section_style = ParagraphStyle("CLSection", parent=styles["Heading2"], fontName=sans_bold, fontSize=9.4, leading=11.4, textColor=colors.HexColor(palette.deep), spaceBefore=4, spaceAfter=3)
+    subject_style = ParagraphStyle("CLSubject", parent=styles["Normal"], fontName=sans_bold, fontSize=9.6, leading=12, textColor=colors.HexColor(palette.ink), spaceAfter=8)
+    body_style = ParagraphStyle("CLBody", parent=styles["Normal"], fontName=sans, fontSize=9.1, leading=12.4, textColor=colors.HexColor(palette.ink), spaceAfter=6)
+    bullet_style = ParagraphStyle("CLBullet", parent=body_style, leftIndent=12, firstLineIndent=-8, bulletIndent=0, spaceAfter=3, bulletFontName=sans, bulletFontSize=8.4, bulletColor=colors.HexColor(palette.teal))
+    signature_style = ParagraphStyle("CLSignature", parent=styles["Normal"], fontName=serif_bold, fontSize=12, leading=14, textColor=colors.HexColor(palette.deep), spaceBefore=4)
+    signature_meta_style = ParagraphStyle("CLSignatureMeta", parent=styles["Normal"], fontName=sans, fontSize=8.3, leading=10.4, textColor=colors.HexColor(palette.muted), spaceAfter=1)
 
     def footer(canvas, document):
         canvas.saveState()
-        canvas.setStrokeColor(colors.HexColor(Theme.rule))
+        canvas.setStrokeColor(colors.HexColor(palette.rule))
         canvas.setLineWidth(0.5)
         canvas.line(20 * mm, 12 * mm, A4[0] - 20 * mm, 12 * mm)
         canvas.setFont(sans, 7)
-        canvas.setFillColor(colors.HexColor(Theme.muted))
+        canvas.setFillColor(colors.HexColor(palette.muted))
         canvas.drawString(20 * mm, 8 * mm, f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Cover Letter")
         canvas.drawRightString(A4[0] - 20 * mm, 8 * mm, f"Page {document.page}")
         canvas.restoreState()
@@ -1032,7 +1036,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
     contact_line = " | ".join(str(value) for value in [contact.get("location"), contact.get("phone"), contact.get("email")] if value)
     if contact_line:
         story.append(Paragraph(esc(contact_line), contact_style))
-    story.append(HRFlowable(width="100%", thickness=0.9, color=colors.HexColor(Theme.gold), spaceBefore=1, spaceAfter=9))
+    story.append(HRFlowable(width="100%", thickness=0.9, color=colors.HexColor(palette.gold), spaceBefore=1, spaceAfter=9))
     target_line = " — ".join(str(value) for value in [model.get("target_role"), model.get("target_org")] if value)
     if target_line:
         story.append(Paragraph(esc(target_line), target_style))
@@ -1071,6 +1075,12 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
     from docx.oxml.ns import qn
     from docx.shared import Mm, Pt, RGBColor
 
+    palette = _cv_theme(model)
+    is_executive = palette is ExecutiveTheme
+    def rgb(hex_value: str) -> tuple[int, int, int]:
+        cleaned = hex_value.lstrip("#")
+        return tuple(int(cleaned[i:i + 2], 16) for i in (0, 2, 4))
+
     doc = Document()
     doc.core_properties.title = f"{model.get('name') or 'Applicant'} — Cover Letter"
     doc.core_properties.author = str(model.get("name") or "")
@@ -1098,13 +1108,13 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
         st.paragraph_format.keep_together = True
         return st
 
-    style("JF Name", 20, True, (12, 52, 66), font)
-    style("JF Title", 10.2, False, (21, 124, 120), font)
+    style("JF Name", 20, True, rgb(palette.deep) if is_executive else (12, 52, 66), font)
+    style("JF Title", 10.2, False, rgb(palette.teal) if is_executive else (21, 124, 120), font)
     style("JF Contact", 8.3, False, (102, 115, 122), font)
     style("JF Label", 8.5, True, (168, 132, 73), font)
-    style("JF Section", 9.6, True, (12, 52, 66), font)
-    style("JF Body", 9.1, False, (23, 42, 53), font)
-    style("JF Signature", 12, True, (12, 52, 66), font)
+    style("JF Section", 9.6, True, rgb(palette.deep) if is_executive else (12, 52, 66), font)
+    style("JF Body", 9.1, False, rgb(palette.ink) if is_executive else (23, 42, 53), font)
+    style("JF Signature", 12, True, rgb(palette.deep) if is_executive else (12, 52, 66), font)
     style("JF Footer", 7, False, (102, 115, 122), font)
 
     name_line = doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="JF Name")
@@ -1117,7 +1127,7 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
         doc.add_paragraph(contact_text, style="JF Contact")
     rule = OxmlElement("w:pBdr")
     edge = OxmlElement("w:bottom")
-    for key, value in {"val": "single", "sz": "10", "color": Theme.gold[1:], "space": "5"}.items():
+    for key, value in {"val": "single", "sz": "10", "color": palette.gold[1:], "space": "5"}.items():
         edge.set(qn("w:" + key), value)
     rule.append(edge)
     doc.paragraphs[-1]._p.get_or_add_pPr().append(rule)

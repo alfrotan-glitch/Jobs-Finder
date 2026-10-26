@@ -616,6 +616,30 @@ function renderProfileEditor() {
       <textarea rows="2" id="new-duty-${role.index}" maxlength="1200" placeholder="Describe work you personally performed — methods, scope and a genuine outcome where known."></textarea></label>
       <button class="secondary smallButton" data-action="new-duty" data-role-index="${role.index}">Add responsibility</button>
     </div>`).join("");
+  const additionalRecords = [
+    ["medical_education", "Education", editor.education || [], ["degree","field","institution","start","end"], "degree"],
+    ["certificates", "Training and certificates", editor.certificates || [], ["name"], "name"],
+    ["languages", "Languages", editor.languages || [], ["name","level"], "name"],
+    ["skills", "Verified professional skills", editor.skills || [], ["name"], "name"],
+    ["work_history", "Role titles, employers and dates", editor.experience || [], ["title","organization"], "title"],
+    ["license_registration", "Medical license/registration", [{...editor.registration, index:-1}], ["status","authority","number","issue_date","expiry_date"], "status"],
+    ["medical_exit_exam", "Medical exit examination", [{...editor.exam, index:-1}], ["status"], "status"],
+  ].map(([section, label, entries, fields, creationField]) => `
+      <details class="editorRecords"><summary>${escapeHtml(label)} · ${entries.length} item(s)</summary>
+      ${entries.map((item) => `
+        <div class="editorRecord">
+          <span class="sectionHelp">${item.verified ? "Verified" : "Needs confirmation"} ${item.group ? "· " + escapeHtml(item.group) : ""}</span>
+          ${fields.map((field) => `<div class="editorRecordField">
+            <strong>${escapeHtml(field.replace(/_/g," "))}:</strong> ${escapeHtml(item[field] || "Not supplied")}
+            <button class="secondary smallButton" data-action="edit-record" data-section="${section}"
+              data-record-index="${item.index}" data-record-group="${escapeAttr(item.group || "")}"
+              data-record-field="${field}">Edit</button></div>`).join("")}
+        </div>`).join("")}
+      ${!["license_registration","medical_exit_exam"].includes(section) ? `
+        <button class="secondary smallButton" data-action="new-record" data-section="${section}"
+          data-record-field="${creationField}">Add ${escapeHtml(label.toLowerCase())} item</button>` : ""}
+      </details>
+  `).join("");
   holder.innerHTML = `
     <div class="profileEditorGrid">${controls}</div>
     <label class="editorField"><span>Professional summary (owner-authored)</span>
@@ -653,7 +677,9 @@ function renderProfileEditor() {
     <button class="primary subtle" data-action="save-profile-editor">Save profile & document preferences</button>
     <p class="sectionHelp">Privacy: your profile.yaml is tracked by Git. Do not push private details to a public GitHub repository.</p>
     <h4>Review and improve individual work histories</h4>
-    ${roles || '<p class="sectionHelp">No verified work history found.</p>'}`;
+    ${roles || '<p class="sectionHelp">No verified work history found.</p>'}
+    <h4>Edit qualifications, languages, skills and role details</h4>
+    ${additionalRecords}`;
 }
 
 async function saveProfileEditor() {
@@ -713,6 +739,37 @@ async function saveEditorPatch(change) {
   } catch(error) {
     setStatus(humanizeError(error.message), "error");
   }
+}
+
+async function editProfileRecord(target, create = false) {
+  const section = target.dataset.section;
+  const field = target.dataset.recordField;
+  const index = Number(target.dataset.recordIndex);
+  const group = target.dataset.recordGroup || "";
+  const editor = state.profileEditor;
+  let records = [];
+  if (section === "medical_education") records = editor?.education || [];
+  else if (section === "certificates") records = editor?.certificates || [];
+  else if (section === "languages") records = editor?.languages || [];
+  else if (section === "skills") records = editor?.skills || [];
+  else if (section === "work_history") records = editor?.experience || [];
+  else if (section === "license_registration") records = [{...editor?.registration, index:-1}];
+  else if (section === "medical_exit_exam") records = [{...editor?.exam, index:-1}];
+  const row = records.find((item) => item.index === index && (section !== "skills" || item.group === group));
+  if (!create && !row) return;
+  if (create && section === "skills" && !group) {
+    const skillGroups = [...new Set((editor?.skills || []).map((item) => item.group))];
+    group = window.prompt("Enter existing skill category (" + skillGroups.join(", ") + "):", skillGroups[0] || "") || "";
+    if (!group) return;
+  }
+  const initial = create ? "" : String(row[field] || "");
+  const value = window.prompt(`${create ? "Add" : "Edit"} ${section.replace(/_/g, " ")} — ${field.replace(/_/g, " ")}:`, initial);
+  if (value === null || (create && !value.trim())) return;
+  const confirmed = window.confirm("Do you personally confirm this revised factual information is accurate? Cancel saves it as unverified.");
+  await saveEditorPatch({
+    action:"record", section, field, index:section === "license_registration" || section === "medical_exit_exam" ? null : index,
+    group, create, value, confirmation:confirmed ? OWNER_CONFIRMATION : "",
+  });
 }
 
 async function editProfileDuty(action, roleIndex, dutyIndex) {
@@ -1375,6 +1432,8 @@ function handleAction(event) {
   if (action === "apply-email") applyByEmail(id);
   if (action === "add-responsibility") addVerifiedResponsibility(target.dataset.roleIndex);
   if (action === "save-profile-editor") saveProfileEditor();
+  if (action === "edit-record") editProfileRecord(target);
+  if (action === "new-record") editProfileRecord(target, true);
   if (["new-duty", "edit-duty", "delete-duty", "approve-duty"].includes(action)) {
     editProfileDuty(action, target.dataset.roleIndex, target.dataset.dutyIndex);
   }

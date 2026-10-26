@@ -1221,6 +1221,11 @@ function renderPackage(job) {
   const stateNote = pkg.package_status === "NEEDS_USER_INPUT" ? "Required user input or verification remains." : pkg.package_status === "BLOCKED" ? "The authoritative eligibility state blocks this package." : "Generated files remain for human review only.";
   return `<section class="detailSection"><h3>Your application package</h3>
     <p class="sectionHelp"><strong>Package state: ${escapeHtml(packageState)}</strong> — ${escapeHtml(stateNote)}</p>
+    ${canPrepareJob(job) ? `<div class="cardActions">
+      <button class="secondary" data-action="prepare-job" data-job-id="${escapeAttr(job.id)}">
+      Regenerate CV, cover letter & email from current verified profile</button></div>
+      <p class="sectionHelp">Saved PDF/Word files do not update automatically when Jobs-Finder or your professional profile changes.
+      Use Regenerate to replace this draft before applying. Previously submitted applications cannot be regenerated.</p>` : ""}
     <div class="packageStatus"><span>${escapeHtml(artifactStatusLabel(cvPath))}: Tailored CV</span><span>${escapeHtml(artifactStatusLabel(coverPath))}: Cover letter</span>${email ? `<span>${emailDraftReady(job) ? "READY FOR REVIEW" : "NOT READY"}: Email draft</span>` : ""}</div>
     <div class="documentGrid">
       ${documentBundleCard("Tailored CV", cvFormats)}

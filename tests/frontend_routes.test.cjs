@@ -111,3 +111,20 @@ test("private-reference backup link remains separate from public profile export"
   assert.match(script, /Download private references backup/);
   assert.match(script, /main ZIP backup and GitHub/);
 });
+
+
+test("saved packages expose actual regeneration instead of stale PDF downloads only", () => {
+  const job = {
+    id:"old-medical-coordinator", title:"Medical Coordinator", company:"Example NGO",
+    status:"PACKAGE_READY",
+    readiness:"READY_TO_APPLY",
+    is_expired:false,
+    package:{package_status:"READY_FOR_REVIEW", email_draft:{to:"hr@example.org",body:"Application"}},
+    documents:{generated_paths:{tailored_cv:{pdf:"documents/applications/old.pdf"}}},
+  };
+  const html = get("renderPackage")(job);
+  assert.match(html, /Regenerate CV, cover letter & email from current verified profile/);
+  assert.match(html, /data-action="prepare-job"/);
+  const applied = {...job, status:"APPLIED_MANUALLY"};
+  assert.doesNotMatch(get("renderPackage")(applied), /Regenerate CV, cover letter/);
+});

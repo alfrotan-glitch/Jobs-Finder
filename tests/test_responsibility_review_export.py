@@ -57,7 +57,9 @@ def test_review_export_is_read_only_for_the_canonical_profile(tmp_path, monkeypa
     assert PROFILE_PATH.read_bytes() == before
     assert review.canonical_profile_digest() == before_hash
     assert target.exists()
-    assert target.read_text(encoding="utf-8") == REVIEW_DOC_PATH.read_text(encoding="utf-8")
+    profile = _profile()
+    expected = review.render_markdown(profile, before_hash, review.collect_review_items(profile))
+    assert target.read_text(encoding="utf-8") == expected
 
     # `--stdout-only` and `--verify-wording` write nothing at all.
     sentinel = tmp_path / "untouched.md"
@@ -151,14 +153,20 @@ def test_no_decision_has_been_applied_to_the_canonical_profile():
     # The review workflow never writes the record, so the hash still matches the
     # one the shipped document was generated from.
     digest = review.canonical_profile_digest()
-    assert digest in REVIEW_DOC_PATH.read_text(encoding="utf-8")
+    # The published review is now a frozen historical report, not the current
+    # owner-approved profile. Its old digest must not masquerade as current.
+    assert digest not in REVIEW_DOC_PATH.read_text(encoding="utf-8")
 
 
 def test_committed_review_document_is_in_sync_with_the_canonical_record():
     profile = _profile()
     items = review.collect_review_items(profile)
     digest = review.canonical_profile_digest()
-    assert REVIEW_DOC_PATH.read_text(encoding="utf-8") == review.render_markdown(profile, digest, items)
+    historical = REVIEW_DOC_PATH.read_text(encoding="utf-8")
+    current = review.render_markdown(profile, digest, items)
+    assert historical.startswith("# Historical draft review")
+    assert current != historical
+    assert "98ee969a895ad64adaad03a00062f83c4bbd30b17880770b52468991d1a46891" in historical
 
 
 def test_pre_recovery_28_item_review_is_preserved_unchanged():

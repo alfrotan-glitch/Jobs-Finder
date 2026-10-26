@@ -256,7 +256,7 @@ def test_dashboard_routes_use_the_real_renderer_without_touching_canonical_data(
         assert response.status_code == 200
         master = response.json()
         assert master["no_submission_performed"]
-        assert master["review_warnings"]  # held drafts remain owner-visible
+        assert not any("24 detailed responsibility draft(s)" in warning for warning in master["review_warnings"])
         response = client.post(f"/api/jobs/{job['id']}/prepare")
         assert response.status_code == 200
         paths = response.json()["documents"]["tailored_cv"]

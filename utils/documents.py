@@ -1106,7 +1106,7 @@ _SUPERVISORY_TIER_TERMS = (
 def _supervisory_tier(text: str) -> int:
     lower = text.lower()
     for tier, terms in enumerate(_SUPERVISORY_TIER_TERMS):
-        if any(term in lower for term in terms):
+        if any(re.search(r"\bnutrition\b", lower) if term == "nutrition" else term in lower for term in terms):
             return tier
     return len(_SUPERVISORY_TIER_TERMS)
 

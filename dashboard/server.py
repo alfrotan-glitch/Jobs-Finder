@@ -415,8 +415,25 @@ def _profile_details(profile: dict[str, Any]) -> dict[str, Any]:
         if items:
             skills.append({"group": str(group).replace("_", " ").title(), "items": items})
 
+    verified_count = sum(len(row["bullets"]) for row in experience)
+    official = profile.get("official_cv_approval") or {}
+    is_official_owner = "allah yar frotan" in summary["name"].lower().replace(".", "")
+    expected_count = 24 if is_official_owner else 0
+    # The old Windows checkout still printed ten or fewer duty lines after
+    # the owner approved 24. Expose a prominent stale-evidence diagnostic:
+    # CI on GitHub cannot update the currently running local database/profile.
+    official_complete = (not is_official_owner) or (
+        official.get("owner_approved") is True
+        and verified_count >= expected_count
+    )
     return {
         "summary": summary,
+        "official_cv_status": {
+            "owner_approved": official.get("owner_approved") is True,
+            "verified_duty_count": verified_count,
+            "expected_duty_count": expected_count,
+            "complete": official_complete,
+        },
         "professional_summary": _clean_value(professional_summary),
         "experience": experience,
         "education": education,

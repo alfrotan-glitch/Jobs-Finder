@@ -35,3 +35,29 @@ def test_windows_readiness_launcher_is_explicit_and_safe():
     assert "run_jobs_finder.bat" in launcher
     assert "git pull" not in launcher.lower()
     assert "apply" not in launcher.lower()
+
+
+def test_local_readiness_detects_stale_owner_profile_without_destroying_data(monkeypatch):
+    from utils import profile as repository
+    from tools import release_readiness
+
+    current = repository.load_canonical_profile(required=True)
+    stale = dict(current)
+    stale.pop("official_cv_approval", None)
+    monkeypatch.setattr(release_readiness, "_smoke_documents", lambda: {"status":"PASS","detail":"Synthetic."})
+    monkeypatch.setattr(repository, "load_canonical_profile", lambda *, required: stale)
+    result = release_readiness.collect_readiness()
+    assert result["checks"]["profile"]["status"] == "BLOCK"
+    assert "OLD LOCAL PROFILE DETECTED" in result["checks"]["profile"]["detail"]
+
+
+def test_owner_official_cv_status_is_visible_in_dashboard():
+    from dashboard.server import _profile_details
+    from utils.profile import load_canonical_profile
+
+    profile = load_canonical_profile(required=True)
+    result = _profile_details(profile)["official_cv_status"]
+    assert result["owner_approved"] is True
+    assert result["verified_duty_count"] == 24
+    assert result["expected_duty_count"] == 24
+    assert result["complete"] is True

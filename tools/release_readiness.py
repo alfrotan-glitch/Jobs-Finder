@@ -114,10 +114,18 @@ def collect_readiness() -> dict[str, object]:
         verified = required_contact.get("verification") or {}
         contacts_ok = all(bool(required_contact.get(k)) and verified.get(k) is True
                           for k in ("first_name", "last_name", "email", "phone"))
+        owner_name = " ".join(str(required_contact.get(k) or "") for k in ("first_name", "last_name")).lower()
+        official_owner = "allah yar frotan" in owner_name
+        official_current = (not official_owner) or (
+            (profile.get("official_cv_approval") or {}).get("owner_approved") is True
+            and len(roles) >= 5 and duties >= 24
+        )
         checks["profile"] = {
-            "status": "PASS" if roles and duties and contacts_ok else "BLOCK",
+            "status": "PASS" if roles and duties and contacts_ok and official_current else "BLOCK",
             "detail": f"Verified professional profile: {len(roles)} roles and {duties} actual duty statements; "
-                      + ("identity/contact verified." if contacts_ok else "identity/contact confirmation required."),
+                      + ("identity/contact verified. " if contacts_ok else "identity/contact confirmation required. ")
+                      + ("Owner-approved official CV is fully loaded."
+                         if official_current else "OLD LOCAL PROFILE DETECTED: official CV approval and 24 duties are missing. Reconcile without resetting user edits."),
         }
     except Exception as exc:
         checks["profile"] = {

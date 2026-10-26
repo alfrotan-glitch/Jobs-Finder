@@ -557,7 +557,17 @@ function renderProfileDetails() {
       <p>${escapeHtml(summary.title || "Professional profile")} · ${escapeHtml(summary.location || "Location not listed")}</p>
       <div class="profileContact"><span>${escapeHtml(summary.email || "Email not set")}</span><span>${escapeHtml(summary.phone || "Phone not set")}</span></div>
     </div>`;
-  $("profileSummaryBox").innerHTML = `<p>${escapeHtml(details.professional_summary || "No professional summary available.")}</p>`;
+  const official = details.official_cv_status || {};
+  const evidenceAlert = official.complete === false
+    ? `<p class="sectionHelp"><strong>Warning: your local official CV evidence is outdated.</strong>
+       The approved official CV contains 24 documented duties, but this running installation currently has
+       ${escapeHtml(official.verified_duty_count || 0)}. Do not send CV packages until your local
+       profile has been safely reconciled with the approved canonical source. Never reset your profile.</p>`
+    : official.owner_approved
+      ? `<p class="sectionHelp">Official CV approved · ${escapeHtml(official.verified_duty_count)} confirmed professional duties in the local profile.</p>`
+      : "";
+  $("profileSummaryBox").innerHTML = evidenceAlert +
+    `<p>${escapeHtml(details.professional_summary || "No professional summary available.")}</p>`;
   $("profileExperienceBox").innerHTML = (details.experience || []).length
     ? details.experience.map((item) => `
       <article class="timelineItem">

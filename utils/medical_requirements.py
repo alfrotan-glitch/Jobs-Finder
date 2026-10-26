@@ -1113,7 +1113,7 @@ def analyze_professional_role(title: str, text: str) -> dict[str, Any]:
 
 
 def parse_closing_date(text: str, today: date | None = None) -> str | None:
-    """Extract the first likely closing/deadline date and return ISO date."""
+    """Extract explicit-year closing dates, never invent a future deadline."""
     if not text:
         return None
     today = today or date.today()
@@ -1142,8 +1142,6 @@ def parse_closing_date(text: str, today: date | None = None) -> str | None:
         r"(?P<d>[12]\d|3[01]|0?[1-9])(?:st|nd|rd|th)?\s+(?P<mon>[A-Za-z]{3,9})\s*,?\s+(?P<y>20\d{2})",
         # September 30, 2026
         r"(?P<mon>[A-Za-z]{3,9})\s+(?P<d>[12]\d|3[01]|0?[1-9])(?:st|nd|rd|th)?\s*,?\s+(?P<y>20\d{2})",
-        # 30 September (assume current year, roll forward if already passed)
-        r"(?P<d>[12]\d|3[01]|0?[1-9])(?:st|nd|rd|th)?\s+(?P<mon>[A-Za-z]{3,9})(?!\s*\d)",
     ]
     for pattern in date_patterns:
         date_match = re.search(pattern, search_space, flags=re.IGNORECASE)
@@ -1151,7 +1149,7 @@ def parse_closing_date(text: str, today: date | None = None) -> str | None:
             continue
         parts = date_match.groupdict()
         try:
-            year = int(parts.get("y") or today.year)
+            year = int(parts["y"])
             if parts.get("mon"):
                 month = MONTHS.get(parts["mon"].lower())
                 if not month:
@@ -1160,8 +1158,6 @@ def parse_closing_date(text: str, today: date | None = None) -> str | None:
                 month = int(parts["m"])
             day = int(parts["d"])
             parsed = date(year, month, day)
-            if not parts.get("y") and parsed < today:
-                parsed = date(today.year + 1, month, day)
             return parsed.isoformat()
         except (TypeError, ValueError):
             continue

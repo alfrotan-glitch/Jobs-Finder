@@ -524,3 +524,10 @@ Private in GitHub Settings > General > Danger Zone, and should consider
 previous clones/history exposed. This code update cannot change repository
 visibility and does not erase historical copies. Do not commit additional
 private contact information until the GitHub visibility decision is complete.
+
+### Closing-date confidence
+
+The scanner accepts a stated Gregorian closing date only when the vacancy
+actually supplies its year. It does **not** turn a yearless "30 September"
+into "30 September next year" when a page is stale. Those cases remain
+unverified and should be checked on the employer's current official page.

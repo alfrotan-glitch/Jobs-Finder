@@ -9,6 +9,7 @@ logic.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -955,13 +956,21 @@ def api_open_email(job_id: str):
     if is_expired(job):
         raise HTTPException(status_code=409, detail="This vacancy has expired.")
     try:
-        filename, content = build_email_draft(job, project_root=ROOT)
+        _filename, content = build_email_draft(job, project_root=ROOT)
         directory = ROOT / "documents" / "email_drafts"
         directory.mkdir(parents=True, exist_ok=True)
+        # Repeated clicks must not create unlimited private duplicate drafts.
+        # Keep one current unsent draft for each job, with atomic replacement.
+        key = hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:32]
+        path = directory / f"Jobs-Finder-{key}-UNSENT.eml"
         import uuid
-        path = directory / (uuid.uuid4().hex + "-" + filename)
-        with path.open("xb") as stream:
-            stream.write(content)
+        temporary = directory / f".{key}-{uuid.uuid4().hex}.tmp"
+        try:
+            with temporary.open("xb") as stream:
+                stream.write(content)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
         open_windows_email_draft(path)
     except EmailDraftError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

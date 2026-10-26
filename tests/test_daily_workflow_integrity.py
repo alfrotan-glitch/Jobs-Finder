@@ -144,4 +144,8 @@ def test_dashboard_renders_closed_history_without_representing_it_as_open():
     assert "job.is_expired" in script
     assert "DEADLINE PASSED" in script
     assert "Past-deadline vacancies" in script
-    assert "canPrepare = !isNotEligible && !job.is_expired" in script
+    # Preparation guards now have one shared source of truth used by both
+    # the list and the details drawer; do not assert a retired inline spelling.
+    assert "const canPrepare = canPrepareJob(job)" in script
+    assert "function canPrepareJob(job)" in script
+    assert "!job.is_expired" in script

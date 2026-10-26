@@ -170,3 +170,31 @@ def test_dashboard_refuses_invalid_port(monkeypatch, bad_port):
     monkeypatch.setattr(server.uvicorn, "run", lambda *a, **k: pytest.fail("Server started on an invalid port"))
     with pytest.raises(ValueError, match="port"):
         server.run_server(port=bad_port)
+
+
+def test_opening_email_twice_replaces_same_local_unsent_draft(client, tmp_path, monkeypatch):
+    """A repeated Apply click must not accumulate duplicate private .eml files."""
+    from pathlib import Path
+
+    monkeypatch.setattr(server, "ROOT", tmp_path)
+    monkeypatch.setattr(server, "get_job_by_id", lambda job_id: {"id": job_id})
+    monkeypatch.setattr(server, "is_expired", lambda job: False)
+    counter = {"n": 0}
+
+    def create_draft(job, *, project_root):
+        counter["n"] += 1
+        assert project_root == tmp_path
+        return "Jobs-Finder-test-UNSENT.eml", f"draft revision {counter['n']}".encode()
+
+    opened = []
+    monkeypatch.setattr(server, "build_email_draft", create_draft)
+    monkeypatch.setattr(server, "open_windows_email_draft", lambda path: opened.append(Path(path)))
+    first = client.post("/api/jobs/job-one/open-email")
+    second = client.post("/api/jobs/job-one/open-email")
+    assert first.status_code == second.status_code == 200
+    assert first.json()["sent"] is False
+    drafts = list((tmp_path / "documents" / "email_drafts").glob("*.eml"))
+    assert len(drafts) == 1
+    assert opened == drafts * 2
+    assert drafts[0].read_bytes() == b"draft revision 2"
+    assert list((tmp_path / "documents" / "email_drafts").glob("*.tmp")) == []

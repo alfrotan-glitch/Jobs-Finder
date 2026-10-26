@@ -120,7 +120,9 @@ choose **Apply — Open email**. Windows will ask for confirmation and attempt
 to open a real **UNSENT** `.eml` draft in the registered mail application,
 with the correct recruiter email address, requested subject, full prepared
 email body, and **only the PDF attachments explicitly requested** by the
-advertisement. If Windows has no email application registered to open EML,
+advertisement. For each vacancy, opening the draft again refreshes the same private unsent
+EML file rather than accumulating a new duplicate with every click.
+If Windows has no email application registered to open EML,
 the dashboard displays a **Download unsent email with attachments** link.
 Open that file in a mail application capable of importing .eml, verify
 everything, then press **Send yourself**.

@@ -1128,7 +1128,23 @@ def _supervisory_letter_highlights(items: list[str], *, limit: int) -> list[str]
         factual_clause = text.split(" (", 1)[0]
         return (not is_experience, _supervisory_tier(factual_clause), index)
 
-    return [text for _, text in sorted(enumerate(items), key=key)][:limit]
+    ranked = sorted(enumerate(items), key=key)
+    # A long verified official CV can contain many clinically related lines.
+    # Represent each relevant supervisory dimension before repeating one:
+    # team leadership, supplies/logistics, coordination, HMIS. This avoids a
+    # letter containing six variations of supervision and omitting equally
+    # verified management/field-monitoring evidence.
+    diversified: list[str] = []
+    for tier in range(len(_SUPERVISORY_TIER_TERMS)):
+        for _, line in ranked:
+            clause = line.split(" (", 1)[0]
+            if _supervisory_tier(clause) == tier:
+                diversified.append(line)
+                break
+    for _, line in ranked:
+        if line not in diversified:
+            diversified.append(line)
+    return diversified[:limit]
 
 
 # Experience dimensions in the order a supervisory health/nutrition letter leads with.

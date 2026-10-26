@@ -249,6 +249,44 @@ def apply_editor_change(profile: dict[str, Any], patch: dict[str, Any]) -> dict[
             raise ProfileEditError("The work-history list is full or invalid.")
         roles.append({**values, "verified": bool(confirmed), "responsibilities": []})
         return profile
+    if action == "create_complete_record":
+        section = patch.get("section")
+        required = {"medical_education": ("degree", "institution"),
+                    "languages": ("name", "level"),
+                    "certificates": ("name",)}
+        allowed = {"medical_education": ("degree", "field", "institution", "start", "end"),
+                   "languages": ("name", "level"),
+                   "certificates": ("name",)}
+        if section not in allowed:
+            raise ProfileEditError("Select a supported record type.")
+        values = {
+            field: _text(patch.get(field) or "", maximum=250, allow_empty=field not in required[section])
+            for field in allowed[section]
+        }
+        if any(is_unresolved_value(values[key]) for key in required[section]):
+            raise ProfileEditError("Required factual fields cannot be placeholders.")
+        records = profile.setdefault(section, [])
+        if not isinstance(records, list) or len(records) >= 100:
+            raise ProfileEditError("This section has reached its safe maximum.")
+        records.append({**values, "verified": bool(confirmed)})
+        return profile
+    if action == "delete_record":
+        section = patch.get("section")
+        index = patch.get("index")
+        group = patch.get("group")
+        if section not in {"medical_education", "languages", "certificates", "skills"}:
+            raise ProfileEditError("Only supported editable records can be removed.")
+        if section == "skills":
+            buckets = profile.get("skills") or {}
+            if not isinstance(group, str) or group not in buckets:
+                raise ProfileEditError("Invalid skill category.")
+            records = buckets[group]
+        else:
+            records = profile.get(section) or []
+        if not isinstance(records, list) or type(index) is not int or not 0 <= index < len(records):
+            raise ProfileEditError("Invalid record index.")
+        records.pop(index)
+        return profile
     if action == "verify_record":
         section = patch.get("section")
         index = patch.get("index")

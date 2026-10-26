@@ -729,6 +729,9 @@ function renderProfileEditor() {
             ? `<button class="secondary smallButton" data-action="verify-record" data-section="${section}"
                data-record-index="${item.index}" data-record-group="${escapeAttr(item.group || "")}">
                Confirm this record</button>` : ""}
+          ${!["license_registration","medical_exit_exam","work_history"].includes(section)
+            ? `<button class="textButton" data-action="delete-profile-record" data-section="${section}"
+                 data-record-index="${item.index}" data-record-group="${escapeAttr(item.group || "")}">Remove</button>` : ""}
           ${fields.map((field) => `<div class="editorRecordField">
             <strong>${escapeHtml(field.replace(/_/g," "))}:</strong> ${escapeHtml(item[field] || "Not supplied")}
             <button class="secondary smallButton" data-action="edit-record" data-section="${section}"
@@ -852,6 +855,36 @@ async function verifyProfileRecord(target) {
   });
 }
 
+async function createCompleteProfileRecord(section) {
+  const fields = section === "medical_education"
+    ? ["degree","field","institution","start","end"]
+    : section === "languages" ? ["name","level"]
+    : section === "certificates" ? ["name"] : null;
+  if (!fields) return;
+  const values = {section, action:"create_complete_record"};
+  for (const field of fields) {
+    const required = ["degree","institution","name","level"].includes(field);
+    const response = window.prompt(`New ${section.replace(/_/g," ")} — ${field.replace(/_/g, " ")}${required ? " (required)" : " (optional)"}:`, "");
+    if (response === null) return;
+    values[field] = response.trim();
+    if (required && !values[field]) {
+      setStatus("Complete required factual details before saving.", "warn");
+      return;
+    }
+  }
+  const confirmed = window.confirm("Confirm the new training, education or language record is accurate and supported by your own records? Cancel saves it as unverified.");
+  values.confirmation = confirmed ? OWNER_CONFIRMATION : "";
+  await saveEditorPatch(values);
+}
+
+async function deleteProfileRecord(target) {
+  const section = target.dataset.section;
+  const index = Number(target.dataset.recordIndex);
+  const group = target.dataset.recordGroup || "";
+  if (!window.confirm("Remove this item from your professional profile and future CVs?")) return;
+  await saveEditorPatch({action:"delete_record",section,index,group});
+}
+
 async function createWorkRole() {
   const title = window.prompt("Professional role title:")?.trim();
   if (!title) return;
@@ -883,6 +916,10 @@ async function editProfileRecord(target, create = false) {
   else if (section === "medical_exit_exam") records = [{...editor?.exam, index:-1}];
   const row = records.find((item) => item.index === index && (section !== "skills" || item.group === group));
   if (!create && !row) return;
+  if (create && ["medical_education","languages","certificates"].includes(section)) {
+    await createCompleteProfileRecord(section);
+    return;
+  }
   if (create && section === "skills" && !group) {
     const skillGroups = [...new Set((editor?.skills || []).map((item) => item.group))];
     group = window.prompt("Enter existing skill category (" + skillGroups.join(", ") + "):", skillGroups[0] || "") || "";
@@ -1631,6 +1668,7 @@ function handleAction(event) {
   if (action === "new-work-role") createWorkRole();
   if (action === "accept-imported-duty") acceptImportedDuty(target.dataset.candidateIndex);
   if (action === "verify-record") verifyProfileRecord(target);
+  if (action === "delete-profile-record") deleteProfileRecord(target);
   if (action === "edit-record") editProfileRecord(target);
   if (action === "new-record") editProfileRecord(target, true);
   if (["new-duty", "edit-duty", "verify-duty", "delete-duty", "approve-duty"].includes(action)) {

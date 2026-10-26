@@ -275,3 +275,46 @@ def test_unverified_edited_duty_can_be_explicitly_verified_later(owner):
     })
     assert good.status_code == 200
     assert yaml.safe_load(path.read_text(encoding="utf-8"))["work_history"][0]["responsibilities"][0]["verified"] is True
+
+
+def test_complete_education_training_language_can_be_added_in_one_save(owner):
+    client, path = owner
+    for section, payload in [
+        ("medical_education", {"degree":"Master of Public Health","field":"Public Health",
+                               "institution":"Example University","start":"2024","end":"2026"}),
+        ("certificates", {"name":"Advanced Health Data Training — Example Provider — 2026"}),
+        ("languages", {"name":"French","level":"Professional"}),
+    ]:
+        change = _save(client, _get(client)["version"], {
+            "action":"create_complete_record", "section":section, **payload,
+            "confirmation":CONFIRMATION,
+        })
+        assert change.status_code == 200, change.text
+        assert yaml.safe_load(path.read_text(encoding="utf-8"))[section][-1]["verified"] is True
+
+
+def test_partial_education_and_language_cannot_be_passed_off_as_verified(owner):
+    client, path = owner
+    original = path.read_bytes()
+    for section, fields in [
+        ("medical_education", {"degree":"Medical Degree", "institution":""}),
+        ("languages", {"name":"French", "level":"Needs verification"}),
+    ]:
+        result = _save(client, _get(client)["version"], {
+            "action":"create_complete_record", "section":section, **fields, "confirmation":CONFIRMATION,
+        })
+        assert result.status_code == 409
+    assert path.read_bytes() == original
+
+
+def test_owner_can_remove_a_stale_language_without_deleting_entire_profile(owner):
+    client, path = owner
+    assert _save(client, _get(client)["version"], {
+        "action":"create_complete_record", "section":"languages",
+        "name":"French", "level":"Fluent", "confirmation":CONFIRMATION,
+    }).status_code == 200
+    removed = _save(client, _get(client)["version"], {
+        "action":"delete_record", "section":"languages", "index":0,
+    })
+    assert removed.status_code == 200
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["languages"] == []

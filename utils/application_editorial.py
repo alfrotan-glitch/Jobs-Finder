@@ -170,9 +170,9 @@ def select_employer_facing_experience(
         # post can incorrectly outrank direct medical team leadership.
         if "coordinator" in target or "manager" in target:
             if "supervisor" in role_lower or "team leader" in role_lower:
-                role_score += 150
+                role_score += 10_000
             if "medical" in target and ("medical doctor" in role_lower or "clinician" in role_lower):
-                role_score += 150
+                role_score += 10_000
         best = sorted(
             (factual_relevance_score(bullet, vacancy_title, description)
              for bullet in bullets), reverse=True

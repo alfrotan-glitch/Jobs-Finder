@@ -106,7 +106,10 @@ def assert_model_preserved(model, text):
         assert flat(value) in text, value
     positions = [text.index(role["role"]) for role in model["experience"]]
     assert positions == sorted(positions)
-    positions = [text.index(heading) for heading in SECTIONS]
+    ordered_sections = list(SECTIONS)
+    if model.get("is_employer_curated"):
+        ordered_sections[1], ordered_sections[2] = ordered_sections[2], ordered_sections[1]
+    positions = [text.index(heading) for heading in ordered_sections]
     assert positions == sorted(positions)
 
 

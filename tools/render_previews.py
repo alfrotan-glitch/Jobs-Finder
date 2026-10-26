@@ -87,7 +87,10 @@ def inspect_pdf(path: Path, model: dict) -> dict:
         for value in values:
             assert normalized(value) in text, f"Missing evidence in {path.name}: {value}"
         assert "(cid:" not in text and "\ufffd" not in text, "Undefined glyph"
-        for labels in (SECTIONS, [role["role"] for role in model["experience"]]):
+        sections = list(SECTIONS)
+        if model.get("is_employer_curated"):
+            sections[1], sections[2] = sections[2], sections[1]
+        for labels in (sections, [role["role"] for role in model["experience"]]):
             positions = [text.index(label) for label in labels]
             assert positions == sorted(positions), "Section or chronology order changed"
         pages = []

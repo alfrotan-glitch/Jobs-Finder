@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from utils.source_registry import SOURCE_REGISTRY
 from utils.profile import (
     canonical_profile_fingerprint,
     is_unresolved_value,
@@ -61,6 +62,14 @@ def editor_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
             ],
         })
     locations = preferences.get("locations") or []
+    raw_sources = profile.get("sources") or {}
+    enabled = raw_sources.get("enabled") or [
+        name for name, spec in SOURCE_REGISTRY.items() if spec.get("active")
+    ]
+    enabled = [name for name in enabled if name not in set(raw_sources.get("disabled") or [])]
+    job_sources = profile.get("job_sources") or {}
+    acbar = job_sources.get("acbar") or {}
+    reliefweb = job_sources.get("reliefweb") or {}
     return {
         "version": canonical_profile_fingerprint(profile),
         "personal": {key: personal.get(key) or "" for key in IDENTITY_FIELDS},
@@ -72,6 +81,15 @@ def editor_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
         "professional_summary_verified": summary.get("verified") is True,
         "roles": [str(role) for role in preferences.get("roles") or [] if isinstance(role, str)],
         "locations": [str(item.get("name") or "") for item in locations if isinstance(item, dict)],
+        "locations_verified": [item.get("verified") is True for item in locations if isinstance(item, dict)],
+        "sources": {
+            "enabled": enabled,
+            "available": list(SOURCE_REGISTRY),
+            "acbar_concurrency": acbar.get("max_detail_concurrency", 5),
+            "acbar_timeout": acbar.get("timeout_seconds", 25),
+            "reliefweb_limit": reliefweb.get("limit", 20),
+            "reliefweb_timeout": reliefweb.get("timeout_seconds", 25),
+        },
         "experience": experience,
         "documents": {
             "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
@@ -125,6 +143,59 @@ def apply_editor_change(profile: dict[str, Any], patch: dict[str, Any]) -> dict[
         profile.setdefault("preferences", {})["roles"] = list(dict.fromkeys(
             _text(x, maximum=100, allow_empty=False) for x in roles
         ))
+        return profile
+    if action == "search":
+        roles = patch.get("roles")
+        locations = patch.get("locations")
+        enabled = patch.get("enabled_sources")
+        if not isinstance(roles, list) or len(roles) > 25:
+            raise ProfileEditError("Provide up to 25 preferred roles.")
+        if not isinstance(locations, list) or len(locations) > 20:
+            raise ProfileEditError("Provide up to 20 preferred locations.")
+        if not isinstance(enabled, list) or not enabled or any(
+            not isinstance(item, str) or item not in SOURCE_REGISTRY for item in enabled
+        ):
+            raise ProfileEditError("Enable at least one supported job source.")
+        def bounded_int(field: str, low: int, high: int) -> int:
+            value = patch.get(field)
+            if type(value) is not int or not low <= value <= high:
+                raise ProfileEditError(f"{field} must be between {low} and {high}.")
+            return value
+        concurrency = bounded_int("acbar_concurrency", 1, 10)
+        acbar_timeout = bounded_int("acbar_timeout", 5, 90)
+        reliefweb_limit = bounded_int("reliefweb_limit", 1, 100)
+        reliefweb_timeout = bounded_int("reliefweb_timeout", 5, 90)
+        preferences = profile.setdefault("preferences", {})
+        preferences["roles"] = list(dict.fromkeys(
+            _text(value, maximum=100, allow_empty=False) for value in roles
+        ))
+        original = preferences.get("locations") or []
+        old_names = {
+            str(item.get("name") or "").casefold(): item
+            for item in original if isinstance(item, dict)
+        }
+        updated_locations = []
+        for value in locations:
+            name = _text(value, maximum=100, allow_empty=False)
+            if name.casefold() in [str(item["name"]).casefold() for item in updated_locations]:
+                continue
+            previous = old_names.get(name.casefold(), {})
+            updated_locations.append({
+                "name": name,
+                "verified": previous.get("verified") is True or bool(confirmed),
+            })
+        preferences["locations"] = updated_locations
+        profile["sources"] = {
+            "enabled": list(dict.fromkeys(enabled)),
+            "disabled": [name for name in SOURCE_REGISTRY if name not in enabled],
+        }
+        job_sources = profile.setdefault("job_sources", {})
+        acbar = job_sources.setdefault("acbar", {})
+        reliefweb = job_sources.setdefault("reliefweb", {})
+        acbar["max_detail_concurrency"] = concurrency
+        acbar["timeout_seconds"] = acbar_timeout
+        reliefweb["limit"] = reliefweb_limit
+        reliefweb["timeout_seconds"] = reliefweb_timeout
         return profile
     if action == "documents":
         layout = patch.get("cv_layout")

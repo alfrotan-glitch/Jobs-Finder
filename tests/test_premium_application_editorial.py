@@ -123,7 +123,40 @@ def test_real_official_profile_produces_distinct_targeted_summaries_without_inve
         assert "managed 500 staff" not in summary
     for result in outputs:
         assert len(result["tailored_cv_model"]["experience"]) == 5
-        assert sum(len(entry["bullets"]) for entry in result["tailored_cv_model"]["experience"]) == 24
+        model = result["tailored_cv_model"]
+        assert model["is_employer_curated"] is True
+        assert model["full_verified_duty_count"] == 24
+        assert 10 <= model["selected_duty_count"] <= 15
+        assert sum(len(entry["bullets"]) for entry in model["experience"]) == model["selected_duty_count"]
+        assert all(len(role["bullets"]) >= 1 for role in model["experience"])
         assert result["cover_letter"].count("In my documented role as") <= 2
         assert "Jobs-Finder" not in result["cover_letter"]
     assert profile == before
+
+
+def test_medical_coordinator_highlights_real_supervision_without_reducing_roles_to_one_line():
+    from utils.application_editorial import select_employer_facing_experience
+    profile = load_canonical_profile(required=True)
+    job = {
+        "title": "Medical Coordinator",
+        "description": "Coordinate health projects, supervise staff and field teams, "
+                       "work with MoPH, oversee reporting, clinical quality and supplies.",
+    }
+    document = generate_tailored_documents(job, profile, {"facts": {}})
+    exp = document["tailored_cv_model"]["experience"]
+    assert len(exp) == 5
+    assert [x["role"] for x in exp][:2] == [
+        "TFU Medical Doctor & Safeguarding Focal Point", "Health & Nutrition Supervisor"
+    ]
+    assert len(exp[0]["bullets"]) >= 3
+    assert len(exp[1]["bullets"]) >= 3
+    assert sum(len(x["bullets"]) for x in exp) <= 15
+    assert any("coordinat" in x.lower() or "supervis" in x.lower()
+               for role in exp[:2] for x in role["bullets"])
+    # The selected text is exact owner-provided evidence, never rewritten.
+    for role in exp:
+        source = next(row for row in profile["work_history"] if row["title"] == role["role"])
+        approved = [row["text"] for row in source["responsibilities"] if row["verified"] is True]
+        assert all(line.rstrip(".") in {x.rstrip(".") for x in approved} for line in role["bullets"])
+    assert document["tailored_cv_model"]["full_verified_duty_count"] == 24
+    assert select_employer_facing_experience([], "Medical Coordinator") == ([], 0)

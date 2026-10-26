@@ -135,3 +135,60 @@ def concise_attested_highlights(
         if len(result) == max_items:
             break
     return result
+
+
+def select_employer_facing_experience(
+    experience: list[dict], vacancy_title: str, description: str = ""
+) -> tuple[list[dict], int]:
+    """Curate a targeted CV, preserving the unabridged Master CV separately.
+
+    Keep every job, employer and employment date in ATS-safe reverse chronology.
+    Select 1–5 complete owner-verified duties per role (no paraphrasing) and
+    allocate more space to the most relevant roles. Current experience order,
+    used for employer timeline parsing, never changes.
+    """
+    import copy
+
+    original = copy.deepcopy(experience)
+    total = sum(len(row.get("bullets") or []) for row in original)
+    if not original:
+        return [], total
+    priorities: list[tuple[int, int]] = []
+    for i, row in enumerate(original):
+        bullets = list(row.get("bullets") or [])
+        if not bullets:
+            continue
+        # Score the role separately, then its strongest confirmed examples.
+        # Each role gets at least one real line, never an invented filler.
+        role_text = str(row.get("role") or "")
+        role_score = factual_relevance_score(role_text, vacancy_title, description)
+        best = sorted(
+            (factual_relevance_score(bullet, vacancy_title, description)
+             for bullet in bullets), reverse=True
+        )[:3]
+        priorities.append((i, role_score * 2 + sum(best)))
+    ranked = [i for i, _ in sorted(priorities, key=lambda pair: (-pair[1], pair[0]))]
+    # At most 15 selected statements for the usual 5-position official CV,
+    # while allowing broader timelines to keep one duty for each position.
+    max_total = max(len(original), 15)
+    caps = {}
+    for rank, index in enumerate(ranked):
+        caps[index] = 5 if rank < 2 else 2 if rank < 4 else 1
+    chosen = {i: min(1, len(row.get("bullets") or [])) for i, row in enumerate(original)}
+    remaining = max_total - sum(chosen.values())
+    # Fill strongest roles first, but allocate one further example per pass.
+    while remaining > 0:
+        moved = False
+        for index in ranked:
+            limit = min(caps.get(index, 1), len(original[index].get("bullets") or []))
+            if chosen[index] < limit:
+                chosen[index] += 1
+                remaining -= 1
+                moved = True
+                if remaining <= 0:
+                    break
+        if not moved:
+            break
+    for i, row in enumerate(original):
+        row["bullets"] = list(row.get("bullets") or [])[:chosen[i]]
+    return original, total

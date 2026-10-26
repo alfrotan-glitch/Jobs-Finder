@@ -46,6 +46,7 @@ from utils.application_editorial import (
     concise_attested_highlights,
     factual_relevance_score,
     rank_attested_statements,
+    select_employer_facing_experience,
     target_verified_summary,
 )
 from utils.medical_matcher import MET, NEEDS_VERIFICATION, NOT_ELIGIBLE_STATUS, NOT_MET
@@ -1609,6 +1610,18 @@ def generate_tailored_documents(
                 }
             )
 
+    # An approved official CV is the comprehensive source of truth, not a
+    # mandate to print all duties in every employer-targeted application.
+    # Curate the vacancy-specific document while the separate Master CV
+    # continues to reproduce the entire verified professional history.
+    full_verified_duties = sum(len(item["bullets"]) for item in ordered_work)
+    curated_cv = (profile.get("official_cv_approval") or {}).get("owner_approved") is True
+    if curated_cv:
+        ordered_work, _ = select_employer_facing_experience(
+            ordered_work, str(job.get("title") or ""),
+            str(job.get("description") or ""),
+        )
+
     ranked_competencies = [item for group in expertise for item in group["items"]]
     summary = _professional_profile_paragraph(
         profile,
@@ -1652,6 +1665,9 @@ def generate_tailored_documents(
         "expertise": expertise,
         "strengths": skills_bullets,
         "experience": ordered_work,
+        "full_verified_duty_count": full_verified_duties,
+        "selected_duty_count": sum(len(item["bullets"]) for item in ordered_work),
+        "is_employer_curated": curated_cv,
         "education": education,
         "registration": evidence.evidence_text("license_registration", verified_only=True) if evidence.has_verified("license_registration") else [],
         "exit_exam": evidence.evidence_text("medical_exit_exam", verified_only=True) if evidence.has_verified("medical_exit_exam") else [],

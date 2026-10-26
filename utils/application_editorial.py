@@ -200,6 +200,26 @@ def select_employer_facing_experience(
                     break
         if not moved:
             break
+    # A medical coordinator's two most recent owner-verified frontline roles
+    # must not collapse to a single or double line merely because an older
+    # response-team title happens to match both 'medical' and 'team leader'.
+    # Reallocate existing slots from other roles; never enlarge the CV,
+    # create a claim, remove a position or change source evidence.
+    if "medical" in vacancy_title.casefold() and (
+        "coordinator" in vacancy_title.casefold() or "manager" in vacancy_title.casefold()
+    ):
+        for index in range(min(2, len(original))):
+            minimum = min(4, len(original[index].get("bullets") or []))
+            while chosen[index] < minimum:
+                donor = next(
+                    (other for other in reversed(ranked)
+                     if other >= 2 and chosen[other] > 1),
+                    None,
+                )
+                if donor is None:
+                    break
+                chosen[donor] -= 1
+                chosen[index] += 1
     for i, row in enumerate(original):
         row["bullets"] = list(row.get("bullets") or [])[:chosen[i]]
     return original, total

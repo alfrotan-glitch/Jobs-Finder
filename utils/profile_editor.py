@@ -28,7 +28,7 @@ class ProfileEditError(ValueError):
 
 
 def _text(value: Any, *, maximum: int = 250, allow_empty: bool = True) -> str:
-    if not isinstance(value, str) or "\\x00" in value or len(value) > maximum:
+    if not isinstance(value, str) or any(ord(char) == 0 for char in value) or len(value) > maximum:
         raise ProfileEditError("Invalid text value or field length.")
     cleaned = value.strip()
     if not cleaned and not allow_empty:
@@ -236,7 +236,7 @@ def apply_editor_change(profile: dict[str, Any], patch: dict[str, Any]) -> dict[
         return profile
     if action == "work_role":
         values = {
-            field: _text(patch.get(field), maximum=250,
+            field: _text(patch.get(field) or "", maximum=250,
                          allow_empty=field not in {"title", "organization"})
             for field in ("title", "organization", "location", "start", "end")
         }

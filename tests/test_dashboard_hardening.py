@@ -72,7 +72,7 @@ def test_cv_preview_rejects_oversized_upload_without_parsing_or_persisting(clien
     def must_not_parse(_: str):
         raise AssertionError("oversized upload must not be parsed")
 
-    monkeypatch.setattr(server, "build_profile_from_cv_file", must_not_parse)
+    monkeypatch.setattr(server, "extract_resume_text", must_not_parse)
     response = client.post(
         "/api/import-cv",
         files={"file": ("cv.txt", io.BytesIO(b"x" * 17), "text/plain")},

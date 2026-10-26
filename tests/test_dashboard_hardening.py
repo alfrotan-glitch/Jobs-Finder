@@ -198,3 +198,21 @@ def test_opening_email_twice_replaces_same_local_unsent_draft(client, tmp_path, 
     assert opened == drafts * 2
     assert drafts[0].read_bytes() == b"draft revision 2"
     assert list((tmp_path / "documents" / "email_drafts").glob("*.tmp")) == []
+
+
+@pytest.mark.parametrize("remote_ip", ["192.168.1.27", "10.1.2.3", "203.0.113.8", "2001:db8::1"])
+def test_remote_network_client_cannot_read_private_data_with_spoofed_local_host(client, remote_ip):
+    """Even direct Uvicorn --host 0.0.0.0 cannot bypass client-IP checks."""
+    with TestClient(server.app, client=(remote_ip, 12345)) as remote:
+        response = remote.get("/api/profile/details", headers={"Host": "localhost:8080"})
+        assert response.status_code == 403
+        assert "Remote clients" in response.json()["detail"]
+        write = remote.post("/api/alerts/read-all", headers={"Host": "127.0.0.1:8080"})
+        assert write.status_code == 403
+
+
+@pytest.mark.parametrize("local_ip", ["127.0.0.1", "::1", "::ffff:127.0.0.1"])
+def test_local_peer_remains_accepted(client, local_ip):
+    with TestClient(server.app, client=(local_ip, 12345)) as local:
+        response = local.get("/api/health", headers={"Host": "localhost:8080"})
+        assert response.status_code == 200

@@ -45,3 +45,18 @@ without access control and TLS.
 CV previews are temporary, bounded uploads and do not create a profile,
 reference store, cache, or backup. No feature submits applications or bypasses
 CAPTCHA, login, or MFA.
+
+
+## Immediate GitHub visibility risk
+
+The canonical applicant profile is deliberately Git-tracked, and this
+repository was publicly visible at the October 2026 release audit. The
+loopback-only dashboard does **not** protect material already published in
+GitHub history. Treat identity, employment, credentials, and contact facts
+in the tracked profile as disclosed while the repository remains public.
+Make the GitHub repository **Private** under Settings > General > Danger Zone
+before synchronizing further personal details. Changing visibility does not
+erase prior clones, search-engine caches, or copies of Git history.
+If that risk is unacceptable, migrate to a newly created private repository
+and review which data should remain tracked; do not delete the only verified
+applicant record or its backups in an attempt to hide history.

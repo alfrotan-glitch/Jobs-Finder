@@ -763,12 +763,31 @@ def _add_requirement(
 
 
 def is_valid_http_url(url: str | None) -> bool:
-    if not url:
+    """Accept only well-formed browser HTTP(S) links without embedded secrets.
+
+    Employer/listing URLs are untrusted input.  Reject URL credentials,
+    whitespace/control characters, backslashes, malformed ports and misleading
+    netlocs before a source or apply destination is treated as actionable.
+    Unicode letters in genuine vacancy paths remain supported.
+    """
+    if not isinstance(url, str):
+        return False
+    text = url.strip()
+    if not text or any(ord(char) <= 32 or ord(char) == 127 or char == "\\\\" for char in text):
         return False
     try:
-        parsed = urlparse(str(url).strip())
-        return parsed.scheme in {"http", "https"} and bool(parsed.netloc) and "." in parsed.netloc
-    except Exception:
+        parsed = urlparse(text)
+        host = parsed.hostname
+        port = parsed.port
+        return (
+            parsed.scheme in {"http", "https"}
+            and bool(host and "." in host)
+            and parsed.username is None
+            and parsed.password is None
+            and (port is None or port > 0)
+            and bool(parsed.netloc)
+        )
+    except (ValueError, TypeError):
         return False
 
 

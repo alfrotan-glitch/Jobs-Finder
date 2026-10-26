@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -120,6 +121,26 @@ def _is_trusted_local_host(request: Request) -> bool:
         return False
 
 
+def _is_trusted_local_client(request: Request) -> bool:
+    """Refuse remote TCP clients even if a custom Uvicorn launch binds to LAN.
+
+    Host headers are supplied by the caller and cannot establish local origin.
+    The shipped launcher/CLI independently restrict listening to loopback,
+    while this guard covers direct ASGI/Uvicorn entry points as a second layer.
+    The in-process Starlette TestClient uses the special 'testclient' peer.
+    """
+    peer = request.client.host if request.client else ""
+    if peer == "testclient":
+        return True
+    try:
+        address = ipaddress.ip_address(peer)
+    except (ValueError, TypeError):
+        return False
+    if address.version == 6 and address.ipv4_mapped:
+        return address.ipv4_mapped.is_loopback
+    return address.is_loopback
+
+
 def _is_same_origin_browser_request(request: Request) -> bool:
     """Accept same-origin browser writes while rejecting cross-site requests.
 
@@ -141,7 +162,9 @@ def _is_same_origin_browser_request(request: Request) -> bool:
 @app.middleware("http")
 async def _protect_browser_responses(request: Request, call_next):
     """Apply privacy defaults and same-origin protection to every route."""
-    if not _is_trusted_local_host(request):
+    if not _is_trusted_local_client(request):
+        response = JSONResponse(status_code=403, content={"detail": "Remote clients are not allowed. Jobs-Finder is local-only."})
+    elif not _is_trusted_local_host(request):
         response = JSONResponse(status_code=400, content={"detail": "Untrusted Host header. Use the local Jobs-Finder address."})
     elif request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and not _is_same_origin_browser_request(request):
         response = JSONResponse(

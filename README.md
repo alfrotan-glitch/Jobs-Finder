@@ -512,3 +512,15 @@ This means the app could not reach active discovery sources from your network or
 ### Python package installation fails
 
 If installation fails, use Python 3.11 or 3.12, delete `.venv`, and rerun `run_jobs_finder.bat`.
+
+
+### Release privacy decision (owner action required)
+
+The repository has a Git-tracked applicant profile and was observed to be
+**public** during the October 2026 security review. This is incompatible
+with a claim of complete applicant confidentiality, regardless of passing
+tests or the local-only dashboard. The owner must make the repository
+Private in GitHub Settings > General > Danger Zone, and should consider
+previous clones/history exposed. This code update cannot change repository
+visibility and does not erase historical copies. Do not commit additional
+private contact information until the GitHub visibility decision is complete.

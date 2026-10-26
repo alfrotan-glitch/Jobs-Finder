@@ -203,3 +203,45 @@ def test_web_application_package_has_no_email_draft(tmp_path):
     assert package["application_method"] == "WEB"
     assert package["email_draft"] is None
     assert package["online_application"]["url"] == "https://apply.example.org/forms/web-md"
+
+
+@pytest.mark.parametrize("url", [
+    "https://user:password@jobs.example.org/application",
+    "https://user@jobs.example.org/application",
+    "https://jobs.example.org:bogus/application",
+    "https://jobs.example.org:0/application",
+    "https://jobs.example.org:99999/application",
+    "https://jobs.example.org\\\\@attacker.example/application",
+    "https://jobs.example.org/app\\nly",
+    "https://jobs.example.org/my job",
+    "javascript:alert(1)",
+    "https://localhost/apply",
+])
+def test_malformed_or_embedded_secret_application_urls_are_not_actionable(url):
+    from utils.medical_requirements import canonical_source_fields, is_valid_http_url
+
+    assert not is_valid_http_url(url)
+    job = {
+        "id": "unsafe-application",
+        "title": "Medical Doctor",
+        "company": "Verified Example NGO",
+        "url": "https://jobs.example.org/vacancies/medical-doctor",
+        "metadata": {
+            "source_name": "ACBAR",
+            "source_url": "https://jobs.example.org/jobs",
+            "vacancy_url": "https://jobs.example.org/vacancies/medical-doctor",
+            "application_method": "WEB",
+            "apply_url": url,
+        },
+    }
+    source = canonical_source_fields(job)
+    assert source["application_method"] == "UNAVAILABLE"
+    assert source["apply_url"] is None
+    assert source["direct_application_route_actionable"] is False
+
+
+def test_genuine_unicode_vacancy_path_stays_valid():
+    from utils.medical_requirements import is_valid_http_url
+
+    assert is_valid_http_url("https://jobs.example.org/وظایف/داکتر-طبی")
+    assert is_valid_http_url("http://www.acbar.org/en/jobs")

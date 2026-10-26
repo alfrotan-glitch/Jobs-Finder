@@ -1139,7 +1139,7 @@ def _supervisory_letter_highlights(items: list[str], *, limit: int) -> list[str]
 
     def category(line: str) -> int:
         clause = action(line).lower()
-        if re.search(r"\\bsupervis(?:ed|ion|or|ing)?\\b", clause) or "coaching" in clause or "mentoring" in clause:
+        if re.search(r"\bsupervis(?:ed|ion|or|ing)?\b", clause) or "coaching" in clause or "mentoring" in clause:
             return 0
         if any(word in clause for word in ("supply", "stock", "logistic", "procure")):
             return 1

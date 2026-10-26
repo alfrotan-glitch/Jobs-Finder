@@ -543,7 +543,7 @@ def test_real_master_cv_pdf_has_no_giant_empty_trailing_page(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_tailored_cvs_are_substantive_and_keep_every_verified_fact(tmp_path):
+def test_tailored_cvs_are_substantive_and_use_only_verified_fact_subsets(tmp_path):
     profile = _profile()
     before_fingerprint = json.dumps(profile, sort_keys=True, ensure_ascii=False)
     master_text_before = generate_master_cv(profile)["master_cv_text"]
@@ -556,10 +556,20 @@ def test_tailored_cvs_are_substantive_and_keep_every_verified_fact(tmp_path):
 
         assert len(model["experience"]) == 5  # every verified role stays
         assert len(docs["tailored_cv_text"].split()) >= 400
+        total_selected = sum(len(role["bullets"]) for role in model["experience"])
+        assert 10 <= total_selected <= 15
+        assert model["full_verified_duty_count"] == 24
         for entry in profile["work_history"]:
             assert entry["title"] in text
-            for responsibility in _verified_responsibilities(entry):
-                assert responsibility in text, responsibility
+            tailored_role = next(role for role in model["experience"] if role["role"] == entry["title"])
+            approved = _verified_responsibilities(entry)
+            assert tailored_role["bullets"], entry["title"]
+            for selected in tailored_role["bullets"]:
+                assert selected.rstrip(".") in {original.rstrip(".") for original in approved}
+                assert selected in text
+            # Crucially, nothing is erased from the approved Master CV.
+            for statement in approved:
+                assert statement in master_text_before
         for certificate in profile["certificates"]:
             assert certificate["name"] in text
         # The verification gate holds identically for a tailored CV.
@@ -591,12 +601,19 @@ def test_tailoring_selects_and_reorders_evidence_rather_than_rewriting_it(tmp_pa
     assert group_order(nutrition["tailored_cv_model"])[0] == "Health & Nutrition Programming"
     assert group_order(medical["tailored_cv_model"])[0] in {"Clinical & Medical Practice", "Public Health Systems & Quality"}
 
-    # Same evidence set in both: only the order/grouping changes.
+    # Targeted employer CVs are allowed to choose *different* approved
+    # statements. Master CV remains the exhaustive 24-duty canonical record.
     for key in ["education", "registration", "exit_exam", "certifications", "languages"]:
         assert medical["tailored_cv_model"][key] == nutrition["tailored_cv_model"][key]
-    medical_bullets = sorted(b for entry in medical["tailored_cv_model"]["experience"] for b in entry["bullets"])
-    nutrition_bullets = sorted(b for entry in nutrition["tailored_cv_model"]["experience"] for b in entry["bullets"])
-    assert medical_bullets == nutrition_bullets
+    approved = {x["text"].rstrip(".") for role in profile["work_history"]
+                for x in role["responsibilities"] if x["verified"] is True}
+    for cv in (medical["tailored_cv_model"], nutrition["tailored_cv_model"]):
+        bullets = [x for role in cv["experience"] for x in role["bullets"]]
+        assert 10 <= len(bullets) <= 15
+        assert all(b.rstrip(".") in approved for b in bullets)
+        assert cv["full_verified_duty_count"] == 24
+    assert len([x for role in generate_master_cv(profile)["master_cv_model"]["experience"]
+                for x in role["bullets"]]) == 24
 
 
 def test_safeguarding_vacancy_surfaces_verified_safeguarding_evidence():

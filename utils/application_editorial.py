@@ -162,6 +162,17 @@ def select_employer_facing_experience(
         # Each role gets at least one real line, never an invented filler.
         role_text = str(row.get("role") or "")
         role_score = factual_relevance_score(role_text, vacancy_title, description)
+        target = vacancy_title.casefold()
+        role_lower = role_text.casefold()
+        # For medical coordination, the source-verified supervisory and
+        # clinical roles must both receive substantive space. Otherwise a
+        # long generic coordination sentence from an older administrative
+        # post can incorrectly outrank direct medical team leadership.
+        if "coordinator" in target or "manager" in target:
+            if "supervisor" in role_lower or "team leader" in role_lower:
+                role_score += 150
+            if "medical" in target and ("medical doctor" in role_lower or "clinician" in role_lower):
+                role_score += 150
         best = sorted(
             (factual_relevance_score(bullet, vacancy_title, description)
              for bullet in bullets), reverse=True

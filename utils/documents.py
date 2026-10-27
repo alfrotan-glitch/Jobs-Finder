@@ -1376,15 +1376,33 @@ def _cv_credential_lines(profile: dict[str, Any], evidence: Any, key: str) -> li
     }
     normalized = status.casefold().strip(" .:;-")
     if not status or is_unresolved_value(status) or any(
-        normalized == placeholder or normalized.startswith(placeholder + " ")
+        normalized == placeholder or placeholder in normalized
         for placeholder in unresolved
     ):
         return []
     if key == "license_registration":
         authority = str(record.get("authority") or "").strip()
-        if (authority and not is_unresolved_value(authority)
-                and authority.casefold().strip(" .:;-") not in unresolved
-                and authority.casefold() not in status.casefold()):
+        authority_valid = bool(
+            authority and not is_unresolved_value(authority)
+            and not any(token in authority.casefold() for token in unresolved)
+        )
+        # A generic assertion without issuer/registration detail is useful for
+        # internal eligibility checks, but not a standalone employer CV line.
+        generic = {
+            "valid medical professional registration/license",
+            "medical professional registration/license confirmed in profile",
+            "valid license", "registered", "licensed", "valid registration",
+        }
+        registration_detail = any(
+            str(record.get(field) or "").strip()
+            and not is_unresolved_value(record.get(field))
+            for field in ("number", "issue_date", "expiry_date")
+        )
+        if normalized in generic and not (authority_valid or registration_detail):
+            return []
+        if normalized in generic and authority_valid:
+            status = f"Registered with {authority}" 
+        elif authority_valid and authority.casefold() not in status.casefold():
             status = f"{status} ({authority})"
     return [status]
 
@@ -1724,7 +1742,8 @@ def generate_tailored_documents(
         # Owner's summary is already verified; reorder/select original factual
         # sentences for each vacancy, never paraphrase or create credentials.
         summary = target_verified_summary(
-            summary, str(job.get("title") or ""), str(job.get("description") or "")
+            summary, str(job.get("title") or ""), str(job.get("description") or ""),
+            max_sentences=3 if (profile.get("document_preferences") or {}).get("cv_depth") == "focused" else None,
         )
 
     canonical_cv_model = {

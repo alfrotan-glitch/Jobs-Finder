@@ -22,6 +22,7 @@ DOCUMENT_LAYOUTS = ("comfortable", "compact")
 CV_DEPTHS = ("detailed", "focused")
 CV_STYLES = ("clinical", "executive")
 LETTER_DEPTHS = ("detailed", "standard")
+CV_REFERENCE_MODES = ("omit", "upon_request")
 
 
 class ProfileEditError(ValueError):
@@ -121,14 +122,18 @@ def editor_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
         "certificates": safe_records("certificates", ("name",)),
         "languages": safe_records("languages", ("name", "level")),
         "skills": skill_records,
-        "registration": {key: registration.get(key) or "" for key in
-                         ("status", "authority", "number", "issue_date", "expiry_date")},
+        "registration": {
+            **{key: registration.get(key) or "" for key in
+               ("status", "authority", "number", "issue_date", "expiry_date")},
+            "verified": registration.get("verified") is True,
+        },
         "exam": {"status": exam.get("status") or ""},
         "documents": {
             "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
             "cv_depth": (profile.get("document_preferences") or {}).get("cv_depth", "detailed"),
             "cv_style": (profile.get("document_preferences") or {}).get("cv_style", "clinical"),
             "letter_depth": (profile.get("document_preferences") or {}).get("letter_depth", "detailed"),
+            "cv_references": (profile.get("document_preferences") or {}).get("cv_references", "omit"),
         },
     }
 
@@ -237,12 +242,15 @@ def apply_editor_change(profile: dict[str, Any], patch: dict[str, Any]) -> dict[
         depth = patch.get("letter_depth")
         cv_depth = patch.get("cv_depth", "detailed")
         style = patch.get("cv_style", "clinical")
+        cv_references = patch.get("cv_references", "omit")
         if (layout not in DOCUMENT_LAYOUTS or depth not in LETTER_DEPTHS
-                or cv_depth not in CV_DEPTHS or style not in CV_STYLES):
+                or cv_depth not in CV_DEPTHS or style not in CV_STYLES
+                or cv_references not in CV_REFERENCE_MODES):
             raise ProfileEditError("Select a supported CV layout, detail level and letter depth.")
         profile["document_preferences"] = {
             "cv_layout": layout, "cv_depth": cv_depth,
             "letter_depth": depth, "cv_style": style,
+            "cv_references": cv_references,
         }
         return profile
     if action == "work_role":

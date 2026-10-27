@@ -106,7 +106,18 @@ def assert_model_preserved(model, text):
         assert flat(value) in text, value
     positions = [text.index(role["role"]) for role in model["experience"]]
     assert positions == sorted(positions)
-    ordered_sections = list(SECTIONS)
+    optional_sections = {
+        "EDUCATION": "education",
+        "PROFESSIONAL REGISTRATION": "registration",
+        "MEDICAL EXIT EXAMINATION": "exit_exam",
+        "PROFESSIONAL TRAINING & CERTIFICATIONS": "certifications",
+        "LANGUAGES": "languages",
+        "REFERENCES": "references",
+    }
+    ordered_sections = [
+        heading for heading in SECTIONS
+        if heading not in optional_sections or model.get(optional_sections[heading])
+    ]
     if model.get("is_employer_curated"):
         ordered_sections[1], ordered_sections[2] = ordered_sections[2], ordered_sections[1]
     positions = [text.index(heading) for heading in ordered_sections]
@@ -167,7 +178,9 @@ def test_word_shared_typography_semantic_hierarchy_and_pagination(tmp_path):
     assert doc.styles["CV Role"].base_style.name == "Heading 2"
     for name in ("CV Section", "CV Role", "CV Meta"):
         assert doc.styles[name].paragraph_format.keep_with_next
-    assert [p.text for p in doc.paragraphs if p.style.name == "CV Section"] == SECTIONS
+    assert [p.text for p in doc.paragraphs if p.style.name == "CV Section"] == [
+        heading for heading in SECTIONS if heading != "REFERENCES"
+    ]
     assert not doc.tables  # no text boxes, floating panels or layout tables
     assert not doc.element.xpath(".//w:drawing | .//w:txbxContent | .//w:br[@w:type='page']")
     assert all(p._p.xpath("./w:pPr/w:pBdr/w:bottom") for p in doc.paragraphs if p.style.name == "CV Section")

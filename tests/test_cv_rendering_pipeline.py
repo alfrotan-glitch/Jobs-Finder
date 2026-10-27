@@ -239,7 +239,11 @@ def test_whitespace_compaction_never_shrinks_text_and_restores_if_ineffective(tm
     monkeypatch.setattr(design, "_build_cv_pdf", build)
     monkeypatch.setattr(design, "_pdf_last_page_fill_ratio", lambda _: .1)
     result = design.render_cv_pdf({}, tmp_path / "unused.pdf")
-    assert used == [design.CV_PDF_LAYOUTS[k] for k in ("comfortable", "compact", "comfortable")]
+    # The enhanced renderer also tries evidence-preserving expanded spacing
+    # before returning to the owner's explicitly chosen typography.
+    assert used == [design.CV_PDF_LAYOUTS[k] for k in (
+        "comfortable", "compact", "balanced", "spacious", "comfortable"
+    )]
     assert result == design.CV_PDF_LAYOUTS["comfortable"]
 
 

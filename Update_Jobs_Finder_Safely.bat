@@ -92,7 +92,7 @@ if not exist "!BACKUP_DIR!" (
   exit /b 1
 )
 set "TIMESTAMP="
-for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss" 2^>nul') do set "TIMESTAMP=%%T"
+for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss-fffffff" 2^>nul') do set "TIMESTAMP=%%T"
 if not defined TIMESTAMP (
   echo FAILED: Cannot timestamp a safe profile backup.
   exit /b 1

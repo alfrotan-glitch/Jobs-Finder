@@ -59,7 +59,6 @@ MASTER_SECTIONS = [
     "MEDICAL EXIT EXAMINATION",
     "PROFESSIONAL TRAINING & CERTIFICATIONS",
     "LANGUAGES",
-    "REFERENCES",
 ]
 
 EXPERTISE_GROUP_TITLES = [
@@ -355,13 +354,13 @@ def test_master_cv_model_is_comprehensive_for_the_real_profile():
         assert len(item["bullets"]) >= 1, item["role"]
         assert all(len(bullet) >= 40 for bullet in item["bullets"]), item["role"]
 
-    # Credentials, training, languages, and a private-reference placeholder.
+    # Credentials and training appear only when verified; references are optional.
     assert model["education"] == ["Doctor of Medicine (MD) — Curative Medicine — Kabul Medical Science University — 2013–2020"]
     assert model["registration"] == ["Valid medical professional registration/license"]
     assert model["exit_exam"] == ["Completed"]
     assert len(model["certifications"]) == 7
     assert model["languages"] == [("Dari/Persian", "Native"), ("English", "Fluent"), ("Pashto", "Intermediate")]
-    assert model["references"]
+    assert model["references"] == []
     assert evidence.has_verified("md_degree")
 
 
@@ -663,8 +662,8 @@ def test_tailored_cv_artifacts_render_and_stay_private(tmp_path):
     for rendered in [txt, docx_text, pdf_text]:
         flat = " ".join(rendered.split())
         assert "Dr. Allah Yar Frotan" in flat
-        assert "REFERENCES" in rendered
-        assert "Available on request for shortlisted applications." in flat
+        assert "REFERENCES" not in rendered
+        assert "Available on request for shortlisted applications." not in flat
         for token in ["reference.person@example", SAMPLE_NAME, SAMPLE_EMAIL, "registration number", "license number"]:
             assert token.lower() not in flat.lower(), token
 

@@ -609,7 +609,7 @@ def test_tailoring_selects_and_reorders_evidence_rather_than_rewriting_it(tmp_pa
                 for x in role["responsibilities"] if x["verified"] is True}
     for cv in (medical["tailored_cv_model"], nutrition["tailored_cv_model"]):
         bullets = [x for role in cv["experience"] for x in role["bullets"]]
-        assert 10 <= len(bullets) <= 15
+        assert len(bullets) == 24
         assert all(b.rstrip(".") in approved for b in bullets)
         assert cv["full_verified_duty_count"] == 24
     assert len([x for role in generate_master_cv(profile)["master_cv_model"]["experience"]

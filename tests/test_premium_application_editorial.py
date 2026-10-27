@@ -177,3 +177,44 @@ def test_employer_cv_curates_competencies_while_master_retains_every_skill():
     assert len(shown) <= 12
     assert len(tailored["expertise"]) <= 5
     assert len(comprehensive) > len(shown)
+
+
+def test_focused_cv_keeps_multiple_real_duties_in_each_supported_role():
+    from copy import deepcopy
+    from utils.application_editorial import select_employer_facing_experience
+
+    profile = load_canonical_profile(required=True)
+    job = {"title": "Medical Coordinator", "description": "Lead clinical services and field teams, coordinate with provincial authorities, oversee HMIS."}
+    original = generate_tailored_documents(job, profile, {"facts": {}})["tailored_cv_model"]["experience"]
+    focus, full_count = select_employer_facing_experience(
+        original, job["title"], job["description"], detail="focused",
+    )
+    assert full_count == 24
+    assert len(focus) == len(original) == 5
+    assert 15 < sum(len(row["bullets"]) for row in focus) <= 20
+    assert len(focus[0]["bullets"]) >= 4
+    assert len(focus[1]["bullets"]) >= 4
+    assert all(len(row["bullets"]) >= 2 for row in focus)
+    source = deepcopy(profile)
+    focused_profile = deepcopy(profile)
+    focused_profile["document_preferences"]["cv_depth"] = "focused"
+    tailored = generate_tailored_documents(job, focused_profile, {"facts": {}})
+    assert tailored["tailored_cv_model"]["selected_duty_count"] == sum(len(row["bullets"]) for row in focus)
+    assert profile == source
+
+
+def test_professional_profile_preserves_owner_selected_full_depth_and_executive_visual():
+    profile = load_canonical_profile(required=True)
+    assert profile["document_preferences"]["cv_depth"] == "detailed"
+    assert profile["document_preferences"]["cv_style"] == "executive"
+    for title in ("Medical Coordinator", "Provincial Coordinator", "TFU Medical Doctor"):
+        docs = generate_tailored_documents(
+            {"title":title, "company":"Example NGO", "description":"Health services supervision and coordination."},
+            profile, {"facts":{}},
+        )
+        cv = docs["tailored_cv_model"]
+        assert cv["cv_depth"] == "detailed"
+        assert cv["cv_style"] == "executive"
+        assert cv["full_verified_duty_count"] == cv["selected_duty_count"] == 24
+        assert len(cv["experience"]) == 5
+        assert [len(r["bullets"]) for r in cv["experience"]] == [7, 7, 4, 3, 3]

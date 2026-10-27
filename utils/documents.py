@@ -1654,13 +1654,16 @@ def generate_tailored_documents(
     # and only its position inside its professional group (and the position of
     # the group itself) is driven by the vacancy's focus.
     focus_rank_key = _focus_rank_key(_focus_terms(job, match_report), _job_title_terms(job))
-    # Rank already verified competencies by the advertised job's focus.
-    # This changes emphasis only, never invents a skill.
+    # Retain the tested job-family competency ranking. Polio-specific
+    # vacancies additionally prioritize attested transferable health work.
     job_title = str(job.get("title") or "")
-    job_description = str(job.get("description") or "")
-    def job_competency_rank(item: str):
-        return (-factual_relevance_score(item, job_title, job_description),
-                focus_rank_key(item))
+    if re.search(r"\b(?:polio|immunization|immunisation|vaccination|vaccine|epi)\b", job_title, re.I):
+        job_description = str(job.get("description") or "")
+        def job_competency_rank(item: str):
+            return (-factual_relevance_score(item, job_title, job_description),
+                    focus_rank_key(item))
+    else:
+        job_competency_rank = focus_rank_key
     skills_bullets = sorted(verified_skills, key=job_competency_rank)
     expertise = build_expertise_groups(skills_bullets, rank_key=job_competency_rank)
     if (profile.get("official_cv_approval") or {}).get("owner_approved") is True:

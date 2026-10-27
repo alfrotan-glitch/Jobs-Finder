@@ -1907,13 +1907,13 @@ def generate_tailored_documents(
     cover_lines.extend([
         "",
         "I would welcome the opportunity to discuss how my qualifications can support your health programme and the communities served by this position. Thank you for considering my application.",
-        "",
-        "Sincerely,",
-        name,
     ])
-    if signature_title:
+    if name:
+        cover_lines.extend(["", "Sincerely,", name])
+    if signature_title and name:
         cover_lines.append(signature_title)
-    cover_lines.extend(_contact_lines(profile)[:2])
+    cover_lines.extend(line for line in _contact_lines(profile)
+                       if line.startswith(("Email:", "Phone:")))
 
     return {
         "generated_at": date.today().isoformat(),
@@ -2205,7 +2205,8 @@ def _email_body(
     ])
     if signature_title:
         lines.append(signature_title)
-    lines.extend(_contact_lines(profile)[:2])
+    lines.extend(line for line in _contact_lines(profile)
+                 if line.startswith(("Email:", "Phone:")))
     return "\n".join(lines).strip() + "\n"
 
 

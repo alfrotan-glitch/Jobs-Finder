@@ -113,6 +113,7 @@ def test_polio_vacancy_selects_verified_transferable_public_health_work():
 
 def test_polio_cv_renders_compact_searchable_pdf_without_trailing_page(tmp_path):
     import pdfplumber
+
     from utils.document_design import render_cv_pdf
 
     profile = deepcopy(_profile())

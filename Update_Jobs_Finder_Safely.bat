@@ -54,16 +54,12 @@ if exist "profile.yaml" (
 )
 
 rem Do not auto-stash, auto-merge, reset, or override owner-approved data.
-set "LOCAL_CHANGES="
-for /f "delims=" %%L in ('git status --porcelain --untracked-files=no 2^>nul') do set "LOCAL_CHANGES=1"
-if defined LOCAL_CHANGES (
-  echo HOLD: Local tracked changes were found.
-  echo Your profile backup is safely stored in:
-  echo   "!BACKUP_DIR!"
-  echo No update was attempted. Review the differences before reconciling.
-  git status --short
-  goto done
-)
+rem Use Git's exit status, not parsed command-substitution output.
+rem Exit 1 (differences) and higher error codes both block the update.
+git diff --quiet --exit-code >nul 2>&1
+if errorlevel 1 goto held_local_edits
+git diff --cached --quiet --exit-code >nul 2>&1
+if errorlevel 1 goto held_local_edits
 
 echo Checking the official main branch...
 git fetch --quiet origin main
@@ -105,6 +101,14 @@ if errorlevel 1 (
 )
 echo Applicant profile backed up privately before update.
 exit /b 0
+
+:held_local_edits
+echo HOLD: Local tracked changes were found.
+echo Your profile backup is safely stored in:
+echo   "!BACKUP_DIR!"
+echo No update was attempted. Review differences before reconciling.
+git status --short
+goto done
 
 :done
 popd >nul 2>&1

@@ -557,7 +557,7 @@ def test_tailored_cvs_are_substantive_and_use_only_verified_fact_subsets(tmp_pat
         assert len(model["experience"]) == 5  # every verified role stays
         assert len(docs["tailored_cv_text"].split()) >= 400
         total_selected = sum(len(role["bullets"]) for role in model["experience"])
-        assert 10 <= total_selected <= 15
+        assert total_selected == 24
         assert model["full_verified_duty_count"] == 24
         for entry in profile["work_history"]:
             assert entry["title"] in text

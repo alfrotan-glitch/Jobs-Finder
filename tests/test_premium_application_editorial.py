@@ -126,7 +126,7 @@ def test_real_official_profile_produces_distinct_targeted_summaries_without_inve
         model = result["tailored_cv_model"]
         assert model["is_employer_curated"] is True
         assert model["full_verified_duty_count"] == 24
-        assert 10 <= model["selected_duty_count"] <= 15
+        assert model["selected_duty_count"] == 24
         assert sum(len(entry["bullets"]) for entry in model["experience"]) == model["selected_duty_count"]
         assert all(len(role["bullets"]) >= 1 for role in model["experience"])
         assert result["cover_letter"].count("In my documented role as") <= 2
@@ -150,7 +150,8 @@ def test_medical_coordinator_highlights_real_supervision_without_reducing_roles_
     ]
     assert len(exp[0]["bullets"]) >= 3
     assert len(exp[1]["bullets"]) >= 3
-    assert sum(len(x["bullets"]) for x in exp) <= 15
+    assert sum(len(x["bullets"]) for x in exp) == 24
+    assert all(len(role["bullets"]) >= 3 for role in exp)
     assert any("coordinat" in x.lower() or "supervis" in x.lower()
                for role in exp[:2] for x in role["bullets"])
     # The selected text is exact owner-provided evidence, never rewritten.

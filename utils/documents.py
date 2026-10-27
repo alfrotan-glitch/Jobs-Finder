@@ -1497,6 +1497,7 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
         "references": _cv_references_section(),
         "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
         "cv_style": (profile.get("document_preferences") or {}).get("cv_style", "clinical"),
+        "cv_depth": (profile.get("document_preferences") or {}).get("cv_depth", "detailed"),
     }
     warnings: list[str] = []
     undated = [item["role"] for item in experience if not item.get("dates")]
@@ -1658,6 +1659,7 @@ def generate_tailored_documents(
         ordered_work, _ = select_employer_facing_experience(
             ordered_work, str(job.get("title") or ""),
             str(job.get("description") or ""),
+            detail=(profile.get("document_preferences") or {}).get("cv_depth", "detailed"),
         )
 
     ranked_competencies = [item for group in expertise for item in group["items"]]
@@ -1714,6 +1716,7 @@ def generate_tailored_documents(
         "references": _cv_references_section(),
         "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
         "cv_style": (profile.get("document_preferences") or {}).get("cv_style", "clinical"),
+        "cv_depth": (profile.get("document_preferences") or {}).get("cv_depth", "detailed"),
     }
     cv_text = _render_canonical_cv_text(canonical_cv_model)
 

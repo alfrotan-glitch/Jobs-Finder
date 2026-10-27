@@ -138,14 +138,15 @@ def concise_attested_highlights(
 
 
 def select_employer_facing_experience(
-    experience: list[dict], vacancy_title: str, description: str = ""
+    experience: list[dict], vacancy_title: str, description: str = "",
+    *, detail: str = "focused",
 ) -> tuple[list[dict], int]:
     """Curate a targeted CV, preserving the unabridged Master CV separately.
 
     Keep every job, employer and employment date in ATS-safe reverse chronology.
-    Select 1–5 complete owner-verified duties per role (no paraphrasing) and
-    allocate more space to the most relevant roles. Current experience order,
-    used for employer timeline parsing, never changes.
+    The owner-selected detailed mode retains every approved responsibility.
+    Focused mode maintains substantive scope (at least two existing duties
+    where available). Both preserve employer chronology and exact wording.
     """
     import copy
 
@@ -153,6 +154,10 @@ def select_employer_facing_experience(
     total = sum(len(row.get("bullets") or []) for row in original)
     if not original:
         return [], total
+    if detail == "detailed":
+        return original, total
+    if detail != "focused":
+        raise ValueError("CV detail must be 'focused' or 'detailed'.")
     priorities: list[tuple[int, int]] = []
     for i, row in enumerate(original):
         bullets = list(row.get("bullets") or [])
@@ -179,13 +184,13 @@ def select_employer_facing_experience(
         )[:3]
         priorities.append((i, role_score * 2 + sum(best)))
     ranked = [i for i, _ in sorted(priorities, key=lambda pair: (-pair[1], pair[0]))]
-    # At most 15 selected statements for the usual 5-position official CV,
-    # while allowing broader timelines to keep one duty for each position.
-    max_total = max(len(original), 15)
+    # Focused CV retains at least two statements per verified employment
+    # role where available, plus more detail in the most relevant positions.
+    max_total = max(18, 2 * len(original))
     caps = {}
     for rank, index in enumerate(ranked):
-        caps[index] = 5 if rank < 2 else 2 if rank < 4 else 1
-    chosen = {i: min(1, len(row.get("bullets") or [])) for i, row in enumerate(original)}
+        caps[index] = 6 if rank < 2 else 3 if rank < 4 else 2
+    chosen = {i: min(2, len(row.get("bullets") or [])) for i, row in enumerate(original)}
     remaining = max_total - sum(chosen.values())
     # Fill strongest roles first, but allocate one further example per pass.
     while remaining > 0:

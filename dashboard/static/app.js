@@ -780,6 +780,9 @@ function renderProfileEditor() {
       <label class="editorField"><span>CV visual design</span>
         <select id="editorCvStyle"><option value="executive" ${editor.documents.cv_style === "executive" ? "selected" : ""}>Executive — navy & gold</option>
         <option value="clinical" ${editor.documents.cv_style !== "executive" ? "selected" : ""}>Clinical — deep teal</option></select></label>
+      <label class="editorField"><span>CV content depth</span>
+        <select id="editorCvDepth"><option value="detailed" ${editor.documents.cv_depth !== "focused" ? "selected" : ""}>Detailed — all verified duties, any required pages</option>
+        <option value="focused" ${editor.documents.cv_depth === "focused" ? "selected" : ""}>Focused — substantial role-specific selection</option></select></label>
       <label class="editorField"><span>CV page density</span>
         <select id="editorCvLayout"><option value="comfortable" ${editor.documents.cv_layout !== "compact" ? "selected" : ""}>Editorial — comfortable</option>
         <option value="compact" ${editor.documents.cv_layout === "compact" ? "selected" : ""}>Compact — ATS friendly</option></select></label>
@@ -830,10 +833,11 @@ async function saveProfileEditor() {
   }
   const cv_layout = $("editorCvLayout").value;
   const cv_style = $("editorCvStyle").value;
+  const cv_depth = $("editorCvDepth").value;
   const letter_depth = $("editorLetterDepth").value;
   if (cv_layout !== editor.documents.cv_layout || cv_style !== editor.documents.cv_style ||
-      letter_depth !== editor.documents.letter_depth) {
-    changes.push({action: "documents", cv_layout, cv_style, letter_depth});
+      cv_depth !== editor.documents.cv_depth || letter_depth !== editor.documents.letter_depth) {
+    changes.push({action: "documents", cv_layout, cv_style, cv_depth, letter_depth});
   }
   if (!changes.length) {
     setStatus("No changes to save.", "warn");

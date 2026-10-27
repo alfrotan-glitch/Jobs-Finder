@@ -509,3 +509,10 @@ private_reference_boundary:
   release_requires_owner_approval: true
   external_private_store_required: true
   runtime_release_default: "NOT_RELEASED"
+
+# Owner's preferred complete evidence-first CV. Display-only choices.
+document_preferences:
+  cv_depth: "detailed"
+  cv_style: "executive"
+  cv_layout: "comfortable"
+  letter_depth: "detailed"

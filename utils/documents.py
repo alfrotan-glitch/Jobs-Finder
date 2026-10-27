@@ -1382,7 +1382,9 @@ def _cv_credential_lines(profile: dict[str, Any], evidence: Any, key: str) -> li
         return []
     if key == "license_registration":
         authority = str(record.get("authority") or "").strip()
-        if authority and not is_unresolved_value(authority) and authority.casefold() not in status.casefold():
+        if (authority and not is_unresolved_value(authority)
+                and authority.casefold().strip(" .:;-") not in unresolved
+                and authority.casefold() not in status.casefold()):
             status = f"{status} ({authority})"
     return [status]
 

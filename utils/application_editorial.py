@@ -95,7 +95,10 @@ def rank_attested_statements(
     ]
 
 
-def target_verified_summary(summary: str, vacancy_title: str, description: str = "") -> str:
+def target_verified_summary(
+    summary: str, vacancy_title: str, description: str = "",
+    *, max_sentences: int | None = None,
+) -> str:
     """Focus a long *owner-verified* CV paragraph without adding a single claim.
 
     Keep the first identity sentence and rank all remaining original
@@ -115,6 +118,8 @@ def target_verified_summary(summary: str, vacancy_title: str, description: str =
     # Preserve the applicant's identity/experience lead unchanged.
     identity = sentences[0]
     selected = rank_attested_statements(sentences[1:], vacancy_title, description)
+    if max_sentences is not None:
+        selected = selected[:max(0, max_sentences - 1)]
     return " ".join([identity, *selected])
 
 

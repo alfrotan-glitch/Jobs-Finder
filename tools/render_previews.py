@@ -87,7 +87,18 @@ def inspect_pdf(path: Path, model: dict) -> dict:
         for value in values:
             assert normalized(value) in text, f"Missing evidence in {path.name}: {value}"
         assert "(cid:" not in text and "\ufffd" not in text, "Undefined glyph"
-        sections = list(SECTIONS)
+        optional_sections = {
+            "EDUCATION": "education",
+            "PROFESSIONAL REGISTRATION": "registration",
+            "MEDICAL EXIT EXAMINATION": "exit_exam",
+            "PROFESSIONAL TRAINING & CERTIFICATIONS": "certifications",
+            "LANGUAGES": "languages",
+            "REFERENCES": "references",
+        }
+        sections = [
+            heading for heading in SECTIONS
+            if heading not in optional_sections or model.get(optional_sections[heading])
+        ]
         if model.get("is_employer_curated"):
             sections[1], sections[2] = sections[2], sections[1]
         for labels in (sections, [role["role"] for role in model["experience"]]):

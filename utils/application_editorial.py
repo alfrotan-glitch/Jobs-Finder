@@ -12,6 +12,12 @@ import re
 # "nutrition" from occurring inside "malnutrition".
 _ROLE_SIGNALS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     (
+        re.compile(r"\b(?:polio|immunization|immunisation|vaccination|vaccine|epi)\b", re.IGNORECASE),
+        ("provincial", "public health", "ministry", "authority", "coordinat", "monitor",
+         "report", "community", "team", "supervis", "train", "emergency", "response",
+         "health", "outreach", "field"),
+    ),
+    (
         re.compile(r"\b(?:coordinator|coordination|manager|management|director|programme officer|program officer)\b", re.IGNORECASE),
         ("coordinat", "stakeholder", "authority", "ministry", "provincial", "supervis", "monitor",
          "report", "program", "programme", "team", "implementation", "management"),

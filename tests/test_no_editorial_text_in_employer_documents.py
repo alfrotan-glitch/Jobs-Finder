@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from docx import Document
 import pdfplumber
+from docx import Document
 
 from tests.test_document_evidence_gate import _docs, _mixed_profile
 from utils.document_design import render_professional_document_artifacts

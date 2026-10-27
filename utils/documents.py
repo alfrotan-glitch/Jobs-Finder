@@ -1393,12 +1393,9 @@ def _cv_credential_lines(profile: dict[str, Any], evidence: Any, key: str) -> li
             "medical professional registration/license confirmed in profile",
             "valid license", "registered", "licensed", "valid registration",
         }
-        registration_detail = any(
-            str(record.get(field) or "").strip()
-            and not is_unresolved_value(record.get(field))
-            for field in ("number", "issue_date", "expiry_date")
-        )
-        if normalized in generic and not (authority_valid or registration_detail):
+        # A registration number or expiry field alone must not turn an
+        # uninformative license-status slogan into employer-facing prose.
+        if normalized in generic and not authority_valid:
             return []
         if normalized in generic and authority_valid:
             status = f"Registered with {authority}" 

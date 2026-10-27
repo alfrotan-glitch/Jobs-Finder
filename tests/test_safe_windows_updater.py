@@ -20,7 +20,8 @@ def test_updater_never_stashes_resets_or_forces_profile_overwrites():
     script = UPDATER.read_text(encoding="utf-8").lower()
     assert "git fetch --quiet origin main" in script
     assert "git merge --ff-only fetch_head" in script
-    assert "git status --porcelain --untracked-files=no" in script
+    assert "git diff --quiet --exit-code" in script
+    assert "git diff --cached --quiet --exit-code" in script
     assert "copy /y \"profile.yaml\"" in script
     assert "if defined local_changes" in script
     assert not any(value in script for value in (
@@ -75,8 +76,13 @@ def test_windows_updater_fast_forwards_clean_checkout_and_holds_dirty_profile(tm
     _git(seed, "push", "origin", "main")
     (installed / "profile.yaml").write_text("synthetic: owner-local-change\n", encoding="utf-8")
 
+    local_diff = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        cwd=installed, check=True, capture_output=True, text=True, timeout=35,
+    )
+    assert "profile.yaml" in local_diff.stdout
     second = update()
-    assert second.returncode != 0
+    assert second.returncode != 0, second.stdout + second.stderr
     assert "HOLD" in second.stdout
     assert (installed / "profile.yaml").read_text(encoding="utf-8") == "synthetic: owner-local-change\n"
     assert (installed / "README.txt").read_text(encoding="utf-8") == "v2"

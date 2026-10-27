@@ -843,9 +843,12 @@ def render_cv_pdf(model: dict[str, Any], path: str | Path) -> dict[str, float]:
         candidate_fill = _pdf_last_page_fill_ratio(path)
         if _pdf_has_orphaned_cv_heading(path, model):
             continue
-        if (candidate_pages < original_pages and candidate_fill >= 0.4) or (
-            candidate_pages == original_pages and candidate_fill >= 0.4
-        ):
+        # Prefer a complete, readable document with fewer pages: a sparse
+        # last page must not force an otherwise valid third page to remain.
+        # Candidate layouts preserve all text and the same body font size.
+        if candidate_pages < original_pages:
+            return candidate
+        if candidate_pages == original_pages and candidate_fill >= 0.4:
             return candidate
     # Fallback to the explicitly selected style if none gives a legitimate
     # improvement; never silently trade away source evidence.

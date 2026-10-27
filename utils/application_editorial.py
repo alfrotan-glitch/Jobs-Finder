@@ -186,7 +186,7 @@ def select_employer_facing_experience(
     ranked = [i for i, _ in sorted(priorities, key=lambda pair: (-pair[1], pair[0]))]
     # Focused CV retains at least two statements per verified employment
     # role where available, plus more detail in the most relevant positions.
-    max_total = max(18, 2 * len(original))
+    max_total = max(16, 2 * len(original))
     caps = {}
     for rank, index in enumerate(ranked):
         caps[index] = 6 if rank < 2 else 3 if rank < 4 else 2

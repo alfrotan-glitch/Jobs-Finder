@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 UPDATER = ROOT / "Update_Jobs_Finder_Safely.bat"
 
@@ -61,7 +60,7 @@ def test_windows_updater_fast_forwards_clean_checkout_and_holds_dirty_profile(tm
 
     def update():
         return subprocess.run(["cmd.exe", "/d", "/c", str(installed / UPDATER.name)],
-                              cwd=installed, env=env, capture_output=True, text=True, timeout=90)
+                              check=False, cwd=installed, env=env, capture_output=True, text=True, timeout=90)
 
     first = update()
     assert first.returncode == 0, first.stdout + first.stderr

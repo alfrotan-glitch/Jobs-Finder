@@ -2514,6 +2514,22 @@ def _write_text_docx_pdf(
     failures are surfaced in sidecar text files instead of silently losing the
     canonical content.
     """
+    # Fail before creating an employer document when editing instructions
+    # escape the private review interface. Never export them as applicant facts.
+    if document_type in {"cv", "cover_letter"}:
+        lowered = str(text or "").casefold()
+        unresolved = (
+            "confirm before submission", "to be completed",
+            "to be filled", "needs verification",
+            "this cv is generated only from verified",
+            "confirm the profile before using",
+        )
+        if any(phrase in lowered for phrase in unresolved):
+            raise ValueError(
+                "Employer document contains an unfinished review field. "
+                "Correct the underlying profile before generating application files."
+            )
+
     from utils.document_design import render_professional_document_artifacts
 
     base = Path(base_path)

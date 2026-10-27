@@ -23,7 +23,7 @@ def test_updater_never_stashes_resets_or_forces_profile_overwrites():
     assert "git diff --quiet --exit-code" in script
     assert "git diff --cached --quiet --exit-code" in script
     assert "copy /y \"profile.yaml\"" in script
-    assert "if defined local_changes" in script
+    assert "if errorlevel 1 goto held_local_edits" in script
     assert not any(value in script for value in (
         "git reset", "git stash push", "git stash pop",
         "git clean", "git checkout --", "git merge --no-ff",

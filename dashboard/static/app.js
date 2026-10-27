@@ -729,7 +729,6 @@ function renderProfileEditor() {
     ["languages", "Languages", editor.languages || [], ["name","level"], "name"],
     ["skills", "Verified professional skills", editor.skills || [], ["name"], "name"],
     ["work_history", "Role titles, employers and dates", editor.experience || [], ["title","organization","location","start","end"], "title"],
-    ["license_registration", "Medical license/registration", [{...editor.registration, index:-1}], ["status","authority","number","issue_date","expiry_date"], "status"],
     ["medical_exit_exam", "Medical exit examination", [{...editor.exam, index:-1}], ["status"], "status"],
   ].map(([section, label, entries, fields, creationField]) => `
       <details class="editorRecords"><summary>${escapeHtml(label)} · ${entries.length} item(s)</summary>
@@ -755,8 +754,25 @@ function renderProfileEditor() {
       ${section === "work_history" ? '<button class="secondary smallButton" data-action="new-work-role">Add a new professional role</button>' : ""}
       </details>
   `).join("");
+  const registrationFields = [
+    ["status", "Registration status"], ["authority", "Issuing authority"],
+    ["number", "License / registration number"], ["issue_date", "Issue date"],
+    ["expiry_date", "Expiry date"],
+  ];
+  const registrationEditor = registrationFields.map(([field, label]) => `
+    <div class="editorRecordField">
+      <strong>${escapeHtml(label)}:</strong> ${escapeHtml(editor.registration?.[field] || "Not supplied")}
+      <button class="secondary smallButton" data-action="edit-record"
+        data-section="license_registration" data-record-index="-1"
+        data-record-field="${field}">Edit</button>
+    </div>`).join("");
   holder.innerHTML = `
     <div class="profileEditorGrid">${controls}</div>
+    <section class="surfaceBlock wideBlock">
+      <h3>Medical License / Professional Registration</h3>
+      <p class="sectionHelp">Optional details. Only verified, meaningful status is included in a CV. Missing numbers, issuing authority and dates never print as placeholders. This profile is tracked in Git: do not enter a private license number while the repository is public.</p>
+      ${registrationEditor}
+    </section>
     <label class="editorField"><span>Professional summary (owner-authored)</span>
       <textarea id="editorSummary" maxlength="2400" rows="5">${escapeHtml(editor.professional_summary || "")}</textarea></label>
     <label class="editorField"><span>Preferred job titles (one per line)</span>
@@ -786,6 +802,11 @@ function renderProfileEditor() {
       <label class="editorField"><span>CV page density</span>
         <select id="editorCvLayout"><option value="comfortable" ${editor.documents.cv_layout !== "compact" ? "selected" : ""}>Editorial — comfortable</option>
         <option value="compact" ${editor.documents.cv_layout === "compact" ? "selected" : ""}>Compact — ATS friendly</option></select></label>
+      <label class="editorField"><span>References in CV</span>
+        <select id="editorCvReferences">
+          <option value="omit" ${editor.documents.cv_references !== "upon_request" ? "selected" : ""}>Omit section (recommended)</option>
+          <option value="upon_request" ${editor.documents.cv_references === "upon_request" ? "selected" : ""}>References available upon request</option>
+        </select></label>
       <label class="editorField"><span>Cover letter detail</span>
         <select id="editorLetterDepth"><option value="detailed" ${editor.documents.letter_depth !== "standard" ? "selected" : ""}>Detailed — up to 3 relevant roles</option>
         <option value="standard" ${editor.documents.letter_depth === "standard" ? "selected" : ""}>Standard — concise</option></select></label>
@@ -835,9 +856,11 @@ async function saveProfileEditor() {
   const cv_style = $("editorCvStyle").value;
   const cv_depth = $("editorCvDepth").value;
   const letter_depth = $("editorLetterDepth").value;
+  const cv_references = $("editorCvReferences").value;
   if (cv_layout !== editor.documents.cv_layout || cv_style !== editor.documents.cv_style ||
-      cv_depth !== editor.documents.cv_depth || letter_depth !== editor.documents.letter_depth) {
-    changes.push({action: "documents", cv_layout, cv_style, cv_depth, letter_depth});
+      cv_depth !== editor.documents.cv_depth || letter_depth !== editor.documents.letter_depth ||
+      cv_references !== editor.documents.cv_references) {
+    changes.push({action: "documents", cv_layout, cv_style, cv_depth, letter_depth, cv_references});
   }
   if (!changes.length) {
     setStatus("No changes to save.", "warn");

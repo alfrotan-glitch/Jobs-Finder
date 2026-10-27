@@ -55,7 +55,6 @@ MASTER_SECTIONS = [
     "CORE PROFESSIONAL COMPETENCIES",
     "PROFESSIONAL EXPERIENCE",
     "EDUCATION",
-    "PROFESSIONAL REGISTRATION",
     "MEDICAL EXIT EXAMINATION",
     "PROFESSIONAL TRAINING & CERTIFICATIONS",
     "LANGUAGES",
@@ -356,7 +355,7 @@ def test_master_cv_model_is_comprehensive_for_the_real_profile():
 
     # Credentials and training appear only when verified; references are optional.
     assert model["education"] == ["Doctor of Medicine (MD) — Curative Medicine — Kabul Medical Science University — 2013–2020"]
-    assert model["registration"] == ["Valid medical professional registration/license"]
+    assert model["registration"] == []
     assert model["exit_exam"] == ["Completed"]
     assert len(model["certifications"]) == 7
     assert model["languages"] == [("Dari/Persian", "Native"), ("English", "Fluent"), ("Pashto", "Intermediate")]
@@ -385,7 +384,7 @@ def test_master_cv_text_contains_every_verified_fact():
     assert "Doctor of Medicine (MD)" in text
     assert "Kabul Medical Science University" in text
     assert "2013–2020" in text
-    assert "Valid medical professional registration/license" in text
+    assert "Valid medical professional registration/license" not in text
     assert "Completed" in text  # Medical Exit Examination
     for certificate in profile["certificates"]:
         assert certificate["name"] in text, certificate["name"]
@@ -556,7 +555,7 @@ def test_tailored_cvs_are_substantive_and_use_only_verified_fact_subsets(tmp_pat
         assert len(model["experience"]) == 5  # every verified role stays
         assert len(docs["tailored_cv_text"].split()) >= 400
         total_selected = sum(len(role["bullets"]) for role in model["experience"])
-        assert total_selected == 24
+        assert 12 <= total_selected <= 20
         assert model["full_verified_duty_count"] == 24
         for entry in profile["work_history"]:
             assert entry["title"] in text
@@ -608,7 +607,7 @@ def test_tailoring_selects_and_reorders_evidence_rather_than_rewriting_it(tmp_pa
                 for x in role["responsibilities"] if x["verified"] is True}
     for cv in (medical["tailored_cv_model"], nutrition["tailored_cv_model"]):
         bullets = [x for role in cv["experience"] for x in role["bullets"]]
-        assert len(bullets) == 24
+        assert 12 <= len(bullets) <= 20
         assert all(b.rstrip(".") in approved for b in bullets)
         assert cv["full_verified_duty_count"] == 24
     assert len([x for role in generate_master_cv(profile)["master_cv_model"]["experience"]
@@ -1056,7 +1055,7 @@ def test_single_statement_sections_are_not_bulleted_and_competency_groups_stay_w
         assert matches, statement
         return matches[0]
 
-    for statement in ("Valid medical professional registration/license", "Completed"):
+    for statement in ("Completed",):
         assert statement in flat
         # A single statement is set as a statement: no bullet glyph in front.
         assert not rendered_line(statement).startswith("\u2022"), statement

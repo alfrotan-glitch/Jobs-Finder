@@ -538,6 +538,17 @@ CV_PDF_LAYOUTS["compact"] = {
     "bullet_leading": 13.6, "section_before": 9, "section_after": 5,
     "role_before": 7, "meta_after": 3, "group_after": 2, "bullet_after": 2,
 }
+# Expanded typography prevents a short, lonely final page for a detailed
+# evidence-rich CV without truncating duties or reducing readable font sizes.
+CV_PDF_LAYOUTS["balanced"] = {
+    **CV_PDF_LAYOUTS["comfortable"], "bullet_after": 5.8,
+    "group_after": 3.8, "section_before": 15, "role_before": 11,
+}
+CV_PDF_LAYOUTS["spacious"] = {
+    **CV_PDF_LAYOUTS["comfortable"], "leading": 15,
+    "bullet_leading": 15, "bullet_after": 6.7,
+    "group_after": 4, "section_before": 15.5, "role_before": 12,
+}
 CV_MARGIN_MM = 18
 CV_TOP_MM = 16
 CV_BOTTOM_MM = 17
@@ -782,22 +793,59 @@ def _pdf_page_count(path: str | Path) -> int:
         return 1
 
 
-def render_cv_pdf(model: dict[str, Any], path: str | Path) -> dict[str, float]:
-    """Render complete, automatically paginated content; return shared scale.
+def _pdf_has_orphaned_cv_heading(path: str | Path, model: dict[str, Any]) -> bool:
+    """Reject layout variants that strand a section/job title on a page."""
+    import pdfplumber
 
-    Retry a sparse final page with whitespace-only compaction. Keep it only if
-    it removes a page; otherwise restore the comfortable original. The caller
-    applies the same chosen scale to DOCX. No facts, font sizes or ordering
-    change, and no fixed page count is imposed.
+    headings = {
+        "PROFESSIONAL SUMMARY", "CORE PROFESSIONAL COMPETENCIES",
+        "PROFESSIONAL EXPERIENCE", "EDUCATION", "PROFESSIONAL REGISTRATION",
+        "MEDICAL EXIT EXAMINATION", "PROFESSIONAL TRAINING & CERTIFICATIONS",
+        "LANGUAGES", "REFERENCES",
+    }
+    headings.update(str(row.get("role") or "").strip() for row in model.get("experience") or [])
+    with pdfplumber.open(str(path)) as pdf:
+        for page in pdf.pages:
+            lines = page.crop((0, 0, page.width, page.height - 45)).extract_text_lines()
+            if lines and lines[-1]["text"].strip() in headings:
+                return True
+    return False
+
+
+def render_cv_pdf(model: dict[str, Any], path: str | Path) -> dict[str, float]:
+    """Render complete CV and select the most balanced readable page flow.
+
+    Every candidate contains exactly the same approved content. Compaction is
+    only accepted when it *removes a full page* without creating an orphan.
+    For long detailed CVs, more generous spacing may instead balance a thin
+    third page. The selected typography is reused by the editable DOCX.
     """
     preferred = model.get("cv_layout", "comfortable")
     scale = CV_PDF_LAYOUTS.get(preferred, CV_PDF_LAYOUTS["comfortable"])
     pages = _build_cv_pdf(model, path, scale)
-    if preferred != "compact" and pages > 1 and _pdf_last_page_fill_ratio(path) < 0.4:
-        compact_pages = _build_cv_pdf(model, path, CV_PDF_LAYOUTS["compact"])
-        if compact_pages < pages:
-            return CV_PDF_LAYOUTS["compact"]
-        _build_cv_pdf(model, path, scale)
+    last_fill = _pdf_last_page_fill_ratio(path)
+    if pages < 2 or last_fill >= 0.4:
+        return scale
+
+    original_pages = pages
+    choices = (
+        ["compact", "balanced", "spacious"] if preferred != "compact"
+        else ["balanced", "spacious"]
+    )
+    # Try alternate whitespace only; never remove bullets or shrink font.
+    for name in choices:
+        candidate = CV_PDF_LAYOUTS[name]
+        candidate_pages = _build_cv_pdf(model, path, candidate)
+        candidate_fill = _pdf_last_page_fill_ratio(path)
+        if _pdf_has_orphaned_cv_heading(path, model):
+            continue
+        if (candidate_pages < original_pages and candidate_fill >= 0.4) or (
+            candidate_pages == original_pages and candidate_fill >= 0.4
+        ):
+            return candidate
+    # Fallback to the explicitly selected style if none gives a legitimate
+    # improvement; never silently trade away source evidence.
+    _build_cv_pdf(model, path, scale)
     return scale
 
 

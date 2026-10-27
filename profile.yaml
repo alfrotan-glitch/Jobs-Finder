@@ -512,7 +512,7 @@ private_reference_boundary:
 
 # Owner's preferred complete evidence-first CV. Display-only choices.
 document_preferences:
-  cv_depth: "detailed"
+  cv_depth: "focused"
   cv_style: "executive"
   cv_layout: "comfortable"
   letter_depth: "detailed"

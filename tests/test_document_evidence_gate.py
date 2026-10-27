@@ -197,10 +197,9 @@ def test_summary_never_hardcodes_applicant_identity_when_nothing_verified():
     }
     docs, _ = _docs(profile)
     cv = docs["tailored_cv_text"]
-    summary = cv.split("PROFESSIONAL SUMMARY", 1)[1].split("\n\n", 1)[0]
+    assert "PROFESSIONAL SUMMARY" not in cv
     assert "Medical Doctor with Afghanistan health and nutrition" not in cv
-    assert "Medical Doctor" not in summary
-    assert "supervisory experience" not in summary
+    assert "CONFIRM BEFORE SUBMISSION" not in cv
 
 
 def test_summary_claims_medical_doctor_only_with_verified_md_without_decimal_year_claims():
@@ -241,14 +240,14 @@ def test_excluded_unverified_items_stay_visible_in_review_warnings():
 # ---------------------------------------------------------------------------
 
 
-def test_draft_contact_data_is_not_printed_as_an_employer_facing_fact():
+def test_draft_contact_data_is_omitted_from_employer_facing_cv():
     profile = _mixed_profile()
     profile["personal"]["verification"] = {}  # CV-import-like draft
     docs, _ = _docs(profile)
     cv = docs["tailored_cv_text"]
     assert "jane.real@clinic-example.af" not in cv
     assert "+93 70 123 4567" not in cv
-    assert "CONFIRM BEFORE SUBMISSION" in cv
+    assert "CONFIRM BEFORE SUBMISSION" not in cv
 
 
 def test_confirmed_contact_data_is_not_suppressed_or_replaced():
@@ -258,14 +257,14 @@ def test_confirmed_contact_data_is_not_suppressed_or_replaced():
     assert "CONFIRM BEFORE SUBMISSION" not in cv
 
 
-def test_placeholder_contact_data_is_replaced_with_review_marker():
+def test_placeholder_contact_data_is_omitted_not_replaced_with_editorial_marker():
     profile = _mixed_profile()
     profile["personal"]["email"] = "doctor@example.org"
     profile["personal"]["phone"] = "+93 000 000 000"
     docs, _ = _docs(profile)
     cv = docs["tailored_cv_text"]
     assert "doctor@example.org" not in cv
-    assert "CONFIRM BEFORE SUBMISSION" in cv
+    assert "CONFIRM BEFORE SUBMISSION" not in cv
 
 
 def test_unconfirmed_personal_fields_keep_visible_package_blocker():

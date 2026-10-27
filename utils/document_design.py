@@ -139,7 +139,7 @@ def parse_cv_text(text: str, metadata: dict[str, Any] | None = None) -> dict[str
     metadata = metadata or {}
     lines = [ln.rstrip() for ln in (text or "").splitlines()]
     nonempty = [ln.strip() for ln in lines if ln.strip()]
-    name = nonempty[0] if nonempty else "CONFIRM BEFORE SUBMISSION"
+    name = nonempty[0] if nonempty else ""
     headline_from_text = ""
     if len(nonempty) > 1 and ":" not in nonempty[1] and not nonempty[1].isupper():
         headline_from_text = nonempty[1]
@@ -286,7 +286,7 @@ def parse_cover_letter_text(text: str, metadata: dict[str, Any] | None = None) -
                 continue
             continue
         body_lines.append(stripped)
-    name = signature["name"] or _full_name_from_package(package) or "CONFIRM BEFORE SUBMISSION"
+    name = signature["name"] or _full_name_from_package(package) or ""
     contact = _contact_from_package(package)
     target_role = str(job.get("title") or package.get("job_title") or "Target Role")
     target_org = str(job.get("company") or package.get("company") or "Target Organization")
@@ -609,8 +609,8 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
     doc = BaseDocTemplate(
         str(path), pagesize=A4, rightMargin=CV_MARGIN_MM * mm, leftMargin=CV_MARGIN_MM * mm,
         topMargin=CV_TOP_MM * mm, bottomMargin=CV_BOTTOM_MM * mm,
-        title=f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Curriculum Vitae",
-        author=model.get("name") or "CONFIRM BEFORE SUBMISSION",
+        title=f"{model.get('name') or ''} — Curriculum Vitae",
+        author=model.get("name") or "",
         subject="Curriculum Vitae",
     )
     # SimpleDocTemplate otherwise adds hidden 6pt padding on all four sides.
@@ -651,7 +651,7 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
         canvas.line(CV_MARGIN_MM * mm, 11.5 * mm, A4[0] - CV_MARGIN_MM * mm, 11.5 * mm)
         canvas.setFont(sans, 7)
         canvas.setFillColor(colors.HexColor(palette.muted))
-        canvas.drawString(CV_MARGIN_MM * mm, 7.5 * mm, str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
+        canvas.drawString(CV_MARGIN_MM * mm, 7.5 * mm, str(model.get("name") or ""))
         canvas.drawRightString(A4[0] - CV_MARGIN_MM * mm, 7.5 * mm, f"Page {document.page}")
         canvas.restoreState()
 
@@ -665,7 +665,7 @@ def _build_cv_pdf(model: dict[str, Any], path: str | Path, scale: dict[str, floa
         story.append(rule)
 
     story: list[Any] = [
-        Paragraph(esc(model.get("name") or "CONFIRM BEFORE SUBMISSION"), name_style),
+        Paragraph(esc(model.get("name") or ""), name_style),
         Paragraph(esc(model.get("headline") or "Medical Professional"), title_style),
     ]
     contact_line = _cv_contact_line(model)
@@ -951,7 +951,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
         p.add_run(_cv_bullet_glyph() + "\t").font.color.rgb = RGBColor.from_string(palette.teal[1:])
         p.add_run(str(text))
 
-    doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="CV Name")
+    doc.add_paragraph(model.get("name") or "", style="CV Name")
     doc.add_paragraph(model.get("headline") or "Medical Professional", style="CV Professional Title")
     contact_line = _cv_contact_line(model)
     if contact_line:
@@ -1066,7 +1066,7 @@ def render_cv_docx(model: dict[str, Any], path: str | Path, *, scale: dict[str, 
     footer.paragraph_format.tab_stops.clear_all()
     footer.alignment = WD_ALIGN_PARAGRAPH.LEFT
     footer.paragraph_format.tab_stops.add_tab_stop(section.page_width - section.left_margin - section.right_margin, WD_TAB_ALIGNMENT.RIGHT)
-    run = footer.add_run(str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
+    run = footer.add_run(str(model.get("name") or ""))
     run.font.size = Pt(7)
     run.font.color.rgb = RGBColor(102, 115, 122)
     page_run = footer.add_run("\tPage ")
@@ -1113,7 +1113,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
         str(path), pagesize=A4, rightMargin=20 * mm, leftMargin=20 * mm,
         topMargin=14 * mm, bottomMargin=15 * mm,
         title=f"{model.get('name')} — Cover Letter",
-        author=model.get("name") or "CONFIRM BEFORE SUBMISSION",
+        author=model.get("name") or "",
         subject="Application letter",
     )
     styles = getSampleStyleSheet()
@@ -1142,7 +1142,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
         canvas.line(20 * mm, 12 * mm, A4[0] - 20 * mm, 12 * mm)
         canvas.setFont(sans, 7)
         canvas.setFillColor(colors.HexColor(palette.muted))
-        canvas.drawString(20 * mm, 8 * mm, f"{model.get('name') or 'CONFIRM BEFORE SUBMISSION'} — Cover Letter")
+        canvas.drawString(20 * mm, 8 * mm, f"{model.get('name') or ''} — Cover Letter")
         canvas.drawRightString(A4[0] - 20 * mm, 8 * mm, f"Page {document.page}")
         canvas.restoreState()
 
@@ -1174,7 +1174,7 @@ def render_cover_letter_pdf(model: dict[str, Any], path: str | Path) -> None:
     signoff = [
         Spacer(1, 4),
         Paragraph("Sincerely,", body_style),
-        Paragraph(esc(model.get("name") or signature.get("name") or "CONFIRM BEFORE SUBMISSION"), signature_style),
+        Paragraph(esc(model.get("name") or signature.get("name") or ""), signature_style),
     ]
     if signature.get("title"):
         signoff.append(Paragraph(esc(signature["title"]), signature_meta_style))
@@ -1235,7 +1235,7 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
     style("JF Signature", 12, True, rgb(palette.deep) if is_executive else (12, 52, 66), font)
     style("JF Footer", 7, False, (102, 115, 122), font)
 
-    name_line = doc.add_paragraph(model.get("name") or "CONFIRM BEFORE SUBMISSION", style="JF Name")
+    name_line = doc.add_paragraph(model.get("name") or "", style="JF Name")
     name_line.paragraph_format.keep_with_next = True
     title_line = doc.add_paragraph(model.get("headline") or "Application Letter", style="JF Title")
     title_line.paragraph_format.keep_with_next = True
@@ -1273,7 +1273,7 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
     signature = model.get("signature") or {}
     signoff = [
         ("Sincerely,", "JF Body"),
-        (model.get("name") or signature.get("name") or "CONFIRM BEFORE SUBMISSION", "JF Signature"),
+        (model.get("name") or signature.get("name") or "", "JF Signature"),
     ]
     for item in [signature.get("title"), f"Email: {signature['email']}" if signature.get("email") else "", f"Phone: {signature['phone']}" if signature.get("phone") else ""]:
         if item:
@@ -1289,7 +1289,7 @@ def render_cover_letter_docx(model: dict[str, Any], path: str | Path) -> None:
     footer.paragraph_format.tab_stops.add_tab_stop(
         sec.page_width - sec.left_margin - sec.right_margin, WD_TAB_ALIGNMENT.RIGHT
     )
-    footer.add_run(str(model.get("name") or "CONFIRM BEFORE SUBMISSION"))
+    footer.add_run(str(model.get("name") or ""))
     footer.add_run("\tPage ")
     _docx_page_field(footer)
     for run in footer.runs:

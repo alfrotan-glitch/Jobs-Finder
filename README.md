@@ -322,7 +322,7 @@ The CV is deliberately comprehensive rather than short. Nothing verified is drop
 3. **Core professional competencies** — a grouped skills architecture (Clinical & Medical Practice; Health & Nutrition Programming; Public Health Systems & Quality; Programme Coordination & Field Operations; Supervision & Capacity Building; Safeguarding, Protection & Compliance; Supply Chain, Logistics & Administration; plus an "Additional Professional Competencies" group for anything else), containing every verified competency exactly once as ATS-readable text.
 4. **Professional experience** — every verified role with employer, location, and the dates exactly as supplied (blank ACF dates stay blank; supplied `2020-10` prints as "Oct 2020"), each with its **applicant-supported** professional scope. A detailed duty is printed only when the applicant actually supplied it; see the verification gate below.
 5. **Education, Professional Registration, Medical Exit Examination, Professional Training & Certifications, Languages** — every verified credential, with the registration presented only as the verified status (never an invented number, authority, or date).
-6. **References** — "Available on request for shortlisted applications." Private referee contacts are never printed; they can only be released through the vacancy-requirement + explicit-owner-approval boundary.
+6. **References (optional)** — omitted by default. Owners may select **References available upon request** under My Profile. Private referee contact details are never automatically printed or released.
 
 `responsibilities` in `profile.yaml` is the verification-gated professional description of each role: only `{text: ..., verified: true}` is confirmed experience, and the test suite enforces that each line introduces no number, no new named entity, place, employer, date, or achievement result beyond what the applicant supplied.
 
@@ -347,7 +347,7 @@ verified canonical profile
         → tailored CV + cover letter (TXT/DOCX/PDF)
 ```
 
-Tailoring changes **order, grouping, and emphasis only**:
+Tailoring uses **verified-evidence selection, order, grouping and emphasis**. The default **Focused** setting selects the most relevant already approved responsibilities without altering or deleting the original source record. The separate Master CV preserves the complete verified professional history:
 
 * a Medical Doctor vacancy leads with clinical and public-health/quality evidence;
 * a Health/Nutrition vacancy leads with the nutrition programming group and nutrition-first responsibilities;
@@ -356,9 +356,9 @@ Tailoring changes **order, grouping, and emphasis only**:
 
 The advertised vacancy title is the strongest relevance signal, and employer long-form wording maps to the verified acronym it names (`infection prevention and control` → `IPC`, `sexual exploitation` → `PSEA`, `health data management` → `HMIS`, `capacity building`, `clinical audit`, `field`, `protection`). Those mappings control **emphasis only** — they can never create evidence that does not already exist.
 
-Every verified role, responsibility, certificate, language, and credential is still printed in every tailored CV, and the canonical profile plus the Master CV are re-asserted byte-for-byte unchanged in the test suite (`tests/test_cv_professional_quality.py`, `tests/test_tailoring_immutability.py`).
+Every verified role remains in the tailored CV, with substantial job-relevant verified responsibilities where available; the full list of 24 approved duties stays in the position-neutral Master CV. Verified certifications and language facts are preserved, and only meaningful verified professional-registration status is printed. The canonical applicant profile is not rewritten during document generation. For an exhaustive vacancy CV, select **Detailed** in My Profile, regenerate the package, and review the resulting pagination.
 
-Professional reference contacts are outside the tracked canonical profile and are never printed in a Master CV or vacancy-specific CV. When a vacancy asks for references, the package presents a generic manual checklist; the owner may decide to release approved contacts through the documented external private-reference boundary.
+Professional reference contacts are outside the tracked canonical profile and are never printed by default. When an employer specifically requests referees, the application checklist identifies that requirement for explicit owner review; the private referee store is not silently attached. Missing identity, contact or credential details remain review/blocking items in the dashboard, not `CONFIRM BEFORE SUBMISSION` or `To be completed` text in employer-facing PDF, Word or letters.
 
 ### Local dashboard privacy
 

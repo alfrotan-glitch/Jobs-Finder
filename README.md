@@ -57,6 +57,28 @@ The launcher:
 
 Python support is intentionally conservative: Python 3.11 and 3.12. The full test suite runs in GitHub Actions CI on both Linux (`ubuntu-latest`) and Windows (`windows-latest`) for both Python versions. `run_jobs_finder.bat` itself (the venv-creating launcher script) is not executed by CI -- its logic is reviewed and covered by assertions in the test suite, but it has not been run end-to-end on an interactive Windows desktop as part of this validation. If installation fails on another Python version, use Python 3.11 or 3.12 and rerun the launcher.
 
+## Safe one-click update on Windows
+
+Close Jobs-Finder, then double-click **`Update_Jobs_Finder_Safely.bat`** in the existing Desktop checkout.
+
+The updater:
+
+- works only on the `main` branch, with Git for Windows installed;
+- refuses to update while the dashboard port is in use;
+- saves a timestamped `profile.yaml` backup outside Git, under
+  `%LOCALAPPDATA%\\Jobs-Finder\\UpdateBackups`, before any network step;
+- refuses any tracked local edits, especially an edited applicant profile;
+- fetches `origin/main` and accepts only a safe fast-forward (never resets,
+  force merges, silently stashes, discards edits or overwrites a conflicting profile);
+- leaves the local SQLite database, generated CVs, private referees and ZIP backups untouched.
+
+If it says **HOLD**, **do not use Git reset/stash/pop or delete the local
+profile**. Keep the backup and reconcile the profile differences carefully.
+After success, use `run_jobs_finder.bat` and regenerate application documents:
+saved PDFs/EMLs were not silently rewritten. This tool updates the local
+checkout only; it does not change repository privacy, verify a live vacancy or
+send an application.
+
 ## Manual setup
 
 The Windows launcher and the Python server entry point accept only loopback host addresses (`127.0.0.1`, `localhost`, or `::1`), regardless of `JOBS_FINDER_HOST`. The dashboard is never exposed to the LAN. Because it contains applicant information and has no user authentication, it also rejects untrusted HTTP `Host` headers (including domains pointing to localhost). Supported browser addresses are `localhost`, `127.0.0.1`, and `[::1]`; the in-process test suite additionally uses `testserver`. **Do not bind or publish this dashboard on a LAN or the public internet.** Use a separately designed authenticated deployment if remote access is required.

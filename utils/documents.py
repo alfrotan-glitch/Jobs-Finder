@@ -1657,7 +1657,7 @@ def generate_tailored_documents(
     # Retain the tested job-family competency ranking. Polio-specific
     # vacancies additionally prioritize attested transferable health work.
     job_title = str(job.get("title") or "")
-    if re.search(r"\b(?:polio|immunization|immunisation|vaccination|vaccine|epi)\b", job_title, re.I):
+    if re.search(r"\b(?:polio|immunization|immunisation|vaccination|vaccine|epi)\b", job_title, re.IGNORECASE):
         job_description = str(job.get("description") or "")
         def job_competency_rank(item: str):
             return (-factual_relevance_score(item, job_title, job_description),

@@ -218,7 +218,7 @@ def select_employer_facing_experience(
             while chosen[index] < minimum:
                 donor = next(
                     (other for other in reversed(ranked)
-                     if other >= 2 and chosen[other] > 1),
+                     if other >= 2 and chosen[other] > min(2, len(original[other].get("bullets") or []))),
                     None,
                 )
                 if donor is None:

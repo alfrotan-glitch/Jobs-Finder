@@ -218,4 +218,4 @@ def test_professional_profile_preserves_owner_selected_full_depth_and_executive_
         assert cv["cv_style"] == "executive"
         assert cv["full_verified_duty_count"] == cv["selected_duty_count"] == 24
         assert len(cv["experience"]) == 5
-        assert [len(r["bullets"]) for r in cv["experience"]] == [7, 7, 4, 3, 3]
+        assert [len(r["bullets"]) for r in cv["experience"]] == [7, 7, 3, 4, 3]

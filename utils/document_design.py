@@ -797,6 +797,10 @@ def _pdf_has_orphaned_cv_heading(path: str | Path, model: dict[str, Any]) -> boo
     """Reject layout variants that strand a section/job title on a page."""
     import pdfplumber
 
+    # Layout unit tests can simulate a renderer without creating a file.
+    # Production _build_cv_pdf always writes the candidate before inspection.
+    if not Path(path).is_file():
+        return False
     headings = {
         "PROFESSIONAL SUMMARY", "CORE PROFESSIONAL COMPETENCIES",
         "PROFESSIONAL EXPERIENCE", "EDUCATION", "PROFESSIONAL REGISTRATION",

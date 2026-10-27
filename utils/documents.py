@@ -1657,8 +1657,15 @@ def generate_tailored_documents(
     # and only its position inside its professional group (and the position of
     # the group itself) is driven by the vacancy's focus.
     focus_rank_key = _focus_rank_key(_focus_terms(job, match_report), _job_title_terms(job))
-    skills_bullets = sorted(verified_skills, key=focus_rank_key)
-    expertise = build_expertise_groups(verified_skills, rank_key=focus_rank_key)
+    # Rank already verified competencies by the advertised job's focus.
+    # This changes emphasis only, never invents a skill.
+    job_title = str(job.get("title") or "")
+    job_description = str(job.get("description") or "")
+    def job_competency_rank(item: str):
+        return (-factual_relevance_score(item, job_title, job_description),
+                focus_rank_key(item))
+    skills_bullets = sorted(verified_skills, key=job_competency_rank)
+    expertise = build_expertise_groups(skills_bullets, rank_key=job_competency_rank)
     if (profile.get("official_cv_approval") or {}).get("owner_approved") is True:
         # The comprehensive Master CV retains every verified skill. The
         # employer-facing CV surfaces just the highest-priority categories

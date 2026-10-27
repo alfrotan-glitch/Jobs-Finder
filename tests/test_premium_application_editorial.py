@@ -181,6 +181,7 @@ def test_employer_cv_curates_competencies_while_master_retains_every_skill():
 
 def test_focused_cv_keeps_multiple_real_duties_in_each_supported_role():
     from copy import deepcopy
+
     from utils.application_editorial import select_employer_facing_experience
 
     profile = load_canonical_profile(required=True)

@@ -119,7 +119,7 @@ def inspect_pdf(path: Path, model: dict) -> dict:
             fill = (lines[-1]["bottom"] - lines[0]["top"]) / (page.height - 90)
             pages.append({"page": number, "body_span": round(fill, 3), "lines": len(lines)})
         if len(pages) > 1:
-            assert pages[-1]["body_span"] >= .4, "Sparse final page"
+            assert pages[-1]["body_span"] >= .4, f"Sparse final page in {path.name}: {pages}"
         return {"producer": document.metadata.get("Producer"), "pages": pages}
 
 

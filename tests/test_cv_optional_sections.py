@@ -109,3 +109,26 @@ def test_polio_vacancy_selects_verified_transferable_public_health_work():
     assert "polio campaign" not in " ".join(b for row in model["experience"] for b in row["bullets"]).lower()
     assert "Provincial Polio Officer" in model["application_focus"]
     assert model["registration"] == []
+
+
+def test_polio_cv_renders_compact_searchable_pdf_without_trailing_page(tmp_path):
+    import pdfplumber
+    from utils.document_design import render_cv_pdf
+
+    profile = deepcopy(_profile())
+    profile["document_preferences"]["cv_depth"] = "focused"
+    job = {
+        "title": "Provincial Polio Officer",
+        "company": "Example NGO",
+        "description": "Coordinate provincial public health and surveillance reporting, supervise field activities and maintain data quality.",
+    }
+    result = generate_tailored_documents(job, profile, {"facts": {}})
+    path = tmp_path / "polio_officer_cv.pdf"
+    render_cv_pdf(result["tailored_cv_model"], path)
+    with pdfplumber.open(path) as pdf:
+        assert len(pdf.pages) <= 2
+        assert all((page.extract_text() or "").strip() for page in pdf.pages)
+        text = " ".join(page.extract_text() or "" for page in pdf.pages)
+        assert "Provincial Polio Officer" in text
+        assert "Valid medical professional registration/license" not in text
+        assert "To be completed" not in text

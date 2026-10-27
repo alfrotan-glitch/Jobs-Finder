@@ -26,9 +26,9 @@ CONTACT/IDENTITY CONTRACT (single rule for employer-facing contact data):
 * Name/email/phone/location/linkedin are factual applicant data. They are
   printed only when their own ``personal.verification.<field>: true`` flag is
   present; a fresh CV draft or merely non-empty text is not enough.
-* Missing, unverified, or placeholder name/email/phone values are replaced
-  with the generic review marker ``CONFIRM BEFORE SUBMISSION``. Unverified
-  location/linkedin lines are omitted rather than claimed.
+* Missing, unverified, or placeholder identity/contact values are omitted
+  from employer-facing documents. Review warnings and package blockers remain
+  in the private dashboard; no editing instructions reach a CV or letter.
 * While identity/contact fields are not explicitly verified, the application
   package keeps a blocking "confirm identity/contact" item, so a draft import
   is visible as unresolved and the package is never presented as fully ready.
@@ -76,7 +76,7 @@ def _full_name(profile: dict[str, Any]) -> str:
         and personal_field_is_verified(profile, "last_name")
     ):
         return f"{first} {last}".strip()
-    return "CONFIRM BEFORE SUBMISSION"
+    return ""
 
 
 def _is_placeholder_contact(value: Any, key: str = "") -> bool:
@@ -105,7 +105,7 @@ def _safe_contact_value(profile: dict[str, Any], key: str) -> str:
         and personal_field_is_verified(profile, key)
     ):
         return str(value)
-    return "CONFIRM BEFORE SUBMISSION"
+    return ""
 
 
 def _language_lines(profile: dict[str, Any], *, verified_only: bool = False) -> list[str]:
@@ -146,9 +146,9 @@ def _contact_lines(profile: dict[str, Any]) -> list[str]:
     personal = profile.get("personal", {}) if isinstance(profile.get("personal"), dict) else {}
     lines = []
     for key, label in [("email", "Email"), ("phone", "Phone")]:
-        # Keep a generic marker visible when a contact value is absent or
-        # unverified so a review package cannot accidentally look send-ready.
-        lines.append(f"{label}: {_safe_contact_value(profile, key)}")
+        value = _safe_contact_value(profile, key)
+        if value:
+            lines.append(f"{label}: {value}")
     for key, label in [("location", "Location"), ("linkedin", "LinkedIn")]:
         value = personal.get(key)
         if value and not is_unresolved_value(value) and personal_field_is_verified(profile, key):
@@ -1251,19 +1251,9 @@ def _professional_profile_paragraph(
     rank_key = _focus_rank_key(_focus_terms(job, match_report))
     sentences: list[str] = []
     if not evidence.has_verified("md_degree"):
-        # Nothing substantive is verified yet, so the document states that
-        # plainly instead of presenting an unverified profile as a credential.
-        sentences.append(
-            "This document is generated only from verified canonical-profile facts, and no verified "
-            "professional credential is recorded yet. Confirm the profile before using it."
-            if first_person
-            else "This CV is generated only from verified canonical-profile facts, and no verified "
-            "professional credential is recorded yet. Confirm the profile before using this document."
-        )
-        languages = _language_lines(profile, verified_only=True)
-        if languages:
-            sentences.append("Languages: " + ", ".join(_lowercase_level(line) for line in languages) + ".")
-        return " ".join(sentences)
+        # The review interface shows missing credential warnings separately.
+        # Do not put instructions or speculative professional claims in the CV.
+        return ""
 
     concise_cv = has_languages_section and not first_person
     field, institution = _verified_education_parts(profile)
@@ -1412,13 +1402,17 @@ def _render_canonical_cv_text(model: dict[str, Any]) -> str:
     because they are the same strings an ATS parser and the DOCX/PDF design
     system both key on.
     """
-    lines = [str(model.get("name") or "CONFIRM BEFORE SUBMISSION"), str(model.get("headline") or "Professional")]
+    lines = [str(item) for item in (model.get("name"), model.get("headline"))
+             if str(item or "").strip()]
     lines.extend(str(item) for item in model.get("contact_lines") or [] if str(item).strip())
     # Clearly labeled vacancy target is not an employment credential. Keep
     # the ATS/plain-text mirror in sync with the styled PDF and Word header.
     if model.get("application_focus"):
         lines.append("APPLICATION FOR: " + str(model["application_focus"]))
-    lines.extend(["", "PROFESSIONAL SUMMARY", str(model.get("profile") or ""), ""])
+    if str(model.get("profile") or "").strip():
+        lines.extend(["", "PROFESSIONAL SUMMARY", str(model["profile"]), ""])
+    else:
+        lines.append("")
 
     if model.get("is_employer_curated"):
         if model.get("experience"):
@@ -1919,10 +1913,7 @@ def generate_tailored_documents(
     ])
     if signature_title:
         cover_lines.append(signature_title)
-    cover_lines.extend([
-        f"Email: {_safe_contact_value(profile, 'email')}",
-        f"Phone: {_safe_contact_value(profile, 'phone')}",
-    ])
+    cover_lines.extend(_contact_lines(profile)[:2])
 
     return {
         "generated_at": date.today().isoformat(),
@@ -2214,10 +2205,7 @@ def _email_body(
     ])
     if signature_title:
         lines.append(signature_title)
-    lines.extend([
-        f"Email: {_safe_contact_value(profile, 'email')}",
-        f"Phone: {_safe_contact_value(profile, 'phone')}",
-    ])
+    lines.extend(_contact_lines(profile)[:2])
     return "\n".join(lines).strip() + "\n"
 
 

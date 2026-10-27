@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import pdfplumber
+import pytest
 from docx import Document
 
 from tests.test_document_evidence_gate import _docs, _mixed_profile
 from utils.document_design import render_professional_document_artifacts
-from utils.documents import generate_application_package
+from utils.documents import _write_text_docx_pdf, generate_application_package
 
 
 def test_unverified_identity_is_omitted_but_application_remains_blocked(tmp_path):
@@ -56,3 +57,15 @@ def test_unverified_medical_degree_never_inserts_review_instructions_into_cv():
     assert "Confirm the profile" not in cv
     assert "PROFESSIONAL SUMMARY" not in cv
     assert "CONFIRM BEFORE SUBMISSION" not in cv
+
+
+def test_export_gate_rejects_internal_editing_text_without_creating_files(tmp_path):
+    for phrase in ("CONFIRM BEFORE SUBMISSION", "To be completed", "Needs verification"):
+        dest = tmp_path / "candidate_cv"
+        with pytest.raises(ValueError, match="unfinished review field"):
+            _write_text_docx_pdf(
+                "Candidate Name\\nPROFESSIONAL SUMMARY\\n" + phrase,
+                dest,
+                document_type="cv",
+            )
+        assert list(tmp_path.iterdir()) == []

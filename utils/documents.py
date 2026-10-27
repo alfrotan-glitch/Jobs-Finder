@@ -1251,8 +1251,12 @@ def _professional_profile_paragraph(
     rank_key = _focus_rank_key(_focus_terms(job, match_report))
     sentences: list[str] = []
     if not evidence.has_verified("md_degree"):
-        # The review interface shows missing credential warnings separately.
-        # Do not put instructions or speculative professional claims in the CV.
+        # Never print an editorial review warning as applicant experience.
+        # Verified language facts may still appear in a draft letter, but an
+        # unverified MD qualification must never be asserted or implied.
+        languages = _language_lines(profile, verified_only=True)
+        if first_person and languages:
+            return "Languages: " + ", ".join(_lowercase_level(line) for line in languages) + "."
         return ""
 
     concise_cv = has_languages_section and not first_person

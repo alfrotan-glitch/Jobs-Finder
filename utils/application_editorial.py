@@ -12,6 +12,12 @@ import re
 # "nutrition" from occurring inside "malnutrition".
 _ROLE_SIGNALS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     (
+        re.compile(r"\b(?:polio|immunization|immunisation|vaccination|vaccine|epi)\b", re.IGNORECASE),
+        ("provincial", "public health", "ministry", "authority", "coordinat", "monitor",
+         "report", "community", "team", "supervis", "train", "emergency", "response",
+         "health", "outreach", "field"),
+    ),
+    (
         re.compile(r"\b(?:coordinator|coordination|manager|management|director|programme officer|program officer)\b", re.IGNORECASE),
         ("coordinat", "stakeholder", "authority", "ministry", "provincial", "supervis", "monitor",
          "report", "program", "programme", "team", "implementation", "management"),
@@ -89,7 +95,10 @@ def rank_attested_statements(
     ]
 
 
-def target_verified_summary(summary: str, vacancy_title: str, description: str = "") -> str:
+def target_verified_summary(
+    summary: str, vacancy_title: str, description: str = "",
+    *, max_sentences: int | None = None,
+) -> str:
     """Focus a long *owner-verified* CV paragraph without adding a single claim.
 
     Keep the first identity sentence and rank all remaining original
@@ -109,6 +118,8 @@ def target_verified_summary(summary: str, vacancy_title: str, description: str =
     # Preserve the applicant's identity/experience lead unchanged.
     identity = sentences[0]
     selected = rank_attested_statements(sentences[1:], vacancy_title, description)
+    if max_sentences is not None:
+        selected = selected[:max(0, max_sentences - 1)]
     return " ".join([identity, *selected])
 
 
@@ -186,7 +197,7 @@ def select_employer_facing_experience(
     ranked = [i for i, _ in sorted(priorities, key=lambda pair: (-pair[1], pair[0]))]
     # Focused CV retains at least two statements per verified employment
     # role where available, plus more detail in the most relevant positions.
-    max_total = max(18, 2 * len(original))
+    max_total = max(16, 2 * len(original))
     caps = {}
     for rank, index in enumerate(ranked):
         caps[index] = 6 if rank < 2 else 3 if rank < 4 else 2

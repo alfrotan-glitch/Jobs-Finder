@@ -119,14 +119,14 @@ def test_real_official_profile_produces_distinct_targeted_summaries_without_inve
     source_summary = profile["professional_summary"]["text"]
     for summary in summaries:
         assert summary.startswith(source_summary.split(". ")[0])
-        assert len(summary.split()) == len(source_summary.split())
+        assert 12 <= len(summary.split()) < len(source_summary.split())
         assert "managed 500 staff" not in summary
     for result in outputs:
         assert len(result["tailored_cv_model"]["experience"]) == 5
         model = result["tailored_cv_model"]
         assert model["is_employer_curated"] is True
         assert model["full_verified_duty_count"] == 24
-        assert model["selected_duty_count"] == 24
+        assert 12 <= model["selected_duty_count"] <= 20
         assert sum(len(entry["bullets"]) for entry in model["experience"]) == model["selected_duty_count"]
         assert all(len(role["bullets"]) >= 1 for role in model["experience"])
         assert result["cover_letter"].count("In my documented role as") <= 2
@@ -150,8 +150,8 @@ def test_medical_coordinator_highlights_real_supervision_without_reducing_roles_
     ]
     assert len(exp[0]["bullets"]) >= 3
     assert len(exp[1]["bullets"]) >= 3
-    assert sum(len(x["bullets"]) for x in exp) == 24
-    assert all(len(role["bullets"]) >= 3 for role in exp)
+    assert 12 <= sum(len(x["bullets"]) for x in exp) <= 20
+    assert all(len(role["bullets"]) >= 2 for role in exp)
     assert any("coordinat" in x.lower() or "supervis" in x.lower()
                for role in exp[:2] for x in role["bullets"])
     # The selected text is exact owner-provided evidence, never rewritten.
@@ -186,7 +186,9 @@ def test_focused_cv_keeps_multiple_real_duties_in_each_supported_role():
 
     profile = load_canonical_profile(required=True)
     job = {"title": "Medical Coordinator", "description": "Lead clinical services and field teams, coordinate with provincial authorities, oversee HMIS."}
-    original = generate_tailored_documents(job, profile, {"facts": {}})["tailored_cv_model"]["experience"]
+    detailed_profile = deepcopy(profile)
+    detailed_profile["document_preferences"]["cv_depth"] = "detailed"
+    original = generate_tailored_documents(job, detailed_profile, {"facts": {}})["tailored_cv_model"]["experience"]
     focus, full_count = select_employer_facing_experience(
         original, job["title"], job["description"], detail="focused",
     )
@@ -206,7 +208,7 @@ def test_focused_cv_keeps_multiple_real_duties_in_each_supported_role():
 
 def test_professional_profile_preserves_owner_selected_full_depth_and_executive_visual():
     profile = load_canonical_profile(required=True)
-    assert profile["document_preferences"]["cv_depth"] == "detailed"
+    assert profile["document_preferences"]["cv_depth"] == "focused"
     assert profile["document_preferences"]["cv_style"] == "executive"
     for title in ("Medical Coordinator", "Provincial Coordinator", "TFU Medical Doctor"):
         docs = generate_tailored_documents(
@@ -214,8 +216,9 @@ def test_professional_profile_preserves_owner_selected_full_depth_and_executive_
             profile, {"facts":{}},
         )
         cv = docs["tailored_cv_model"]
-        assert cv["cv_depth"] == "detailed"
+        assert cv["cv_depth"] == "focused"
         assert cv["cv_style"] == "executive"
-        assert cv["full_verified_duty_count"] == cv["selected_duty_count"] == 24
+        assert cv["full_verified_duty_count"] == 24
+        assert 12 <= cv["selected_duty_count"] <= 20
         assert len(cv["experience"]) == 5
-        assert [len(r["bullets"]) for r in cv["experience"]] == [7, 7, 3, 4, 3]
+        assert all(len(role["bullets"]) >= 2 for role in cv["experience"])

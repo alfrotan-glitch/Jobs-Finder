@@ -1376,15 +1376,30 @@ def _cv_credential_lines(profile: dict[str, Any], evidence: Any, key: str) -> li
     }
     normalized = status.casefold().strip(" .:;-")
     if not status or is_unresolved_value(status) or any(
-        normalized == placeholder or normalized.startswith(placeholder + " ")
+        normalized == placeholder or placeholder in normalized
         for placeholder in unresolved
     ):
         return []
     if key == "license_registration":
         authority = str(record.get("authority") or "").strip()
-        if (authority and not is_unresolved_value(authority)
-                and authority.casefold().strip(" .:;-") not in unresolved
-                and authority.casefold() not in status.casefold()):
+        authority_valid = bool(
+            authority and not is_unresolved_value(authority)
+            and not any(token in authority.casefold() for token in unresolved)
+        )
+        # A generic assertion without issuer/registration detail is useful for
+        # internal eligibility checks, but not a standalone employer CV line.
+        generic = {
+            "valid medical professional registration/license",
+            "medical professional registration/license confirmed in profile",
+            "valid license", "registered", "licensed", "valid registration",
+        }
+        # A registration number or expiry field alone must not turn an
+        # uninformative license-status slogan into employer-facing prose.
+        if normalized in generic and not authority_valid:
+            return []
+        if normalized in generic and authority_valid:
+            status = f"Registered with {authority}" 
+        elif authority_valid and authority.casefold() not in status.casefold():
             status = f"{status} ({authority})"
     return [status]
 
@@ -1639,8 +1654,18 @@ def generate_tailored_documents(
     # and only its position inside its professional group (and the position of
     # the group itself) is driven by the vacancy's focus.
     focus_rank_key = _focus_rank_key(_focus_terms(job, match_report), _job_title_terms(job))
-    skills_bullets = sorted(verified_skills, key=focus_rank_key)
-    expertise = build_expertise_groups(verified_skills, rank_key=focus_rank_key)
+    # Retain the tested job-family competency ranking. Polio-specific
+    # vacancies additionally prioritize attested transferable health work.
+    job_title = str(job.get("title") or "")
+    if re.search(r"\b(?:polio|immunization|immunisation|vaccination|vaccine|epi)\b", job_title, re.IGNORECASE):
+        job_description = str(job.get("description") or "")
+        def job_competency_rank(item: str):
+            return (-factual_relevance_score(item, job_title, job_description),
+                    focus_rank_key(item))
+    else:
+        job_competency_rank = focus_rank_key
+    skills_bullets = sorted(verified_skills, key=job_competency_rank)
+    expertise = build_expertise_groups(skills_bullets, rank_key=job_competency_rank)
     if (profile.get("official_cv_approval") or {}).get("owner_approved") is True:
         # The comprehensive Master CV retains every verified skill. The
         # employer-facing CV surfaces just the highest-priority categories
@@ -1724,7 +1749,8 @@ def generate_tailored_documents(
         # Owner's summary is already verified; reorder/select original factual
         # sentences for each vacancy, never paraphrase or create credentials.
         summary = target_verified_summary(
-            summary, str(job.get("title") or ""), str(job.get("description") or "")
+            summary, str(job.get("title") or ""), str(job.get("description") or ""),
+            max_sentences=3 if (profile.get("document_preferences") or {}).get("cv_depth") == "focused" else None,
         )
 
     canonical_cv_model = {

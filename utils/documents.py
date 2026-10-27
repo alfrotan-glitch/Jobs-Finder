@@ -1273,9 +1273,9 @@ def _professional_profile_paragraph(
     if institution and not concise_cv:
         identity += f" at {institution}"
     credentials: list[str] = []
-    if evidence.has_verified("medical_exit_exam"):
+    if _cv_credential_lines(profile, evidence, "medical_exit_exam"):
         credentials.append("a completed Medical Exit Examination")
-    if evidence.has_verified("license_registration"):
+    if _cv_credential_lines(profile, evidence, "license_registration"):
         credentials.append("a valid medical professional registration/license")
     lead = f"I am a {identity}" if first_person else identity
     identity_sentence = lead + (f", with {_join_and(credentials)}" if credentials and not concise_cv else "") + "."
@@ -1353,9 +1353,40 @@ def _lowercase_level(line: str) -> str:
     return line.strip()
 
 
-def _cv_references_section() -> list[str]:
-    """Default CV reference line: no private contact data is ever printed."""
-    return ["Available on request for shortlisted applications."]
+def _cv_references_section(profile: dict[str, Any]) -> list[str]:
+    """Employer CVs omit references by default; opt-in uses no contact details."""
+    mode = (profile.get("document_preferences") or {}).get("cv_references", "omit")
+    return ["References available upon request."] if mode == "upon_request" else []
+
+
+def _cv_credential_lines(profile: dict[str, Any], evidence: Any, key: str) -> list[str]:
+    """Print only confirmed factual status, never profile-editing placeholders."""
+    if not evidence.has_verified(key):
+        return []
+    source_key = "license_registration" if key == "license_registration" else "medical_exit_exam"
+    record = profile.get(source_key) or {}
+    if not isinstance(record, dict) or record.get("verified") is not True:
+        return []
+    status = str(record.get("status") or "").strip()
+    unresolved = {
+        "to be completed", "to be filled", "tbc", "not available",
+        "not provided", "not yet provided", "needs confirmation",
+        "pending verification", "fill in", "to be added",
+        "in progress", "to be confirmed",
+    }
+    normalized = status.casefold().strip(" .:;-")
+    if not status or is_unresolved_value(status) or any(
+        normalized == placeholder or normalized.startswith(placeholder + " ")
+        for placeholder in unresolved
+    ):
+        return []
+    if key == "license_registration":
+        authority = str(record.get("authority") or "").strip()
+        if (authority and not is_unresolved_value(authority)
+                and authority.casefold().strip(" .:;-") not in unresolved
+                and authority.casefold() not in status.casefold()):
+            status = f"{status} ({authority})"
+    return [status]
 
 
 def _render_canonical_cv_text(model: dict[str, Any]) -> str:
@@ -1490,11 +1521,11 @@ def generate_master_cv(profile: dict[str, Any]) -> dict[str, Any]:
         "strengths": [item for group in expertise for item in group["items"]],
         "experience": experience,
         "education": education,
-        "registration": evidence.evidence_text("license_registration", verified_only=True) if evidence.has_verified("license_registration") else [],
-        "exit_exam": evidence.evidence_text("medical_exit_exam", verified_only=True) if evidence.has_verified("medical_exit_exam") else [],
+        "registration": _cv_credential_lines(profile, evidence, "license_registration"),
+        "exit_exam": _cv_credential_lines(profile, evidence, "medical_exit_exam"),
         "certifications": _safe_bullets(certs_verified),
         "languages": _language_pairs(languages),
-        "references": _cv_references_section(),
+        "references": _cv_references_section(profile),
         "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
         "cv_style": (profile.get("document_preferences") or {}).get("cv_style", "clinical"),
         "cv_depth": (profile.get("document_preferences") or {}).get("cv_depth", "detailed"),
@@ -1709,11 +1740,11 @@ def generate_tailored_documents(
         "selected_duty_count": sum(len(item["bullets"]) for item in ordered_work),
         "is_employer_curated": curated_cv,
         "education": education,
-        "registration": evidence.evidence_text("license_registration", verified_only=True) if evidence.has_verified("license_registration") else [],
-        "exit_exam": evidence.evidence_text("medical_exit_exam", verified_only=True) if evidence.has_verified("medical_exit_exam") else [],
+        "registration": _cv_credential_lines(profile, evidence, "license_registration"),
+        "exit_exam": _cv_credential_lines(profile, evidence, "medical_exit_exam"),
         "certifications": certs,
         "languages": _language_pairs(languages),
-        "references": _cv_references_section(),
+        "references": _cv_references_section(profile),
         "cv_layout": (profile.get("document_preferences") or {}).get("cv_layout", "comfortable"),
         "cv_style": (profile.get("document_preferences") or {}).get("cv_style", "clinical"),
         "cv_depth": (profile.get("document_preferences") or {}).get("cv_depth", "detailed"),

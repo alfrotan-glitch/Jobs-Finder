@@ -82,4 +82,4 @@ def test_real_medical_coordinator_curated_cv_has_substantive_primary_roles():
     assert 11 <= model["selected_duty_count"] <= model["full_verified_duty_count"]
     assert model["full_verified_duty_count"] == 24
     assert model["is_employer_curated"] is True
-    assert model["references"] == ["Available on request for shortlisted applications."]
+    assert model["references"] == []

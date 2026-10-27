@@ -347,7 +347,8 @@ def test_master_cv_endpoint_writes_all_artifacts_without_mutating_or_submitting(
     assert "CORE PROFESSIONAL COMPETENCIES" in text
     assert "PROFESSIONAL EXPERIENCE" in text
     assert "IMAM/CMAM" in text
-    assert "Available on request for shortlisted applications." in text
+    assert "Available on request for shortlisted applications." not in text
+    assert "\nREFERENCES\n" not in text
     # Generation is a local write only: the canonical profile is untouched.
     assert profile_repository.canonical_profile_path().read_bytes() == before
 
